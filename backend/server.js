@@ -9,6 +9,7 @@ require('./config/db');
 
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const teamsRoutes = require('./routes/teamsRoutes');
 
 const app = express();
 
@@ -80,7 +81,10 @@ app.get('/api/test', (req, res) => {
 // Auth-Routen (inkl. Rate-Limiting auf Login/Registrierung)
 app.use('/api/auth', authRoutes);
 
-// Admin-Routen (RBAC: nur Rolle `admin`)
+// Mannschaftsliste (öffentlich, für das Registrierungsformular)
+app.use('/api/teams', teamsRoutes);
+
+// Admin-Routen (RBAC: Rolle `admin`, Team-Zuordnung auch `trainer`)
 app.use('/api/admin', adminRoutes);
 
 // 404 für unbekannte API-Pfade – liefert JSON statt HTML.

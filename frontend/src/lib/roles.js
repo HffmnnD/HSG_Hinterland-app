@@ -1,13 +1,32 @@
 // Anzeige-Namen und Reihenfolge der RBAC-Rollen.
-export const ROLES = ['admin', 'trainer', 'spieler', 'zuschauer'];
+// Muss zum ENUM in `users.role` passen (siehe backend/utils/roles.js).
+export const ROLES = ['admin', 'sub_admin', 'trainer', 'spieler', 'zuschauer'];
 
 export const ROLE_LABELS = {
   admin: 'Admin',
+  sub_admin: 'Sub-Admin',
   trainer: 'Trainer',
   spieler: 'Spieler',
   zuschauer: 'Zuschauer',
 };
 
+// Kurzform für Badges.
+export const ROLE_BADGES = {
+  admin: 'ADMIN',
+  sub_admin: 'SUB-ADMIN',
+  trainer: 'TRAINER',
+};
+
+// Rollen mit Zugriff auf die Mitgliederverwaltung.
+export const MANAGEMENT_ROLES = ['admin', 'sub_admin', 'trainer'];
+
+// Rollen, die Rolle & Freigabe anderer Konten ändern dürfen.
+export const ADMIN_ROLES = ['admin', 'sub_admin'];
+
 export function roleLabel(role) {
   return ROLE_LABELS[role] ?? role ?? '—';
+}
+
+export function roleBadge(role) {
+  return ROLE_BADGES[role] ?? null;
 }

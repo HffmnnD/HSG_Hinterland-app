@@ -2,10 +2,13 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
-import { roleLabel } from '../lib/roles';
+import { MANAGEMENT_ROLES, roleBadge, roleLabel } from '../lib/roles';
+import { relationLabelPlural, serviceLabel } from '../lib/participation';
+
+const RELATION_ORDER = ['coach', 'player', 'fan'];
 
 export default function Dashboard() {
-  const { user, role, logout } = useAuth();
+  const { user, role, teams, services, logout } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -23,6 +26,15 @@ export default function Dashboard() {
     .trim();
 
   const isAdmin = role === 'admin';
+  const isSubAdmin = role === 'sub_admin';
+  const canManageMembers = MANAGEMENT_ROLES.includes(role);
+  const badge = roleBadge(role);
+
+  // Mannschaften nach Beziehungstyp gruppieren.
+  const teamsByRelation = RELATION_ORDER.map((relation) => ({
+    relation,
+    entries: teams.filter((team) => team.relationType === relation),
+  })).filter((group) => group.entries.length > 0);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -36,12 +48,12 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            {isAdmin && (
+            {canManageMembers && (
               <Link
                 to="/admin"
                 className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
               >
-                Admin
+                Mitglieder
               </Link>
             )}
             <button
@@ -61,10 +73,17 @@ export default function Dashboard() {
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-800 text-lg font-bold text-emerald-400">
             {initials || '?'}
           </div>
-          <div>
-            <h1 className="text-xl font-bold">Willkommen, {user.firstName}!</h1>
-            <div className="mt-1 flex items-center gap-2 text-sm text-slate-400">
-              <span>{user.email}</span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold">Willkommen, {user.firstName}!</h1>
+              {badge && (
+                <span className="rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
+                  {badge}
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              <span className="truncate">{user.email}</span>
               <span
                 className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-emerald-300"
                 title="Deine Rolle"
@@ -98,26 +117,86 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Nur für Rolle 'admin' sichtbar */}
-        {isAdmin && (
+        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+          <h2 className="text-sm font-semibold text-slate-300">
+            Meine Mannschaften
+          </h2>
+          {teamsByRelation.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-400">
+              Noch keiner Mannschaft zugeordnet.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {teamsByRelation.map(({ relation, entries }) => (
+                <div key={relation}>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {relationLabelPlural(relation)}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {entries.map((team) => (
+                      <Link
+                        key={`${relation}-${team.id}`}
+                        to={`/teams/${team.code}`}
+                        title={team.name}
+                        className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:border-emerald-500 hover:text-emerald-300"
+                      >
+                        {team.name}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {services.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+            <h2 className="text-sm font-semibold text-slate-300">
+              Meine Helferdienste
+            </h2>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {services.map((service) => (
+                <span
+                  key={service}
+                  className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs font-medium text-slate-200"
+                >
+                  {serviceLabel(service)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Verwaltung: Admins, Sub-Admins und Trainer:innen */}
+        {canManageMembers && (
           <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-6">
             <div className="flex items-center gap-2">
-              <span className="rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
-                ADMIN
-              </span>
+              {badge && (
+                <span className="rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
+                  {badge}
+                </span>
+              )}
               <h2 className="text-sm font-semibold text-emerald-200">
-                Administration
+                {isAdmin || isSubAdmin
+                  ? 'Administration'
+                  : 'Mannschaftsverwaltung'}
               </h2>
             </div>
             <p className="mt-2 text-sm text-slate-300">
-              Du hast Administrator-Rechte. Verwalte Mitglieder, Freigaben und
-              Rollen im Admin-Bereich.
+              {isAdmin &&
+                'Verwalte Mitglieder, Freigaben, Rollen und Mannschaften.'}
+              {isSubAdmin &&
+                'Verwalte Mitglieder, Freigaben und Mannschaften. Admin-Konten sind für dich gesperrt.'}
+              {!isAdmin &&
+                !isSubAdmin &&
+                'Ändere die Mannschaftszuordnung der Mitglieder.'}
             </p>
             <Link
               to="/admin"
               className="mt-4 inline-flex rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
             >
-              Zum Admin-Bereich
+              Zur Mitgliederverwaltung
             </Link>
           </div>
         )}

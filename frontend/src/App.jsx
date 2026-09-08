@@ -4,8 +4,10 @@ import { useAuth } from './context/AuthContext';
 import AuthScreen from './components/auth/AuthScreen';
 import Dashboard from './components/Dashboard';
 import AdminPage from './components/AdminPage';
+import TeamPage from './components/TeamPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import FullScreenLoader from './components/FullScreenLoader';
+import { MANAGEMENT_ROLES } from './lib/roles';
 
 // Bereits eingeloggte Nutzer gehören nicht auf die Login-Seite. Wenn sie vorher
 // eine geschützte Seite aufrufen wollten, geht es dorthin zurück.
@@ -45,8 +47,19 @@ export default function App() {
       <Route
         path="/admin"
         element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>
             <AdminPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Mannschaftsseite – für alle angemeldeten Mitglieder sichtbar.
+          Verwaltungsfunktionen schaltet das Backend per canManage frei. */}
+      <Route
+        path="/teams/:code"
+        element={
+          <ProtectedRoute>
+            <TeamPage />
           </ProtectedRoute>
         }
       />

@@ -78,12 +78,28 @@ export function AuthProvider({ children }) {
   }, []);
 
   const register = useCallback(
-    async ({ firstName, lastName, email, password }) => {
+    async ({
+      firstName,
+      lastName,
+      email,
+      password,
+      // [{ teamId, relationType }] – Mannschaften inkl. Art der Beteiligung.
+      teams = [],
+      // Helferdienste der Mitwirkenden.
+      services = [],
+    }) => {
       setError(null);
       try {
         const data = await apiFetch('/api/auth/register', {
           method: 'POST',
-          body: JSON.stringify({ firstName, lastName, email, password }),
+          body: JSON.stringify({
+            firstName,
+            lastName,
+            email,
+            password,
+            teams,
+            services,
+          }),
         });
         return { success: true, message: data.message, user: data.user };
       } catch (err) {
@@ -110,6 +126,11 @@ export function AuthProvider({ children }) {
     // Rolle des angemeldeten Nutzers (RBAC): 'admin' | 'trainer' | 'spieler' |
     // 'zuschauer' – oder null, wenn nicht eingeloggt.
     role: user?.role ?? null,
+    // Mannschaften des angemeldeten Nutzers
+    // ([{ id, code, name, relationType }]).
+    teams: user?.teams ?? [],
+    // Helferdienste des angemeldeten Nutzers (['zeitnehmer', …]).
+    services: user?.services ?? [],
     loading,
     error,
     clearError,

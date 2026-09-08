@@ -10,6 +10,17 @@ const {
   SALT_ROUNDS,
   cookieOptions,
 } = require('../config/auth');
+const {
+  normalizeTeamIds,
+  normalizeTeamRelations,
+  loadTeamsForUser,
+  insertUserTeamRelations,
+} = require('../utils/teams');
+const {
+  normalizeServices,
+  loadServicesForUser,
+  replaceUserServices,
+} = require('../utils/services');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EMAIL_LENGTH = 255;
@@ -28,7 +39,7 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
 );
 
 // Einheitliche Aufbereitung der User-Daten für die API-Antwort.
-function toPublicUser(row) {
+function toPublicUser(row, teams = [], services = []) {
   return {
     id: row.id,
     firstName: row.first_name,
@@ -36,6 +47,8 @@ function toPublicUser(row) {
     email: row.email,
     isApproved: Boolean(row.is_approved),
     role: row.role,
+    teams,
+    services,
     createdAt: row.created_at,
   };
 }
@@ -43,7 +56,15 @@ function toPublicUser(row) {
 // POST /api/auth/register
 async function register(req, res, next) {
   try {
-    const { firstName, lastName, email, password } = req.body || {};
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      teams,
+      teamIds,
+      services,
+    } = req.body || {};
 
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
@@ -95,19 +116,56 @@ async function register(req, res, next) {
       });
     }
 
+    // Mannschaften sind optional. Bevorzugt `teams: [{ teamId, relationType }]`;
+    // `teamIds: [1, 2]` bleibt als Kurzform für Spieler-Zuordnungen erlaubt.
+    let relationsToAssign = [];
+    if (teams !== undefined) {
+      const teamCheck = await normalizeTeamRelations(teams);
+      if (!teamCheck.ok) {
+        return res.status(400).json({ message: teamCheck.message });
+      }
+      relationsToAssign = teamCheck.relations ?? [];
+    } else if (teamIds !== undefined) {
+      const legacyCheck = await normalizeTeamIds(teamIds);
+      if (!legacyCheck.ok) {
+        return res.status(400).json({ message: legacyCheck.message });
+      }
+      relationsToAssign = (legacyCheck.ids ?? []).map((teamId) => ({
+        teamId,
+        relationType: 'player',
+      }));
+    }
+
+    // Helferdienste (Mitwirkende) sind ebenfalls optional.
+    const serviceCheck = normalizeServices(services);
+    if (!serviceCheck.ok) {
+      return res.status(400).json({ message: serviceCheck.message });
+    }
+    const servicesToAssign = serviceCheck.services ?? [];
+
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     // Neue User werden mit is_approved = 0 und der Standardrolle angelegt.
     // Die Rolle kommt bewusst NICHT aus dem Request (keine Rechteausweitung),
     // sondern aus dem Spaltenstandard bzw. später über den Admin-Bereich.
-    let result;
+    const conn = await pool.getConnection();
+    let userId;
     try {
-      [result] = await pool.query(
+      await conn.beginTransaction();
+
+      const [result] = await conn.query(
         `INSERT INTO users (first_name, last_name, email, password_hash, is_approved)
          VALUES (?, ?, ?, ?, 0)`,
         [cleanFirstName, cleanLastName, normalizedEmail, passwordHash]
       );
+      userId = result.insertId;
+
+      await insertUserTeamRelations(conn, userId, relationsToAssign);
+      await replaceUserServices(conn, userId, servicesToAssign);
+
+      await conn.commit();
     } catch (err) {
+      await conn.rollback();
       // Der UNIQUE-Index auf email ist die einzige Quelle der Wahrheit –
       // kein SELECT-dann-INSERT (Race Condition).
       if (err && err.code === 'ER_DUP_ENTRY') {
@@ -116,17 +174,26 @@ async function register(req, res, next) {
           .json({ message: 'Diese E-Mail-Adresse ist bereits registriert.' });
       }
       throw err;
+    } finally {
+      conn.release();
     }
+
+    const [assignedTeams, assignedServices] = await Promise.all([
+      loadTeamsForUser(userId),
+      loadServicesForUser(userId),
+    ]);
 
     return res.status(201).json({
       message:
         'Registrierung erfolgreich. Dein Konto muss noch von einem Admin freigegeben werden.',
       user: {
-        id: result.insertId,
+        id: userId,
         firstName: cleanFirstName,
         lastName: cleanLastName,
         email: normalizedEmail,
         isApproved: false,
+        teams: assignedTeams,
+        services: assignedServices,
       },
     });
   } catch (err) {
@@ -197,9 +264,14 @@ async function login(req, res, next) {
     // JWT als HttpOnly-Cookie an den Client senden.
     res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge });
 
+    const [userTeams, userServices] = await Promise.all([
+      loadTeamsForUser(user.id),
+      loadServicesForUser(user.id),
+    ]);
+
     return res.json({
       message: 'Login erfolgreich.',
-      user: toPublicUser(user),
+      user: toPublicUser(user, userTeams, userServices),
     });
   } catch (err) {
     return next(err);
@@ -239,7 +311,12 @@ async function me(req, res, next) {
       });
     }
 
-    return res.json({ user: toPublicUser(user) });
+    const [userTeams, userServices] = await Promise.all([
+      loadTeamsForUser(user.id),
+      loadServicesForUser(user.id),
+    ]);
+
+    return res.json({ user: toPublicUser(user, userTeams, userServices) });
   } catch (err) {
     return next(err);
   }
