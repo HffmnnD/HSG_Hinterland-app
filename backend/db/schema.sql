@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS users (
   email          VARCHAR(255)  NOT NULL,
   password_hash  VARCHAR(255)  NOT NULL,
   is_approved    TINYINT(1)    NOT NULL DEFAULT 0,
+  role           ENUM('admin', 'trainer', 'spieler', 'zuschauer') NOT NULL DEFAULT 'spieler',
   created_at     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Bestehende Datenbank nachträglich erweitern (siehe db/migrations/).

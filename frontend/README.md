@@ -1,6 +1,7 @@
 # Frontend – HSG Hinterland App
 
-React (Vite) + Tailwind CSS v4 + PWA. Authentifizierungs-UI mit React Context.
+React (Vite) + Tailwind CSS v4 + React Router + PWA. Authentifizierungs-UI mit
+React Context und rollenbasiertem Routen-Schutz (RBAC).
 
 ## Setup
 
@@ -17,17 +18,20 @@ Das Backend muss parallel laufen (`../backend`, http://localhost:5000).
 
 ```
 frontend/src/
-  main.jsx                     bindet <AuthProvider> ein
-  App.jsx                      loading -> Loader, user -> Dashboard, sonst -> AuthScreen
+  main.jsx                     <BrowserRouter> + <AuthProvider>
+  App.jsx                      <Routes>: /login, / (geschützt), /admin (nur admin), * -> /
   context/
-    AuthContext.jsx            globaler Auth-State: user, loading, error
+    AuthContext.jsx            globaler Auth-State: user, role, loading, error
                                + login() / register() / logout() / refresh()
                                prüft beim Start GET /api/auth/me
   lib/
     api.js                     fetch-Wrapper, IMMER credentials: 'include'
+    roles.js                   Rollen-Konstanten + deutsche Labels
   components/
     FullScreenLoader.jsx
-    Dashboard.jsx              geschützte Dummy-Ansicht + Abmelden-Button
+    ProtectedRoute.jsx         Routen-Schutz nach Login-Status + Rolle
+    Dashboard.jsx              geschützte Ansicht; Admin-Bereich nur bei role === 'admin'
+    AdminPage.jsx              /admin: Mitgliederliste, Freigabe & Rollen (nur admin)
     auth/
       AuthScreen.jsx           Umschalter Login <-> Registrierung
       AuthLayout.jsx           mobile-first zentriertes Karten-Layout
@@ -35,6 +39,26 @@ frontend/src/
       RegisterForm.jsx         firstName/lastName/email/password + Erfolgshinweis
       TextField.jsx / Alert.jsx
 ```
+
+## Routen & Rollen-Schutz
+
+| Pfad     | Schutz                                    |
+| -------- | ----------------------------------------- |
+| `/login` | Öffentlich; eingeloggt → Redirect auf `/` |
+| `/`      | `<ProtectedRoute>` – jeder eingeloggte User |
+| `/admin` | `<ProtectedRoute allowedRoles={['admin']}>` |
+| `*`      | Redirect auf `/`                          |
+
+`ProtectedRoute` verhält sich so:
+
+- lädt noch → Ladeanzeige
+- nicht eingeloggt → `<Navigate to="/login" />`
+- Rolle nicht in `allowedRoles` → `<Navigate to="/" />`
+- sonst → `children`
+
+Die Rolle kommt aus `useAuth().role` (aus `GET /api/auth/me` bzw. der
+Login-Antwort). Der Routen-Schutz ist nur UX – die eigentliche Autorisierung
+macht das Backend (`checkRole`).
 
 ## Auth-Fluss
 

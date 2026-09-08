@@ -7,6 +7,7 @@ require('dotenv').config({ quiet: true });
 require('./config/db');
 
 const authRoutes = require('./routes/authRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
@@ -30,6 +31,9 @@ app.get('/api/test', (req, res) => {
 
 // Auth-Routen
 app.use('/api/auth', authRoutes);
+
+// Admin-Routen (RBAC: nur Rolle `admin`)
+app.use('/api/admin', adminRoutes);
 
 app.listen(PORT, () => {
   console.log(`Backend-Server läuft auf Port ${PORT}`);

@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
+import { roleLabel } from '../lib/roles';
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, role, logout } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -16,6 +18,8 @@ export default function Dashboard() {
     .toUpperCase()
     .trim();
 
+  const isAdmin = role === 'admin';
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800 bg-slate-900/70">
@@ -27,14 +31,24 @@ export default function Dashboard() {
             <span className="font-semibold">HSG Hinterland</span>
           </div>
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800 disabled:opacity-60"
-          >
-            {loggingOut ? 'Abmelden …' : 'Abmelden'}
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
+              >
+                Admin
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800 disabled:opacity-60"
+            >
+              {loggingOut ? 'Abmelden …' : 'Abmelden'}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -44,10 +58,16 @@ export default function Dashboard() {
             {initials || '?'}
           </div>
           <div>
-            <h1 className="text-xl font-bold">
-              Willkommen, {user.firstName}!
-            </h1>
-            <p className="text-sm text-slate-400">{user.email}</p>
+            <h1 className="text-xl font-bold">Willkommen, {user.firstName}!</h1>
+            <div className="mt-1 flex items-center gap-2 text-sm text-slate-400">
+              <span>{user.email}</span>
+              <span
+                className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-emerald-300"
+                title="Deine Rolle"
+              >
+                {roleLabel(role)}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -60,16 +80,12 @@ export default function Dashboard() {
                   user.isApproved ? 'bg-emerald-400' : 'bg-amber-400'
                 }`}
               />
-              {user.isApproved
-                ? 'Freigeschaltet'
-                : 'Warten auf Admin-Freigabe'}
+              {user.isApproved ? 'Freigeschaltet' : 'Warten auf Admin-Freigabe'}
             </p>
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <h2 className="text-sm font-semibold text-slate-300">
-              Mitglied seit
-            </h2>
+            <h2 className="text-sm font-semibold text-slate-300">Mitglied seit</h2>
             <p className="mt-2 text-sm text-slate-400">
               {user.createdAt
                 ? new Date(user.createdAt).toLocaleDateString('de-DE')
@@ -77,6 +93,30 @@ export default function Dashboard() {
             </p>
           </div>
         </div>
+
+        {/* Nur für Rolle 'admin' sichtbar */}
+        {isAdmin && (
+          <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-6">
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
+                ADMIN
+              </span>
+              <h2 className="text-sm font-semibold text-emerald-200">
+                Administration
+              </h2>
+            </div>
+            <p className="mt-2 text-sm text-slate-300">
+              Du hast Administrator-Rechte. Verwalte Mitglieder, Freigaben und
+              Rollen im Admin-Bereich.
+            </p>
+            <Link
+              to="/admin"
+              className="mt-4 inline-flex rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+            >
+              Zum Admin-Bereich
+            </Link>
+          </div>
+        )}
 
         <div className="mt-6 rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-6 text-center">
           <p className="text-sm text-slate-400">

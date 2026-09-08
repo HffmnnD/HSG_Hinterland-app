@@ -96,6 +96,9 @@ export function AuthProvider({ children }) {
 
   const value = {
     user,
+    // Rolle des angemeldeten Nutzers (RBAC): 'admin' | 'trainer' | 'spieler' |
+    // 'zuschauer' – oder null, wenn nicht eingeloggt.
+    role: user?.role ?? null,
     loading,
     error,
     clearError,

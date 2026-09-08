@@ -21,6 +21,7 @@ function toPublicUser(row) {
     lastName: row.last_name,
     email: row.email,
     isApproved: Boolean(row.is_approved),
+    role: row.role,
     createdAt: row.created_at,
   };
 }
@@ -105,7 +106,7 @@ async function login(req, res) {
     const normalizedEmail = String(email).trim().toLowerCase();
 
     const [rows] = await pool.query(
-      `SELECT id, first_name, last_name, email, password_hash, is_approved, created_at
+      `SELECT id, first_name, last_name, email, password_hash, is_approved, role, created_at
        FROM users WHERE email = ?`,
       [normalizedEmail]
     );
@@ -136,7 +137,7 @@ async function login(req, res) {
     }
 
     const token = jwt.sign(
-      { sub: user.id, email: user.email },
+      { sub: user.id, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
@@ -169,7 +170,7 @@ function logout(req, res) {
 async function me(req, res) {
   try {
     const [rows] = await pool.query(
-      `SELECT id, first_name, last_name, email, is_approved, created_at
+      `SELECT id, first_name, last_name, email, is_approved, role, created_at
        FROM users WHERE id = ?`,
       [req.userId]
     );
