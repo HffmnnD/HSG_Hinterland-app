@@ -145,7 +145,7 @@ export default function AdminPage() {
         <h1 className="text-xl font-bold">Mitglieder</h1>
         <p className="mt-1 text-sm text-slate-400">
           {canManageAccounts
-            ? 'Freigaben erteilen, Rollen und Mannschaften zuweisen.'
+            ? 'Rollen und Mannschaftszuordnungen verwalten.'
             : 'Mannschaftszuordnung der Mitglieder verwalten.'}
         </p>
         {isSubAdmin && (
@@ -301,7 +301,7 @@ export default function AdminPage() {
                         {u.isApproved ? (
                           <span className="inline-flex items-center gap-1.5 text-emerald-300">
                             <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                            Freigeschaltet
+                            Aktiv
                           </span>
                         ) : canManageAccounts && !locked ? (
                           <button
@@ -310,12 +310,12 @@ export default function AdminPage() {
                             onClick={() => approve(u.id)}
                             className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-60"
                           >
-                            {busy ? '…' : 'Freischalten'}
+                            {busy ? '…' : 'Reaktivieren'}
                           </button>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-amber-300">
                             <span className="h-2 w-2 rounded-full bg-amber-400" />
-                            Nicht freigeschaltet
+                            Gesperrt
                           </span>
                         )}
                       </td>

@@ -1,15 +1,17 @@
 // Mannschafts-Controller (/api/teams/*).
 //
 // Kein SQL in dieser Datei – Datenzugriff über teamRepository/userRepository.
-//   GET  /api/teams                      öffentliche Mannschaftsliste
-//   GET  /api/teams/:code                Infos + Kader (jede:r Angemeldete)
-//   GET  /api/teams/:code/candidates     Auswahlliste zum Hinzufügen (Verwaltung)
-//   POST /api/teams/:code/members        Zuordnung anlegen                (Verwaltung)
-//   DEL  /api/teams/:code/members/:uid   Zuordnung entfernen              (Verwaltung)
-//   POST /api/teams/:code/callup         Spieler:in hochrufen             (Verwaltung)
+//   GET  /api/teams                              öffentliche Mannschaftsliste
+//   GET  /api/teams/:code                        Infos + bestätigter Kader
+//                                                (+ offene Anfragen für Verwaltung)
+//   GET  /api/teams/:code/candidates             Auswahlliste zum Hinzufügen (Verwaltung)
+//   POST /api/teams/:code/members                Zuordnung anlegen (Verwaltung)
+//   POST /api/teams/:code/members/:userId/confirm offene Anfrage bestätigen (Verwaltung)
+//   DEL  /api/teams/:code/members/:userId        Zuordnung entfernen / Anfrage ablehnen
+//   POST /api/teams/:code/callup                 Spieler:in hochrufen (Verwaltung)
 //
-// "Verwaltung" = Rolle admin/sub_admin ODER als coach dieser Mannschaft
-// eingetragen.
+// "Verwaltung" = Rolle admin/sub_admin ODER als bestätigte:r coach dieser
+// Mannschaft eingetragen.
 const teamRepository = require('../repositories/teamRepository');
 const userRepository = require('../repositories/userRepository');
 const { parseId, isRelationType } = require('../utils/validation');
@@ -60,12 +62,12 @@ async function getTeam(req, res, next) {
       ADMIN_ROLES.includes(req.userRole) ||
       (await teamRepository.isCoachOf(req.userId, team.id));
 
-    // E-Mail-Adressen nur für Verwaltende (Datensparsamkeit).
-    const members = await teamRepository.getRoster(team.id, {
+    // Öffentlich: nur bestätigte Mitglieder. E-Mails nur für Verwaltende.
+    const members = await teamRepository.getConfirmedRoster(team.id, {
       includeEmail: canManage,
     });
 
-    return res.json({
+    const response = {
       team,
       members,
       counts: {
@@ -74,7 +76,16 @@ async function getTeam(req, res, next) {
         fan: members.fan.length,
       },
       canManage,
-    });
+    };
+
+    // Verwaltung sieht zusätzlich die offenen Beitrittsanfragen.
+    if (canManage) {
+      response.pendingMembers = await teamRepository.getPendingMembers(team.id, {
+        includeEmail: true,
+      });
+    }
+
+    return res.json(response);
   } catch (err) {
     return next(err);
   }
@@ -136,12 +147,53 @@ async function addMember(req, res, next) {
     }
     if (!target.is_approved) {
       return res.status(400).json({
-        message: 'Nur freigegebene Mitglieder können zugeordnet werden.',
+        message: 'Nur aktive Mitglieder können zugeordnet werden.',
       });
     }
 
-    await teamRepository.addRelation(targetId, loaded.team.id, relationType);
+    // Vom Trainer/Admin manuell hinzugefügt -> direkt bestätigt.
+    await teamRepository.addRelation(targetId, loaded.team.id, relationType, 1);
     return res.status(201).json({ message: 'Zuordnung gespeichert.' });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// POST /api/teams/:code/members/:userId/confirm
+async function confirmMember(req, res, next) {
+  try {
+    const loaded = await loadManageableTeam(
+      req,
+      req.params.code,
+      MANAGE_ROSTER_DENIED
+    );
+    if (!loaded.ok) {
+      return res.status(loaded.status).json({ message: loaded.message });
+    }
+
+    const targetId = parseId(req.params.userId);
+    if (!targetId) {
+      return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
+    }
+
+    // Optionaler Filter auf einen Beziehungstyp; sonst alle offenen bestätigen.
+    const relationType = req.query.relationType;
+    if (relationType !== undefined && !isRelationType(relationType)) {
+      return res.status(400).json({ message: 'Ungültiger Beziehungstyp.' });
+    }
+
+    const confirmed = await teamRepository.confirmRelations(
+      targetId,
+      loaded.team.id,
+      relationType
+    );
+    if (confirmed === 0) {
+      return res
+        .status(404)
+        .json({ message: 'Keine offene Beitrittsanfrage gefunden.' });
+    }
+
+    return res.json({ message: 'Beitritt bestätigt.' });
   } catch (err) {
     return next(err);
   }
@@ -225,8 +277,8 @@ async function callUpPlayer(req, res, next) {
         .json({ message: 'Quell- und Zielmannschaft sind identisch.' });
     }
 
-    // Nur wer in dieser Mannschaft spielt, kann von hier hochgerufen werden.
-    const plays = await teamRepository.hasRelation(
+    // Nur wer in dieser Mannschaft (bestätigt) spielt, kann hochgerufen werden.
+    const plays = await teamRepository.hasConfirmedRelation(
       targetId,
       sourceTeam.id,
       'player'
@@ -237,7 +289,8 @@ async function callUpPlayer(req, res, next) {
         .json({ message: 'Die Person spielt nicht in dieser Mannschaft.' });
     }
 
-    await teamRepository.addRelation(targetId, targetTeam.id, 'player');
+    // Hochrufen durch den Trainer -> direkt bestätigt.
+    await teamRepository.addRelation(targetId, targetTeam.id, 'player', 1);
     return res
       .status(201)
       .json({ message: `Hochgerufen zu ${targetTeam.name}.` });
@@ -251,6 +304,7 @@ module.exports = {
   getTeam,
   listCandidates,
   addMember,
+  confirmMember,
   removeMember,
   callUpPlayer,
 };

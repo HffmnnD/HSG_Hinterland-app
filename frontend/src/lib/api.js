@@ -8,7 +8,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 // Endpunkte, bei denen ein 401/403 eine normale fachliche Antwort ist
-// (falsches Passwort, Konto nicht freigegeben) und keine abgelaufene Sitzung.
+// (z. B. falsches Passwort) und keine abgelaufene Sitzung.
 const AUTH_ENDPOINTS = [
   '/api/auth/login',
   '/api/auth/register',

@@ -1,12 +1,14 @@
-// Einfacher Migrations-Runner: führt alle SQL-Dateien in db/migrations/
-// alphabetisch sortiert aus.
+// Migrations-Runner: führt neue SQL-Dateien aus db/migrations/ genau EINMAL aus.
 //
 //   npm run migrate
 //
-// Die Migrationen sind idempotent (CREATE TABLE IF NOT EXISTS,
-// INSERT ... ON DUPLICATE KEY, ALTER ... MODIFY) und dürfen beliebig oft
-// laufen. Sollte eine künftige ALTER-Migration doch nicht idempotent sein,
-// überspringt der Runner "existiert bereits"-Fehler (siehe IGNORABLE).
+// Bereits angewendete Dateien werden in der Tabelle `schema_migrations`
+// vermerkt und beim nächsten Lauf übersprungen. So dürfen Migrationen auch
+// nicht-idempotente Daten-Backfills enthalten (z. B. "alle Bestandsdaten auf
+// bestätigt setzen"), ohne bei einem zweiten Lauf Schaden anzurichten.
+//
+// Defensiv wird zusätzlich "existiert bereits" (Tabelle/Spalte/Key schon da)
+// abgefangen – falls jemand das Schema von Hand angelegt hat.
 require('dotenv').config({ quiet: true });
 
 const fs = require('fs');
@@ -15,7 +17,6 @@ const mysql = require('mysql2/promise');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 
-// MySQL-Fehlercodes, die ein bereits angewandtes DDL bedeuten.
 const IGNORABLE = new Set([
   'ER_TABLE_EXISTS_ERROR', // 1050
   'ER_DUP_FIELDNAME', // 1060
@@ -33,6 +34,42 @@ function splitStatements(sql) {
     .split(';')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+async function ensureMigrationsTable(conn) {
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      filename    VARCHAR(255) NOT NULL PRIMARY KEY,
+      applied_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function runFile(conn, file) {
+  const statements = splitStatements(
+    fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
+  );
+  let applied = 0;
+  let skipped = 0;
+
+  for (const statement of statements) {
+    try {
+      await conn.query(statement);
+      applied += 1;
+    } catch (err) {
+      if (IGNORABLE.has(err.code)) {
+        skipped += 1;
+      } else {
+        console.error(`\n✗ ${file}\n  Statement: ${statement.slice(0, 120)}…`);
+        throw err;
+      }
+    }
+  }
+
+  await conn.query('INSERT INTO schema_migrations (filename) VALUES (?)', [file]);
+  console.log(
+    `✓ ${file}  (${applied} ausgeführt${skipped ? `, ${skipped} übersprungen` : ''})`
+  );
 }
 
 async function main() {
@@ -56,33 +93,27 @@ async function main() {
   });
 
   try {
+    await ensureMigrationsTable(connection);
+    const [rows] = await connection.query(
+      'SELECT filename FROM schema_migrations'
+    );
+    const done = new Set(rows.map((r) => r.filename));
+
+    let ran = 0;
     for (const file of files) {
-      const statements = splitStatements(
-        fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8')
-      );
-      let applied = 0;
-      let skipped = 0;
-
-      for (const statement of statements) {
-        try {
-          await connection.query(statement);
-          applied += 1;
-        } catch (err) {
-          if (IGNORABLE.has(err.code)) {
-            skipped += 1;
-          } else {
-            console.error(`\n✗ ${file}\n  Statement: ${statement.slice(0, 120)}…`);
-            throw err;
-          }
-        }
+      if (done.has(file)) {
+        console.log(`• ${file}  (bereits angewendet)`);
+        continue;
       }
-
-      console.log(
-        `✓ ${file}  (${applied} ausgeführt${skipped ? `, ${skipped} übersprungen` : ''})`
-      );
+      await runFile(connection, file);
+      ran += 1;
     }
 
-    console.log('\nAlle Migrationen abgeschlossen.');
+    console.log(
+      ran === 0
+        ? '\nNichts zu tun – Datenbank ist aktuell.'
+        : `\n${ran} Migration(en) angewendet.`
+    );
   } finally {
     await connection.end();
   }

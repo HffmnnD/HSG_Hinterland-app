@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 
 import { apiFetch } from '../lib/api';
 import { useTeams } from '../hooks/useTeams';
-import { relationLabelPlural } from '../lib/participation';
+import { relationLabel, relationLabelPlural } from '../lib/participation';
 import { roleLabel } from '../lib/roles';
 
 // Reihenfolge im Kader (Trainer:innen zuerst)
@@ -111,6 +111,26 @@ function TeamView({ code }) {
     );
   };
 
+  const handleConfirm = (userId, relationType, name) =>
+    run(
+      () =>
+        apiFetch(
+          `/api/teams/${encodeURIComponent(code)}/members/${userId}/confirm?relationType=${relationType}`,
+          { method: 'POST' }
+        ),
+      `${name} bestätigt.`
+    );
+
+  const handleReject = (userId, relationType, name) =>
+    run(
+      () =>
+        apiFetch(
+          `/api/teams/${encodeURIComponent(code)}/members/${userId}?relationType=${relationType}`,
+          { method: 'DELETE' }
+        ),
+      `Anfrage von ${name} abgelehnt.`
+    );
+
   const handleRemove = (userId, relationType, name) =>
     run(
       () =>
@@ -153,6 +173,7 @@ function TeamView({ code }) {
   }
 
   const { team, members, counts } = data;
+  const pendingMembers = data.pendingMembers ?? [];
   const otherTeams = allTeams.filter((t) => t.code !== team.code);
 
   return (
@@ -171,8 +192,69 @@ function TeamView({ code }) {
         </div>
       )}
 
+      {/* Offene Beitrittsanfragen – ganz oben, nur für Verwaltung */}
+      {canManage && pendingMembers.length > 0 && (
+        <section className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-5">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-200">
+            Offene Beitrittsanfragen
+            <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs">
+              {pendingMembers.length}
+            </span>
+          </h2>
+          <ul className="mt-3 divide-y divide-amber-500/20 overflow-hidden rounded-xl border border-amber-500/20">
+            {pendingMembers.map((member) => {
+              const name = `${member.firstName} ${member.lastName}`;
+              return (
+                <li
+                  key={`pending-${member.id}-${member.relationType}`}
+                  className="flex flex-col gap-2 bg-slate-950/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0 text-sm">
+                    <span className="font-medium text-slate-100">{name}</span>
+                    <span className="ml-2 text-slate-400">
+                      möchte als {relationLabel(member.relationType)} beitreten
+                    </span>
+                    {member.email && (
+                      <span className="block truncate text-xs text-slate-500">
+                        {member.email}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        handleConfirm(member.id, member.relationType, name)
+                      }
+                      className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-60"
+                    >
+                      Bestätigen
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        handleReject(member.id, member.relationType, name)
+                      }
+                      className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-500/50 hover:text-red-300 disabled:opacity-60"
+                    >
+                      Ablehnen
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       {/* Mannschaftsinfos */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div
+        className={`grid gap-4 sm:grid-cols-3 ${
+          canManage && pendingMembers.length > 0 ? 'mt-6' : ''
+        }`}
+      >
         {SECTIONS.map((relation) => (
           <div
             key={relation}
@@ -239,10 +321,13 @@ function TeamView({ code }) {
               Hinzufügen
             </button>
           </div>
+          <p className="mt-2 text-xs text-slate-400">
+            Manuell hinzugefügte Mitglieder sind sofort bestätigt.
+          </p>
         </form>
       )}
 
-      {/* Kader */}
+      {/* Kader (nur bestätigte Mitglieder) */}
       {SECTIONS.map((relation) => (
         <section key={relation} className="mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">

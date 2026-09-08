@@ -6,10 +6,11 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 
 | Datei | Zweck |
 | ----- | ----- |
-| `schema.sql` | **Referenz.** Vollständiges, kommentiertes Schema. Für eine frische DB in phpMyAdmin ausführen. Wird bei jeder Schemaänderung mitgepflegt. |
-| `migrations/001_initial_schema.sql` | Eingefrorener Startzustand (inhaltsgleich mit `schema.sql`). |
-| `migrations/0NN_*.sql` | Spätere Änderungen, fortlaufend nummeriert. |
-| `migrate.js` | Runner: führt alle `migrations/*.sql` sortiert aus. `npm run migrate`. Alle Migrationen sind idempotent. |
+| `schema.sql` | **Referenz.** Vollständiges, kommentiertes Schema, laufend gepflegt (= Stand aller Migrationen). Für eine frische DB in phpMyAdmin ausführen. |
+| `migrations/001_initial_schema.sql` | Eingefrorener Startzustand. |
+| `migrations/002_team_confirmation.sql` | `is_confirmed` ergänzt, globale Admin-Freigabe abgeschafft. |
+| `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
+| `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
 ## Tabellen auf einen Blick
 
@@ -19,8 +20,8 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 │             │        │  relation_type │        │              │
 │ id (PK)     │        │  player|coach  │        │ id (PK)      │
 │ email (uq)  │        │  |fan          │        │ code (uq)    │
-│ role        │        └────────────────┘        │ name         │
-│ is_approved │                                  └──────────────┘
+│ role        │        │  is_confirmed  │        │ name         │
+│ is_approved │        └────────────────┘        └──────────────┘
 │ ...         │───1:n──┐
 └─────────────┘        │   ┌────────────────┐
                        └───│  user_services │
@@ -38,7 +39,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `first_name`, `last_name` | Name |
 | `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert |
 | `password_hash` | bcrypt-Hash – nie im Klartext, nie an den Client |
-| `is_approved` | `0` = wartet auf Admin-Freigabe (Login gesperrt), `1` = aktiv |
+| `is_approved` | `1` = aktiv (Standard), `0` = von einem Admin gesperrt. **Keine** globale Registrierungs-Freigabe mehr – wird beim Login/Session-Check nicht geprüft |
 | `role` | RBAC-Rolle, siehe unten. Wird **nicht** bei der Registrierung gesetzt |
 | `created_at` | Registrierungszeitpunkt |
 
@@ -71,8 +72,19 @@ mehrere Beziehungen haben (z. B. Trainer der MJC *und* Spieler der H1).
 | `relation_type` | Bedeutung |
 | --------------- | --------- |
 | `player` | spielt in der Mannschaft |
-| `coach` | trainiert sie – darf ihren Kader auf `/teams/:code` verwalten |
+| `coach` | trainiert sie – darf ihren Kader auf `/teams/:code` verwalten (nur wenn `is_confirmed = 1`) |
 | `fan` | interessiert sich für sie |
+
+**`is_confirmed`** – Beitrittsprozess statt globaler Freigabe:
+
+| Wert | Bedeutung |
+| ---- | --------- |
+| `0` | offene Beitrittsanfrage. Nur die Verwaltung sieht sie (`pendingMembers`), nicht der öffentliche Kader. |
+| `1` | vom Trainer bestätigt (oder direkt so angelegt). Teil des Kaders. |
+
+Bei der Registrierung: `player`/`coach` → `0`, `fan` → `1`. Alles, was
+Trainer/Admin manuell anlegen (`addMember`, `callup`, Admin-`teamIds`), ist
+sofort `1`.
 
 `ON DELETE CASCADE`: Wird ein Mitglied oder ein Team gelöscht, verschwinden
 die Zeilen hier automatisch.
@@ -81,6 +93,12 @@ die Zeilen hier automatisch.
 
 Verbindungstabelle `users ↔ Dienst`. Primärschlüssel `(user_id, service_type)`.
 `service_type` ∈ { `zeitnehmer`, `verkaufsdienst` }. `ON DELETE CASCADE`.
+
+### `schema_migrations` – Migrationsverlauf
+
+Eine Zeile pro angewendeter Migrationsdatei (`filename`, `applied_at`). Vom
+Runner `migrate.js` gepflegt; verhindert, dass einmalige Daten-Backfills bei
+einem zweiten Lauf erneut greifen.
 
 ## Wo im Code wird zugegriffen?
 

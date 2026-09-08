@@ -160,7 +160,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
       if (res.success) {
         setSuccessMessage(
           res.message ||
-            'Registrierung erfolgreich. Dein Konto muss noch von einem Admin freigegeben werden.'
+            'Registrierung erfolgreich. Du kannst dich sofort anmelden.'
         );
         setForm(EMPTY_FORM);
         setParticipation(new Set());
@@ -175,7 +175,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
 
   const shownError = validationError || error?.message;
 
-  // Erfolgs-Ansicht: Hinweis auf die notwendige Admin-Freischaltung.
+  // Erfolgs-Ansicht.
   if (successMessage) {
     return (
       <div className="space-y-4">
@@ -185,9 +185,9 @@ export default function RegisterForm({ onSwitchToLogin }) {
         </Alert>
 
         <p className="text-sm text-slate-400">
-          Dein Konto ist angelegt, aber noch <strong>nicht freigeschaltet</strong>.
-          Ein Admin prüft deine Angaben, gibt das Konto frei und vergibt deine
-          endgültige Rolle. Danach kannst du dich anmelden.
+          Dein Konto ist <strong>sofort aktiv</strong>. Deine Mannschafts-Anfragen
+          muss noch der/die jeweilige Trainer:in bestätigen – bis dahin erscheinst
+          du dort als „ausstehend".
         </p>
 
         <button
@@ -365,8 +365,9 @@ export default function RegisterForm({ onSwitchToLogin }) {
       ))}
 
       <p className="text-xs text-slate-500">
-        Deine Angaben helfen bei der Zuordnung. Die endgültige Rolle vergibt ein
-        Admin bei der Freischaltung.
+        Dein Konto ist nach der Registrierung sofort aktiv. Spieler:in- und
+        Trainer:in-Zuordnungen bestätigt anschliessend der/die Trainer:in der
+        jeweiligen Mannschaft.
       </p>
 
       <button

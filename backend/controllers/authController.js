@@ -16,7 +16,7 @@ const userRepository = require('../repositories/userRepository');
 const { validateRegistration } = require('../utils/validation');
 
 const REGISTER_OK_MESSAGE =
-  'Registrierung erfolgreich. Dein Konto muss noch von einem Admin freigegeben werden.';
+  'Registrierung erfolgreich. Du kannst dich sofort anmelden. Deine Mannschafts-Zuordnungen bestätigt jeweils der/die Trainer:in.';
 const BAD_CREDENTIALS_MESSAGE = 'E-Mail-Adresse oder Passwort ist falsch.';
 
 // Echter Hash eines Dummy-Passworts. Wird beim Login gegen nicht existierende
@@ -108,11 +108,6 @@ async function login(req, res, next) {
     if (!(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ message: BAD_CREDENTIALS_MESSAGE });
     }
-    if (!user.is_approved) {
-      return res.status(403).json({
-        message: 'Dein Konto wurde noch nicht von einem Admin freigegeben.',
-      });
-    }
 
     setSessionCookie(res, user);
     const profile = await userRepository.buildProfile(user);
@@ -136,12 +131,6 @@ async function me(req, res, next) {
     if (!user) {
       clearSessionCookie(res); // Konto gelöscht -> Cookie entwerten
       return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
-    }
-    if (!user.is_approved) {
-      clearSessionCookie(res); // Freigabe nachträglich entzogen
-      return res
-        .status(403)
-        .json({ message: 'Dein Konto ist nicht (mehr) freigegeben.' });
     }
 
     const profile = await userRepository.buildProfile(user);

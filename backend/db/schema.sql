@@ -1,14 +1,16 @@
 -- ============================================================================
 --  HSG Hinterland App – Datenbankschema (Stand: konsolidiert)
 -- ----------------------------------------------------------------------------
---  Dies ist die EINZIGE Quelle der Wahrheit für den Datenbankaufbau.
+--  Dies ist die EINZIGE, laufend gepflegte Referenz für den Datenbankaufbau.
 --
 --  Frische Datenbank aufsetzen:
---    - phpMyAdmin: diese Datei komplett ausführen
---    - oder Terminal:  npm run migrate   (führt db/migrations/*.sql aus,
---      die 001 ist identisch mit diesem Schema)
+--    - Terminal:   npm run migrate    (empfohlen – führt db/migrations/*.sql
+--                  einmalig aus und protokolliert das in `schema_migrations`)
+--    - phpMyAdmin: diese Datei komplett ausführen. Der Seed am Ende trägt die
+--                  Migrationen als "angewendet" ein, damit ein späteres
+--                  `npm run migrate` ohne Effekt durchläuft.
 --
---  Alle Anweisungen sind idempotent (CREATE TABLE IF NOT EXISTS /
+--  Alle Struktur-Anweisungen sind idempotent (CREATE TABLE IF NOT EXISTS /
 --  INSERT ... ON DUPLICATE KEY) und können gefahrlos erneut laufen.
 --
 --  Beziehungsübersicht (Details in db/README.md):
@@ -42,12 +44,12 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash  VARCHAR(255) NOT NULL
                  COMMENT 'bcrypt-Hash des Passworts. Nie im Klartext, nie an den Client.',
 
-  is_approved    TINYINT(1) NOT NULL DEFAULT 0
-                 COMMENT 'Freigabe-Flag: 0 = wartet auf Admin-Freigabe (kein Login möglich), 1 = aktiv',
+  is_approved    TINYINT(1) NOT NULL DEFAULT 1
+                 COMMENT 'Konto aktiv (1) oder von einem Admin gesperrt (0). Standard 1 – es gibt KEINE globale Registrierungs-Freigabe mehr. Beim Login/Session-Check wird dieses Flag nicht geprüft; es ist nur eine Admin-Notbremse.',
 
   role           ENUM('admin','sub_admin','trainer','spieler','zuschauer')
                  NOT NULL DEFAULT 'spieler'
-                 COMMENT 'RBAC-Rolle. admin = Vollzugriff | sub_admin = wie admin, aber ohne Zugriff auf admin-Konten und ohne admin-Vergabe | trainer = Mitgliederliste + Mannschaftszuordnung | spieler/zuschauer = nur lesen. Wird NICHT bei der Registrierung gesetzt, sondern vom Admin bei der Freigabe.',
+                 COMMENT 'RBAC-Rolle. admin = Vollzugriff | sub_admin = wie admin, aber ohne Zugriff auf admin-Konten und ohne admin-Vergabe | trainer = Mitgliederliste + Mannschaftszuordnung | spieler/zuschauer = nur lesen. Wird NICHT bei der Registrierung gesetzt, sondern von einem Admin.',
 
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                  COMMENT 'Zeitpunkt der Registrierung',
@@ -91,6 +93,10 @@ ON DUPLICATE KEY UPDATE name = VALUES(name);
 --  Eine Person kann pro Mannschaft MEHRERE Beziehungen haben, z. B. Trainer
 --  der MJC UND Spieler der 1. Herren -> deshalb steckt relation_type mit im
 --  Primärschlüssel.
+--
+--  is_confirmed steuert den Beitrittsprozess: player/coach werden mit 0
+--  (= offene Anfrage) angelegt und vom Trainer der Mannschaft bestätigt;
+--  fan sowie manuell durch Trainer/Admin angelegte Zuordnungen sind sofort 1.
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS user_teams (
   user_id        INT UNSIGNED NOT NULL
@@ -99,6 +105,8 @@ CREATE TABLE IF NOT EXISTS user_teams (
                  COMMENT 'FK -> teams.id',
   relation_type  ENUM('player','coach','fan') NOT NULL DEFAULT 'player'
                  COMMENT 'Art der Beziehung: player = spielt in der Mannschaft | coach = trainiert sie (darf ihren Kader verwalten) | fan = interessiert sich für sie',
+  is_confirmed   TINYINT(1) NOT NULL DEFAULT 0
+                 COMMENT 'Vom Trainer bestätigt (1) oder offene Beitrittsanfrage (0). player/coach starten mit 0, fan wird direkt mit 1 angelegt.',
 
   PRIMARY KEY (user_id, team_id, relation_type),
   KEY idx_user_teams_team (team_id),
@@ -123,3 +131,21 @@ CREATE TABLE IF NOT EXISTS user_services (
   CONSTRAINT fk_user_services_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Welche Helferdienste ein "Mitwirkender" übernimmt. ON DELETE CASCADE.';
+
+
+-- ----------------------------------------------------------------------------
+--  schema_migrations – vom Migrations-Runner (db/migrate.js) gepflegt
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  filename    VARCHAR(255) NOT NULL PRIMARY KEY
+              COMMENT 'Dateiname der angewendeten Migration',
+  applied_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Welche Migrationen bereits gelaufen sind. Verhindert doppelte Backfills.';
+
+-- Wer dieses Schema direkt einspielt, hat den Stand ALLER Migrationen ->
+-- als angewendet markieren, damit `npm run migrate` nichts nachträglich tut.
+INSERT INTO schema_migrations (filename) VALUES
+  ('001_initial_schema.sql'),
+  ('002_team_confirmation.sql')
+ON DUPLICATE KEY UPDATE filename = filename;

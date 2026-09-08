@@ -28,9 +28,6 @@ export default function LoginForm({ onSwitchToRegister }) {
     }
   };
 
-  // Account noch nicht freigeschaltet -> Backend antwortet mit HTTP 403.
-  const notApproved = error?.status === 403;
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       <div>
@@ -40,9 +37,7 @@ export default function LoginForm({ onSwitchToRegister }) {
         </p>
       </div>
 
-      {error && (
-        <Alert variant={notApproved ? 'info' : 'error'}>{error.message}</Alert>
-      )}
+      {error && <Alert variant="error">{error.message}</Alert>}
 
       <TextField
         label="E-Mail"

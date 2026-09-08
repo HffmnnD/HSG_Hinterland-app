@@ -58,18 +58,13 @@ function checkRole(allowedRoles) {
     try {
       // Rolle frisch aus der DB lesen, damit Entzug/Änderung sofort greift.
       const [rows] = await pool.query(
-        'SELECT role, is_approved FROM users WHERE id = ?',
+        'SELECT role FROM users WHERE id = ?',
         [req.userId]
       );
       const user = rows[0];
 
       if (!user) {
         return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
-      }
-      if (!user.is_approved) {
-        return res
-          .status(403)
-          .json({ message: 'Dein Konto wurde noch nicht freigegeben.' });
       }
 
       req.userRole = user.role;

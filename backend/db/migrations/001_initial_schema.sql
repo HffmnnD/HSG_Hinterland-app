@@ -1,13 +1,12 @@
 -- ============================================================================
 --  Migration 001 – Basis-Schema (eingefroren)
 -- ----------------------------------------------------------------------------
---  Diese Datei ist der Ausgangszustand der Datenbank und ändert sich nicht
---  mehr. Sie ist inhaltlich identisch mit ../schema.sql (dort steht die
---  laufend gepflegte, kommentierte Referenz).
+--  Ausgangszustand der Datenbank. Wird nicht mehr geändert.
+--  Entspricht ../schema.sql ZUM ZEITPUNKT DER KONSOLIDIERUNG – spätere
+--  Änderungen stehen in 002_*.sql etc. und sind in ../schema.sql eingepflegt.
 --
---  Weitere Schemaänderungen kommen als 002_*.sql, 003_*.sql, ... dazu.
---  `npm run migrate` führt alle Dateien in dieser Reihenfolge aus; alle
---  Anweisungen sind idempotent und dürfen mehrfach laufen.
+--  `npm run migrate` führt neue Dateien in Reihenfolge EINMALIG aus
+--  (protokolliert in `schema_migrations`).
 --
 --  Beziehungsübersicht (Details in ../README.md):
 --

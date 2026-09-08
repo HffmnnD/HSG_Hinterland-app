@@ -48,10 +48,11 @@ backend/
     validation.js        Eingabe-Prüfung -> { ok, ... } | { ok:false, status, message }
 
   db/
-    schema.sql           kommentierte Referenz (frische DB in phpMyAdmin)
-    migrate.js            Runner: npm run migrate
+    schema.sql           laufend gepflegte, kommentierte Referenz
+    migrate.js            Runner: npm run migrate (einmalig je Datei, via schema_migrations)
     migrations/
-      001_initial_schema.sql   eingefrorener Startzustand (= schema.sql)
+      001_initial_schema.sql    eingefrorener Startzustand
+      002_team_confirmation.sql  is_confirmed + Freigabe abgeschafft
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -73,12 +74,13 @@ Request → route → middleware → controller ──(validation.js)──> pr�
 Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
 [db/README.md](db/README.md).
 
-| Tabelle         | Zweck |
-| --------------- | ----- |
-| `users`         | Konten inkl. `role` (ENUM) und `is_approved` |
-| `teams`         | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1 |
-| `user_teams`    | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`); PK `(user_id, team_id, relation_type)` – eine Person kann pro Team mehrere Beziehungen haben |
-| `user_services` | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
+| Tabelle             | Zweck |
+| ------------------- | ----- |
+| `users`             | Konten inkl. `role` (ENUM). `is_approved` = Konto aktiv (Standard 1, reine Admin-Notbremse) |
+| `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1 |
+| `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)` |
+| `user_services`     | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
+| `schema_migrations` | vom Migrations-Runner gepflegt – welche Migration schon lief |
 
 Alle Verknüpfungstabellen haben `ON DELETE CASCADE` auf `users`.
 
@@ -93,7 +95,7 @@ vom Client gesetzt, sondern nur von einem Admin/Sub-Admin über
 | ----------- | ---- |
 | `admin`     | alles |
 | `sub_admin` | wie admin, **aber**: darf Admin-Konten nicht bearbeiten und die Rolle `admin` nicht vergeben (jeweils `403`) |
-| `trainer`   | Mitgliederliste sehen, Mannschaftszuordnung ändern; Rolle/Freigabe gesperrt (`403`) |
+| `trainer`   | Mitgliederliste sehen, Spieler-Mannschaften zuweisen; `role`/`isApproved` gesperrt (`403`) |
 | `spieler` / `zuschauer` | Mannschaftsseiten lesen |
 
 Zusätzlich zur RBAC-Rolle gibt es **Beziehungen zur Mannschaft**
@@ -110,36 +112,52 @@ router.get('/users', authenticate, checkRole('admin'), listUsers);
 // oder mehrere: checkRole(['admin', 'trainer'])
 ```
 
+## Registrierung & Freigabe
+
+Es gibt **keine globale Admin-Freigabe** mehr. Nach der Registrierung ist das
+Konto sofort aktiv und der Login funktioniert direkt. `users.is_approved` bleibt
+als Notbremse (Admin kann ein Konto sperren = `0`), wird beim Login/Session-
+Check aber nicht geprüft.
+
+Stattdessen bestätigt der/die **Trainer:in der Mannschaft** die Zugehörigkeit
+(`user_teams.is_confirmed`):
+
+- Registrierung mit `relationType` `player`/`coach` → `is_confirmed = 0`
+  (offene Anfrage, taucht nur in `pendingMembers` auf)
+- `relationType = 'fan'` sowie alles, was Trainer/Admin manuell anlegen
+  (`addMember`, `callup`, Admin-`teamIds`) → `is_confirmed = 1`
+
 ## Auth-Endpunkte
 
 | Methode | Pfad                | Body                                      | Beschreibung |
 | ------- | ------------------- | ---------------------------------------- | ------------ |
-| POST    | `/api/auth/register`| `firstName, lastName, email, password, teams?, services?` | Legt User mit `is_approved = 0`, `role = 'spieler'` an. `teams: [{ teamId, relationType }]` und `services: ['zeitnehmer', …]` optional, transaktional gespeichert. `teamIds: [1,2]` bleibt als Kurzform für Spieler-Zuordnungen erlaubt. |
-| POST    | `/api/auth/login`   | `email, password`                       | Setzt JWT (inkl. `role`) als HttpOnly-Cookie. Antwort enthält `user.role`, `user.teams` und `user.services`. Nur für freigegebene User. |
+| POST    | `/api/auth/register`| `firstName, lastName, email, password, teams?, services?` | Konto sofort aktiv, `role = 'spieler'`. `teams: [{ teamId, relationType }]` und `services: […]` optional, transaktional. player/coach → offene Anfrage, fan → bestätigt. `teamIds: [1,2]` bleibt Kurzform (player). |
+| POST    | `/api/auth/login`   | `email, password`                       | Setzt JWT (inkl. `role`) als HttpOnly-Cookie. Antwort enthält `user.role`, `user.teams` (mit `isConfirmed`) und `user.services`. |
 | POST    | `/api/auth/logout`  | –                                       | Löscht den Cookie. |
-| GET     | `/api/auth/me`      | – (Cookie)                              | Daten des angemeldeten Users inkl. `role`, `teams` (`[{ id, code, name, relationType }]`) und `services`. |
+| GET     | `/api/auth/me`      | – (Cookie)                              | Daten des angemeldeten Users inkl. `role`, `teams` (`[{ id, code, name, relationType, isConfirmed }]`) und `services`. |
 
 ## Mannschaften
 
 | Methode | Pfad                                   | Auth | Beschreibung |
 | ------- | -------------------------------------- | ---- | ------------ |
 | GET     | `/api/teams`                           | –    | Alle Mannschaften. Öffentlich (Registrierungsformular). |
-| GET     | `/api/teams/:code`                     | angemeldet | Mannschaft + Kader nach `player`/`coach`/`fan` und `canManage`. E-Mail-Adressen nur für Verwaltende. |
-| GET     | `/api/teams/:code/candidates`          | Verwaltung | Freigegebene Mitglieder ohne diese Beziehung (`?relationType=`). |
-| POST    | `/api/teams/:code/members`             | Verwaltung | `{ userId, relationType }` – Beziehung anlegen. |
-| DELETE  | `/api/teams/:code/members/:userId`     | Verwaltung | `?relationType=` – Beziehung entfernen. |
-| POST    | `/api/teams/:code/callup`              | Verwaltung | `{ userId, targetTeamCode }` – Spieler:in hochrufen (bestehende Zuordnung bleibt). |
+| GET     | `/api/teams/:code`                     | angemeldet | `team`, `members` (nur **bestätigte**, nach `player`/`coach`/`fan`), `counts`, `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). E-Mails nur für Verwaltende. |
+| GET     | `/api/teams/:code/candidates`          | Verwaltung | Aktive Mitglieder ohne diese Beziehung (`?relationType=`). |
+| POST    | `/api/teams/:code/members`             | Verwaltung | `{ userId, relationType }` – Beziehung direkt **bestätigt** anlegen. |
+| POST    | `/api/teams/:code/members/:userId/confirm` | Verwaltung | Offene Anfrage(n) bestätigen. `?relationType=` optional (sonst alle offenen). `404` wenn nichts offen. |
+| DELETE  | `/api/teams/:code/members/:userId`     | Verwaltung | `?relationType=` – Beziehung entfernen / offene Anfrage ablehnen. |
+| POST    | `/api/teams/:code/callup`              | Verwaltung | `{ userId, targetTeamCode }` – Spieler:in hochrufen (bestätigt; bestehende Zuordnung bleibt). |
 
-„Verwaltung“ = `admin`, `sub_admin` oder als `coach` dieser Mannschaft
-eingetragen. Sonst `403`. Trainer:innen können sich nicht selbst als Trainer:in
-der eigenen Mannschaft entfernen (sonst verlieren sie den Zugriff).
+„Verwaltung“ = `admin`, `sub_admin` oder als **bestätigte:r** `coach` dieser
+Mannschaft eingetragen. Sonst `403`. Trainer:innen können sich nicht selbst als
+Trainer:in der eigenen Mannschaft entfernen (sonst verlieren sie den Zugriff).
 
 ## Verwaltungs-Endpunkte (`checkRole(['admin', 'sub_admin', 'trainer'])`)
 
 | Methode | Pfad                     | Body                                                  | Beschreibung |
 | ------- | ------------------------ | ----------------------------------------------------- | ------------ |
 | GET     | `/api/admin/users`       | – (Cookie)                                            | Alle Nutzer inkl. `teams` (mit `relationType`) und `services`. |
-| PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). Rolle/Freigabe nur `admin`+`sub_admin`. Alles transaktional. |
+| PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (bestätigt; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) nur `admin`+`sub_admin`. Alles transaktional. |
 
 Sperren für `sub_admin` (jeweils `403`):
 
@@ -164,16 +182,12 @@ curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
 
 curl -b cookies.txt http://localhost:5000/api/auth/me
 
-# Als admin/trainer: Mannschaftszuordnung ändern (volle Liste)
-curl -b cookies.txt -X PATCH http://localhost:5000/api/admin/users/2 \
-  -H "Content-Type: application/json" \
-  -d '{"teamIds":[2]}'
+# Trainer: offene Beitrittsanfrage bestätigen bzw. ablehnen
+curl -b cookies.txt -X POST http://localhost:5000/api/teams/MJC/members/5/confirm
+curl -b cookies.txt -X DELETE "http://localhost:5000/api/teams/MJC/members/5?relationType=player"
 
 curl -b cookies.txt -X POST http://localhost:5000/api/auth/logout
 ```
-
-> Hinweis: Der Login schlägt mit HTTP 403 fehl, solange ein Admin den User
-> nicht freigegeben hat. Zum Testen in phpMyAdmin `is_approved = 1` setzen.
 
 ## Frontend-Anbindung
 
@@ -191,7 +205,7 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | Cookie: `httpOnly`, `sameSite=lax`, `secure` über `COOKIE_SECURE`/`NODE_ENV` | `config/auth.js` |
 | Cookie-Lebensdauer wird aus dem `exp` des Tokens abgeleitet | `controllers/authController.js` |
 | Rolle wird bei jeder RBAC-Prüfung frisch aus der DB gelesen | `middleware/authMiddleware.js` |
-| `/api/auth/me` beendet die Sitzung, wenn die Freigabe entzogen wurde | `controllers/authController.js` |
+| `/api/auth/me` beendet die Sitzung, wenn das Konto gelöscht wurde | `controllers/authController.js` |
 | Rate-Limit: Login 10/15 min, Registrierung 5/h pro IP | `routes/authRoutes.js` |
 | CSRF-Schutz: Origin-Prüfung bei allen schreibenden Requests | `server.js` |
 | Sicherheits-Header via `helmet` | `server.js` |

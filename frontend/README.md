@@ -47,14 +47,14 @@ frontend/src/
     ErrorBoundary.jsx          fängt Render-Fehler ab (keine weisse Seite)
     ProtectedRoute.jsx         Routen-Schutz nach Login-Status + Rolle
     TeamSelect.jsx             Mannschafts-Mehrfachauswahl als Toggle-Chips
-    Dashboard.jsx              „Meine Mannschaften“ (nach Beziehung gruppiert),
-                               Helferdienste, Rollen-Badge, Verwaltungs-Karte
+    Dashboard.jsx              „Meine Mannschaften“ (nach Beziehung gruppiert,
+                               „ausstehend“-Badge), Helferdienste, Rollen-Badge
     AdminPage.jsx              /admin: Mitgliederliste inkl. Sub-Admin-Sperren
-    TeamPage.jsx               /teams/:code: Kader + Verwaltung für Trainer:innen
+    TeamPage.jsx               /teams/:code: offene Beitrittsanfragen + Kader
     auth/
       AuthScreen.jsx           Umschalter Login <-> Registrierung
       AuthLayout.jsx           mobile-first zentriertes Karten-Layout
-      LoginForm.jsx            E-Mail/Passwort, Fehler inkl. 403 "nicht freigeschaltet"
+      LoginForm.jsx            E-Mail/Passwort
       RegisterForm.jsx         Name/E-Mail/Passwort + Beteiligung + Teams + Dienste
       TextField.jsx / Alert.jsx
 ```
@@ -70,32 +70,40 @@ frontend/src/
 | `*`            | Redirect auf `/`                              |
 
 > `/admin` ist für `trainer` zugänglich, damit sie die Mannschaftszuordnung
-> pflegen können. Rollen- und Freigabe-Steuerelemente rendert `AdminPage` nur
-> für admin/sub_admin; das Backend lehnt entsprechende Felder ohnehin ab.
+> pflegen können. Rollen-Steuerelemente rendert `AdminPage` nur für
+> admin/sub_admin; das Backend lehnt entsprechende Felder ohnehin ab.
 
 ### Sub-Admin in der Oberfläche
 
 - Dashboard zeigt das Badge **SUB-ADMIN**.
 - In der `AdminPage` sind Zeilen von Konten mit der Rolle `admin` als
-  „gesperrt“ markiert: Rollen-Select, Team-Chips und Freischalten-Button sind
-  deaktiviert.
+  „gesperrt“ markiert: Rollen-Select und Team-Chips sind deaktiviert.
 - Die Rolle „Admin“ fehlt in der Auswahlliste (die aktuelle Rolle einer Zeile
   wird trotzdem korrekt angezeigt).
 
-## Registrierung
+## Registrierung & Team-Bestätigung
 
 Das Formular fragt „Wie machst du mit?“ als Mehrfachauswahl ab:
 
 | Auswahl        | Folge |
 | -------------- | ----- |
-| Spieler:in     | Mannschaftsauswahl → `relationType: 'player'` |
-| Trainer:in     | Mannschaftsauswahl → `relationType: 'coach'` |
-| Mitwirkende:r  | Checkboxen für Helferdienste **und** aktiviert „Zuschauer:in“ zwingend mit (nicht abwählbar, solange aktiv) |
-| Zuschauer:in   | Mannschaftsauswahl → `relationType: 'fan'` |
+| Spieler:in     | Mannschaftsauswahl → `relationType: 'player'` (Beitritt muss der Trainer bestätigen) |
+| Trainer:in     | Mannschaftsauswahl → `relationType: 'coach'` (Beitritt muss der Trainer bestätigen) |
+| Mitwirkende:r  | Checkboxen für Helferdienste **und** aktiviert „Zuschauer:in“ zwingend mit |
+| Zuschauer:in   | Mannschaftsauswahl → `relationType: 'fan'` (sofort aktiv) |
 
 Gesendet wird `teams: [{ teamId, relationType }]` plus `services`. Die
-RBAC-Rolle setzt der Client bewusst **nicht** – sie wird bei der Freigabe vom
-Admin vergeben.
+RBAC-Rolle setzt der Client bewusst **nicht**.
+
+**Es gibt keine globale Admin-Freigabe mehr** – das Konto ist nach der
+Registrierung sofort aktiv und der Login funktioniert direkt. Stattdessen:
+
+- Das Dashboard zeigt Mannschaften mit `isConfirmed === false` als
+  „ausstehend“.
+- Auf `/teams/:code` sehen Verwaltende ganz oben „Offene Beitrittsanfragen“
+  mit **Bestätigen** (`POST …/members/:id/confirm`) und **Ablehnen**
+  (`DELETE …/members/:id`).
+- Der öffentliche Kader (`members`) enthält nur bestätigte Mitglieder.
 
 `ProtectedRoute` verhält sich so:
 
@@ -110,25 +118,25 @@ macht das Backend (`checkRole`).
 
 ## Abgelaufene Sitzungen
 
-`apiFetch()` meldet einen `401` (bzw. `403` auf `/api/auth/me`) an den
-`AuthProvider`. Der setzt `user` auf `null`, woraufhin `ProtectedRoute`
-automatisch auf `/login` umleitet – inklusive Merken des ursprünglichen Ziels.
-Die Login-Endpunkte selbst sind ausgenommen, damit ein falsches Passwort
-weiterhin als Formularfehler und nicht als Sitzungsabbruch behandelt wird.
+`apiFetch()` meldet einen `401` an den `AuthProvider`. Der setzt `user` auf
+`null`, woraufhin `ProtectedRoute` automatisch auf `/login` umleitet –
+inklusive Merken des ursprünglichen Ziels. Die Login-Endpunkte selbst sind
+ausgenommen, damit ein falsches Passwort weiterhin als Formularfehler und
+nicht als Sitzungsabbruch behandelt wird.
 
 ## Auth-Fluss
 
 1. Beim Laden fragt der `AuthProvider` `GET /api/auth/me` ab (Cookie-Check).
 2. `login()` → `POST /api/auth/login`; das Backend setzt ein HttpOnly-Cookie
    (für JS nicht lesbar). Bei Erfolg wird `user` gesetzt → App zeigt das Dashboard.
-3. Nicht freigeschaltete Accounts (`is_approved = 0`) erhalten HTTP 403; der
-   Login-Screen zeigt dazu einen Hinweis.
-4. `register()` → `POST /api/auth/register` (inkl. gewählter `teamIds`); danach
-   Erfolgsmeldung mit Hinweis auf die nötige Admin-Freischaltung.
-5. `logout()` → `POST /api/auth/logout` löscht das Cookie; `user` wird `null`.
+   Es gibt **keine** Freigabe-Hürde: neue Konten können sich sofort anmelden.
+3. `register()` → `POST /api/auth/register` (inkl. `teams` / `services`); danach
+   Erfolgsmeldung „Konto sofort aktiv, Team-Zuordnungen bestätigt der Trainer“.
+4. `logout()` → `POST /api/auth/logout` löscht das Cookie; `user` wird `null`.
 
-`useAuth()` liefert zusätzlich `teams` (`[{ id, code, name }]`) des angemeldeten
-Nutzers – befüllt aus `GET /api/auth/me` bzw. der Login-Antwort.
+`useAuth()` liefert zusätzlich `teams`
+(`[{ id, code, name, relationType, isConfirmed }]`) und `services` des
+angemeldeten Nutzers – befüllt aus `GET /api/auth/me` bzw. der Login-Antwort.
 
 Alle Requests laufen über `apiFetch()` mit `credentials: 'include'`, damit das
 HttpOnly-Cookie gesendet und empfangen wird. Das Backend muss die Origin des

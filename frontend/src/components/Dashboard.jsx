@@ -98,12 +98,8 @@ export default function Dashboard() {
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
             <h2 className="text-sm font-semibold text-slate-300">Kontostatus</h2>
             <p className="mt-2 flex items-center gap-2 text-sm">
-              <span
-                className={`inline-block h-2.5 w-2.5 rounded-full ${
-                  user.isApproved ? 'bg-emerald-400' : 'bg-amber-400'
-                }`}
-              />
-              {user.isApproved ? 'Freigeschaltet' : 'Warten auf Admin-Freigabe'}
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              Aktiv
             </p>
           </div>
 
@@ -137,16 +133,35 @@ export default function Dashboard() {
                       <Link
                         key={`${relation}-${team.id}`}
                         to={`/teams/${team.code}`}
-                        title={team.name}
-                        className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs font-medium text-slate-200 transition hover:border-emerald-500 hover:text-emerald-300"
+                        title={
+                          team.isConfirmed
+                            ? team.name
+                            : `${team.name} – wartet auf Bestätigung durch den/die Trainer:in`
+                        }
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                          team.isConfirmed
+                            ? 'border-slate-700 bg-slate-950 text-slate-200 hover:border-emerald-500 hover:text-emerald-300'
+                            : 'border-amber-500/40 bg-amber-500/10 text-amber-200 hover:border-amber-400'
+                        }`}
                       >
                         {team.name}
+                        {!team.isConfirmed && (
+                          <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[10px] uppercase tracking-wide">
+                            ausstehend
+                          </span>
+                        )}
                       </Link>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
+          )}
+          {teamsByRelation.some((g) => g.entries.some((t) => !t.isConfirmed)) && (
+            <p className="mt-3 text-xs text-amber-300/80">
+              „Ausstehend" bedeutet: der/die Trainer:in muss deine Mitgliedschaft
+              noch bestätigen.
+            </p>
           )}
         </div>
 
@@ -185,9 +200,9 @@ export default function Dashboard() {
             </div>
             <p className="mt-2 text-sm text-slate-300">
               {isAdmin &&
-                'Verwalte Mitglieder, Freigaben, Rollen und Mannschaften.'}
+                'Verwalte Mitglieder, Rollen und Mannschaftszuordnungen.'}
               {isSubAdmin &&
-                'Verwalte Mitglieder, Freigaben und Mannschaften. Admin-Konten sind für dich gesperrt.'}
+                'Verwalte Mitglieder, Rollen und Mannschaften. Admin-Konten sind für dich gesperrt.'}
               {!isAdmin &&
                 !isSubAdmin &&
                 'Ändere die Mannschaftszuordnung der Mitglieder.'}
