@@ -38,18 +38,35 @@ frontend/src/
                                prüft beim Start GET /api/auth/me
   hooks/
     useTeams.js                lädt GET /api/teams (öffentlich)
+    useNews.js                 lädt GET /api/news (+ reload nach Anlegen/Löschen)
   lib/
     api.js                     fetch-Wrapper, IMMER credentials: 'include'
+                               (setzt bei FormData bewusst KEINEN Content-Type)
     roles.js                   Rollen-Konstanten, Labels und Badges
     participation.js           Beteiligungsarten, Beziehungstypen, Helferdienste
+    navigation.js              EINZIGE Quelle der Hauptnavigation (rollengefiltert)
+    format.js                  deutsche Datumsformate
   components/
+    AppLayout.jsx              Gerüst aller geschützten Seiten:
+                               Kopfzeile + MainNav + Inhalt + BottomNav
+    AppHeader.jsx / Brand.jsx  Marken-Streifen, klebende Leiste, Wort-/Bildmarke
+    MainNav.jsx                Kopfzeilen-Navigation ab `md`
+    BottomNav.jsx              mobile Bottom-Navigation (fixiert, unter `md`)
+    NavIcons.jsx               Inline-SVG-Icons der Navigation
+    ScrollToTop.jsx            setzt den Scroll-Stand bei Seitenwechsel zurück
+    Badge.jsx                  Badge / RoleBadge (Rollen- und Status-Chips)
     FullScreenLoader.jsx
     ErrorBoundary.jsx          fängt Render-Fehler ab (keine weisse Seite)
     ProtectedRoute.jsx         Routen-Schutz nach Login-Status + Rolle
     TeamSelect.jsx             Mannschafts-Mehrfachauswahl als Toggle-Chips
-    Dashboard.jsx              „Meine Mannschaften“ (nach Beziehung gruppiert,
-                               „ausstehend“-Badge), Helferdienste, Rollen-Badge
-    AdminPage.jsx              /admin: Mitgliederliste inkl. Sub-Admin-Sperren
+    MyTeams.jsx                eigene Mannschaften, nach Beziehung gruppiert
+                               (Dashboard + Mannschafts-Übersicht)
+    NewsCard.jsx               eine Ankündigung (Datum, Titel, Bild, Text)
+    NewsManager.jsx            Verwaltung der News: Formular + Liste + Löschen
+    Dashboard.jsx              /: News-Feed, „Meine Mannschaften“, Konto
+    TeamsPage.jsx              /teams: eigene + alle Mannschaften
+    SchedulePage.jsx           /termine: Vorschau auf das Termin-Modul
+    AdminPage.jsx              /admin: Mitgliederliste + News-Verwaltung
     TeamPage.jsx               /teams/:code: offene Beitrittsanfragen + Kader
     auth/
       AuthScreen.jsx           Umschalter Login <-> Registrierung
@@ -59,19 +76,52 @@ frontend/src/
       TextField.jsx / Alert.jsx
 ```
 
+## Navigation
+
+`lib/navigation.js` definiert die Reiter **einmal**; `BottomNav` (mobil,
+fixiert am unteren Rand) und `MainNav` (ab `md` in der Kopfzeile) rendern
+dieselbe Liste – sie können also nicht auseinanderlaufen.
+
+| Reiter | Pfad | Sichtbar für |
+| ------ | ---- | ------------ |
+| Start | `/` | alle |
+| Teams | `/teams` | alle |
+| Termine | `/termine` | alle |
+| Verwaltung | `/admin` | `admin`, `sub_admin`, `trainer` |
+
+Alle Ziele sind zusätzlich per `<ProtectedRoute>` und im Backend abgesichert –
+das Ausblenden eines Reiters ist reine UX. `AppLayout` setzt unten
+`pb-bottom-nav` (80 px + Safe-Area), damit die Leiste nichts verdeckt;
+Touch-Ziele sind 56 px hoch.
+
 ## Routen & Rollen-Schutz
 
 | Pfad           | Schutz                                        |
 | -------------- | --------------------------------------------- |
 | `/login`       | Öffentlich; eingeloggt → Redirect auf `/`     |
 | `/`            | `<ProtectedRoute>` – jeder eingeloggte User   |
-| `/admin`       | `<ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>` (admin, sub_admin, trainer) |
+| `/teams`       | `<ProtectedRoute>` – Übersicht aller Mannschaften |
 | `/teams/:code` | `<ProtectedRoute>` – jeder eingeloggte User; Verwaltung schaltet das Backend per `canManage` frei |
+| `/termine`     | `<ProtectedRoute>` – Vorschau auf das Termin-Modul |
+| `/admin`       | `<ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>` (admin, sub_admin, trainer) |
 | `*`            | Redirect auf `/`                              |
 
 > `/admin` ist für `trainer` zugänglich, damit sie die Mannschaftszuordnung
 > pflegen können. Rollen-Steuerelemente rendert `AdminPage` nur für
 > admin/sub_admin; das Backend lehnt entsprechende Felder ohnehin ab.
+> Dasselbe gilt für die News-Verwaltung: `AdminPage` blendet sie für
+> Trainer:innen aus, `POST/DELETE /api/admin/news` antwortet ihnen mit `403`.
+
+## Vereins-News
+
+- **Lesen:** `useNews()` → `GET /api/news`. Das Dashboard zeigt die neuesten
+  fünf Beiträge, „Ältere Beiträge anzeigen“ lädt den Rest nach.
+- **Verwalten:** `NewsManager` (nur `admin`/`sub_admin`) sendet
+  `multipart/form-data` an `POST /api/admin/news`. Bilder werden vor dem
+  Upload im Browser auf 5 MB geprüft und als Vorschau angezeigt; gelöscht wird
+  zweistufig („Löschen“ → „Wirklich löschen“).
+- Beitragstext wird als **Text** gerendert (`white-space: pre-line`), niemals
+  als HTML – Zeilenumbrüche bleiben erhalten, HTML-Injektion ist ausgeschlossen.
 
 ### Sub-Admin in der Oberfläche
 

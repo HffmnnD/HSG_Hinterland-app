@@ -4,9 +4,12 @@ import { Link } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useTeams } from '../hooks/useTeams';
-import { ADMIN_ROLES, ROLES, roleBadge, roleLabel } from '../lib/roles';
+import { ADMIN_ROLES, ROLES, roleLabel } from '../lib/roles';
 import { relationLabelPlural, serviceLabel } from '../lib/participation';
 import TeamSelect from './TeamSelect';
+import AppLayout from './AppLayout';
+import NewsManager from './NewsManager';
+import { RoleBadge } from './Badge';
 
 export default function AdminPage() {
   const { user: currentUser } = useAuth();
@@ -118,70 +121,53 @@ export default function AdminPage() {
     ? ROLES.filter((r) => r !== 'admin')
     : ROLES;
 
-  const badge = roleBadge(actorRole);
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/70">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-2">
-            {badge && (
-              <span className="rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
-                {badge}
-              </span>
-            )}
-            <span className="font-semibold">Mitgliederverwaltung</span>
-          </div>
-          <Link
-            to="/"
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
-          >
-            Zurück
-          </Link>
+    <AppLayout width="max-w-6xl">
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="page-title">Verwaltung</h1>
+        <RoleBadge role={actorRole} />
+      </div>
+      {isSubAdmin && (
+        <div className="alert alert-info mt-3">
+          Als Sub-Admin kannst du Admin-Konten nicht bearbeiten und die Rolle
+          „Admin“ nicht vergeben.
         </div>
-      </header>
+      )}
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <h1 className="text-xl font-bold">Mitglieder</h1>
-        <p className="mt-1 text-sm text-slate-400">
+      <section className="mt-6">
+        <h2 className="section-title">Mitglieder</h2>
+        <p className="mt-1 text-sm text-ink-muted">
           {canManageAccounts
             ? 'Rollen und Mannschaftszuordnungen verwalten.'
             : 'Mannschaftszuordnung der Mitglieder verwalten.'}
         </p>
-        {isSubAdmin && (
-          <p className="mt-1 text-sm text-amber-300/80">
-            Als Sub-Admin kannst du Admin-Konten nicht bearbeiten und die Rolle
-            „Admin“ nicht vergeben.
-          </p>
-        )}
 
         {error && (
-          <div
-            role="alert"
-            className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-3 text-sm text-red-200"
-          >
+          <div role="alert" className="alert alert-error mt-4">
             {error}
           </div>
         )}
 
         {loading ? (
-          <p className="mt-6 text-sm text-slate-400">Wird geladen …</p>
+          <p className="mt-4 text-sm text-ink-muted">Wird geladen …</p>
         ) : users.length === 0 ? (
-          <p className="mt-6 text-sm text-slate-400">Keine Mitglieder gefunden.</p>
+          <p className="mt-4 text-sm text-ink-muted">
+            Keine Mitglieder gefunden.
+          </p>
         ) : (
-          <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-800">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-400">
+          <div className="table-wrap mt-4">
+            <table className="data-table min-w-[900px]">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">E-Mail</th>
-                  <th className="px-4 py-3 font-medium">Rolle</th>
-                  <th className="px-4 py-3 font-medium">Mannschaften (Spieler)</th>
-                  <th className="px-4 py-3 font-medium">Weitere</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th>Name</th>
+                  <th>E-Mail</th>
+                  <th>Rolle</th>
+                  <th>Mannschaften (Spieler)</th>
+                  <th>Weitere</th>
+                  <th>Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody>
                 {users.map((u) => {
                   const isSelf = u.id === currentUser?.id;
                   const busy = savingIds.has(u.id);
@@ -198,33 +184,34 @@ export default function AdminPage() {
                     .filter((group) => group.entries.length > 0);
 
                   return (
-                    <tr
-                      key={u.id}
-                      className={`align-top ${locked ? 'bg-slate-900/40' : ''}`}
-                    >
-                      <td className="px-4 py-3">
-                        {u.firstName} {u.lastName}
+                    <tr key={u.id}>
+                      <td>
+                        <span className="font-bold text-ink">
+                          {u.firstName} {u.lastName}
+                        </span>
                         {isSelf && (
-                          <span className="ml-2 text-xs text-slate-500">(du)</span>
+                          <span className="ml-2 text-xs text-ink-muted">
+                            (du)
+                          </span>
                         )}
                         {locked && (
                           <span
-                            className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-xs text-amber-300/80"
+                            className="badge badge-neutral ml-2"
                             title="Admin-Konten sind für Sub-Admins gesperrt."
                           >
                             gesperrt
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{u.email}</td>
+                      <td className="text-ink-muted">{u.email}</td>
 
-                      <td className="px-4 py-3">
+                      <td>
                         {canManageAccounts ? (
                           <select
                             value={u.role}
                             disabled={busy || isSelf || locked}
                             onChange={(e) => changeRole(u.id, e.target.value)}
-                            className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500 disabled:opacity-50"
+                            className="field-control-sm"
                             title={
                               locked
                                 ? 'Sub-Admins dürfen Admin-Konten nicht bearbeiten.'
@@ -245,13 +232,13 @@ export default function AdminPage() {
                             ))}
                           </select>
                         ) : (
-                          <span className="text-slate-300">
+                          <span className="text-ink-soft">
                             {roleLabel(u.role)}
                           </span>
                         )}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td>
                         <TeamSelect
                           teams={allTeams}
                           selectedIds={playerTeamIds}
@@ -261,22 +248,23 @@ export default function AdminPage() {
                         />
                       </td>
 
-                      <td className="px-4 py-3">
-                        {otherRelations.length === 0 && u.services.length === 0 ? (
-                          <span className="text-xs text-slate-600">—</span>
+                      <td>
+                        {otherRelations.length === 0 &&
+                        u.services.length === 0 ? (
+                          <span className="text-xs text-ink-muted">—</span>
                         ) : (
                           <div className="space-y-1.5">
                             {otherRelations.map(({ relation, entries }) => (
-                              <div key={relation}>
-                                <span className="text-xs text-slate-500">
+                              <div key={relation} className="text-xs">
+                                <span className="text-ink-muted">
                                   {relationLabelPlural(relation)}:{' '}
                                 </span>
                                 {entries.map((t, i) => (
-                                  <span key={t.id} className="text-xs">
+                                  <span key={t.id}>
                                     {i > 0 && ', '}
                                     <Link
                                       to={`/teams/${t.code}`}
-                                      className="text-slate-300 hover:text-emerald-300"
+                                      className="link"
                                       title={t.name}
                                     >
                                       {t.code}
@@ -286,9 +274,9 @@ export default function AdminPage() {
                               </div>
                             ))}
                             {u.services.length > 0 && (
-                              <div className="text-xs text-slate-500">
+                              <div className="text-xs text-ink-muted">
                                 Dienste:{' '}
-                                <span className="text-slate-300">
+                                <span className="text-ink-soft">
                                   {u.services.map(serviceLabel).join(', ')}
                                 </span>
                               </div>
@@ -297,10 +285,10 @@ export default function AdminPage() {
                         )}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td>
                         {u.isApproved ? (
-                          <span className="inline-flex items-center gap-1.5 text-emerald-300">
-                            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                          <span className="status text-hsg-green-dark">
+                            <span className="status-dot bg-hsg-green" />
                             Aktiv
                           </span>
                         ) : canManageAccounts && !locked ? (
@@ -308,13 +296,13 @@ export default function AdminPage() {
                             type="button"
                             disabled={busy}
                             onClick={() => approve(u.id)}
-                            className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-60"
+                            className="btn btn-primary btn-sm"
                           >
                             {busy ? '…' : 'Reaktivieren'}
                           </button>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 text-amber-300">
-                            <span className="h-2 w-2 rounded-full bg-amber-400" />
+                          <span className="status text-warn">
+                            <span className="status-dot bg-warn" />
                             Gesperrt
                           </span>
                         )}
@@ -326,7 +314,11 @@ export default function AdminPage() {
             </table>
           </div>
         )}
-      </main>
-    </div>
+      </section>
+
+      {/* Vereins-News – Trainer:innen dürfen keine Beiträge veröffentlichen
+          (das Backend lehnt sie ohnehin ab). */}
+      {canManageAccounts && <NewsManager />}
+    </AppLayout>
   );
 }

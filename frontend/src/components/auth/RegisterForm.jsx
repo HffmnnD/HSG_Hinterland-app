@@ -134,9 +134,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
       return;
     }
     if (participation.has('mitwirkender') && services.length === 0) {
-      setValidationError(
-        'Bitte wähle mindestens einen Helferdienst aus.'
-      );
+      setValidationError('Bitte wähle mindestens einen Helferdienst aus.');
       return;
     }
 
@@ -180,20 +178,22 @@ export default function RegisterForm({ onSwitchToLogin }) {
     return (
       <div className="space-y-4">
         <Alert variant="success">
-          <p className="font-semibold">Registrierung erfolgreich!</p>
+          <p className="font-display font-semibold uppercase tracking-[0.04em]">
+            Registrierung erfolgreich
+          </p>
           <p className="mt-1">{successMessage}</p>
         </Alert>
 
-        <p className="text-sm text-slate-400">
-          Dein Konto ist <strong>sofort aktiv</strong>. Deine Mannschafts-Anfragen
-          muss noch der/die jeweilige Trainer:in bestätigen – bis dahin erscheinst
-          du dort als „ausstehend".
+        <p className="text-sm text-ink-muted">
+          Dein Konto ist <strong className="text-ink">sofort aktiv</strong>.
+          Deine Mannschafts-Anfragen muss noch der/die jeweilige Trainer:in
+          bestätigen – bis dahin erscheinst du dort als „ausstehend“.
         </p>
 
         <button
           type="button"
           onClick={onSwitchToLogin}
-          className="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+          className="btn btn-primary btn-block"
         >
           Zurück zur Anmeldung
         </button>
@@ -204,8 +204,8 @@ export default function RegisterForm({ onSwitchToLogin }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       <div>
-        <h2 className="text-lg font-semibold text-white">Registrieren</h2>
-        <p className="mt-0.5 text-sm text-slate-400">
+        <h2 className="section-title">Registrieren</h2>
+        <p className="mt-1 text-sm text-ink-muted">
           Erstelle ein neues Vereinskonto.
         </p>
       </div>
@@ -269,20 +269,20 @@ export default function RegisterForm({ onSwitchToLogin }) {
       />
 
       {/* Beteiligung im Verein */}
-      <fieldset className="rounded-xl border border-slate-800 p-4">
-        <legend className="px-1 text-sm font-medium text-slate-300">
-          Wie machst du mit?
-        </legend>
+      <fieldset className="fieldset">
+        <legend>Wie machst du mit?</legend>
 
-        <div className="space-y-2">
+        <div className="mt-1 space-y-1">
           {PARTICIPATION_OPTIONS.map((option) => {
             const checked = participation.has(option.key);
             const locked = checked && isLockedOn(option.key);
             return (
               <label
                 key={option.key}
-                className={`flex gap-3 rounded-lg p-2 transition ${
-                  locked ? 'opacity-80' : 'cursor-pointer hover:bg-slate-800/50'
+                className={`flex min-h-11 gap-3 rounded-sm p-2 transition-colors ${
+                  locked
+                    ? 'opacity-80'
+                    : 'cursor-pointer hover:bg-paper'
                 }`}
               >
                 <input
@@ -291,18 +291,14 @@ export default function RegisterForm({ onSwitchToLogin }) {
                   checked={checked}
                   disabled={submitting || locked}
                   onChange={() => toggleParticipation(option.key)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-500"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-hsg-green"
                 />
                 <span className="text-sm">
-                  <span className="font-medium text-slate-100">
-                    {option.label}
-                  </span>
+                  <span className="font-bold text-ink">{option.label}</span>
                   {locked && (
-                    <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
-                      automatisch
-                    </span>
+                    <span className="badge badge-neutral ml-2">automatisch</span>
                   )}
-                  <span className="block text-xs text-slate-500">
+                  <span className="mt-0.5 block text-xs text-ink-muted">
                     {option.hint}
                   </span>
                 </span>
@@ -314,15 +310,13 @@ export default function RegisterForm({ onSwitchToLogin }) {
 
       {/* Helferdienste – nur für Mitwirkende */}
       {participation.has('mitwirkender') && (
-        <fieldset className="rounded-xl border border-slate-800 p-4">
-          <legend className="px-1 text-sm font-medium text-slate-300">
-            Helferdienste
-          </legend>
-          <div className="space-y-2">
+        <fieldset className="fieldset">
+          <legend>Helferdienste</legend>
+          <div className="mt-1 space-y-1">
             {SERVICE_TYPES.map((service) => (
               <label
                 key={service}
-                className="flex cursor-pointer items-center gap-3 rounded-lg p-2 transition hover:bg-slate-800/50"
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-sm p-2 transition-colors hover:bg-paper"
               >
                 <input
                   type="checkbox"
@@ -330,9 +324,9 @@ export default function RegisterForm({ onSwitchToLogin }) {
                   checked={services.includes(service)}
                   disabled={submitting}
                   onChange={() => toggleService(service)}
-                  className="h-4 w-4 shrink-0 accent-emerald-500"
+                  className="h-4 w-4 shrink-0 accent-hsg-green"
                 />
-                <span className="text-sm text-slate-100">
+                <span className="text-sm font-bold text-ink">
                   {serviceLabel(service)}
                 </span>
               </label>
@@ -346,11 +340,9 @@ export default function RegisterForm({ onSwitchToLogin }) {
         participation.has(section.participation)
       ).map((section) => (
         <div key={section.relationType}>
-          <span className="mb-1.5 block text-sm font-medium text-slate-300">
-            {section.label}
-          </span>
+          <span className="field-label">{section.label}</span>
           {teamsLoading ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-ink-muted">
               Mannschaften werden geladen …
             </p>
           ) : (
@@ -364,7 +356,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
         </div>
       ))}
 
-      <p className="text-xs text-slate-500">
+      <p className="field-hint">
         Dein Konto ist nach der Registrierung sofort aktiv. Spieler:in- und
         Trainer:in-Zuordnungen bestätigt anschliessend der/die Trainer:in der
         jeweiligen Mannschaft.
@@ -373,18 +365,14 @@ export default function RegisterForm({ onSwitchToLogin }) {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn btn-primary btn-block"
       >
         {submitting ? 'Konto wird erstellt …' : 'Konto erstellen'}
       </button>
 
-      <p className="text-center text-sm text-slate-400">
+      <p className="text-center text-sm text-ink-muted">
         Bereits registriert?{' '}
-        <button
-          type="button"
-          onClick={onSwitchToLogin}
-          className="font-semibold text-emerald-400 hover:text-emerald-300"
-        >
+        <button type="button" onClick={onSwitchToLogin} className="link">
           Zur Anmeldung
         </button>
       </p>

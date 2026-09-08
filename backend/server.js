@@ -10,6 +10,9 @@ require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const teamsRoutes = require('./routes/teamsRoutes');
+const newsRoutes = require('./routes/newsRoutes');
+const { authenticate } = require('./middleware/authMiddleware');
+const { UPLOAD_ROOT, describeUploadError } = require('./config/uploads');
 
 const app = express();
 
@@ -94,7 +97,29 @@ app.use('/api/auth', authRoutes);
 // Mannschaftsliste (öffentlich, für das Registrierungsformular)
 app.use('/api/teams', teamsRoutes);
 
-// Admin-Routen (RBAC: Rolle `admin`, Team-Zuordnung auch `trainer`)
+// Vereins-News (Lesen: alle angemeldeten Mitglieder)
+app.use('/api/news', newsRoutes);
+
+// Hochgeladene Beitragsbilder.
+//
+// Bewusst unter /api/, damit der Vite-Dev-Proxy sie ohne Zusatzkonfiguration
+// mitausliefert. `authenticate` davor, weil News vereinsintern sind – der
+// Browser schickt den HttpOnly-Cookie bei same-origin <img>-Requests mit.
+app.use(
+  '/api/uploads',
+  authenticate,
+  express.static(UPLOAD_ROOT, {
+    index: false,
+    // Bilddateien haben zufällige, unveränderliche Namen -> lange cachebar.
+    maxAge: '7d',
+    // Keine Verzeichnislisten und kein Ausliefern von Dotfiles. Unbekannte
+    // Dateien fallen durch und landen beim JSON-404 weiter unten.
+    dotfiles: 'ignore',
+  })
+);
+
+// Admin-Routen (RBAC: Rolle `admin`, Team-Zuordnung auch `trainer`,
+// News nur `admin`/`sub_admin`)
 app.use('/api/admin', adminRoutes);
 
 // 404 für unbekannte API-Pfade – liefert JSON statt HTML.
@@ -114,6 +139,17 @@ app.use((err, req, res, next) => {
   }
   if (err instanceof SyntaxError && 'body' in err) {
     return res.status(400).json({ message: 'Ungültiges JSON im Request-Body.' });
+  }
+
+  // Datei-Upload: Größe, Typ, Feld-Limits und kaputte multipart-Bodies sind
+  // Eingabefehler des Clients – keine Serverfehler. describeUploadError deckt
+  // ALLE multer-/busboy-Fälle ab, damit keiner davon als 500 endet (das würde
+  // ausserhalb der Produktion sogar die interne Meldung preisgeben).
+  const uploadError = describeUploadError(err);
+  if (uploadError) {
+    return res
+      .status(uploadError.status)
+      .json({ message: uploadError.message });
   }
 
   console.error('Unbehandelter Fehler:', err);

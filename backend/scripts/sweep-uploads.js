@@ -1,0 +1,84 @@
+// Wartungsskript: findet verwaiste Beitragsbilder.
+//
+//   npm run uploads:sweep            nur anzeigen (Standard)
+//   npm run uploads:sweep -- --apply wirklich löschen
+//
+// Alle regulären Code-Pfade räumen selbst auf: schlägt die Validierung oder
+// die Signaturprüfung fehl, löscht der Controller die Datei sofort; beim
+// Löschen eines Beitrags verschwindet sie mit. Eine Datei kann trotzdem
+// zurückbleiben, wenn eine Anfrage mittendrin abbricht (Netzwerk weg, Tab
+// geschlossen, Server-Neustart) – nachdem multer geschrieben hat, aber bevor
+// der Controller fertig war. Dieses Skript räumt solche Reste weg.
+require('dotenv').config({ quiet: true });
+
+const fs = require('fs');
+const path = require('path');
+const mysql = require('mysql2/promise');
+
+const { UPLOAD_ROOT } = require('../config/uploads');
+
+const APPLY = process.argv.includes('--apply');
+
+async function main() {
+  const connection = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'hsg_hinterland',
+  });
+
+  let referenced;
+  try {
+    const [rows] = await connection.query(
+      'SELECT image_path FROM news WHERE image_path IS NOT NULL'
+    );
+    referenced = new Set(rows.map((row) => row.image_path));
+  } finally {
+    await connection.end();
+  }
+
+  // Alle Dateien unterhalb von uploads/ einsammeln (relativ zur Wurzel).
+  const files = [];
+  const walk = (dir, prefix = '') => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(path.join(dir, entry.name), rel);
+      else files.push(rel);
+    }
+  };
+  walk(UPLOAD_ROOT);
+
+  const orphans = files.filter((file) => !referenced.has(file));
+  const missing = [...referenced].filter((ref) => !files.includes(ref));
+
+  console.log(`Dateien im Upload-Ordner : ${files.length}`);
+  console.log(`In der Datenbank benutzt : ${referenced.size}`);
+  console.log(`Verwaist                 : ${orphans.length}`);
+
+  for (const orphan of orphans) {
+    if (APPLY) {
+      fs.unlinkSync(path.join(UPLOAD_ROOT, orphan));
+      console.log(`  gelöscht: ${orphan}`);
+    } else {
+      console.log(`  würde löschen: ${orphan}`);
+    }
+  }
+
+  if (missing.length > 0) {
+    console.log(
+      `\nAchtung: ${missing.length} Beitrag/Beiträge verweisen auf fehlende Dateien:`
+    );
+    missing.forEach((ref) => console.log(`  ${ref}`));
+  }
+
+  if (orphans.length > 0 && !APPLY) {
+    console.log('\nZum tatsächlichen Löschen: npm run uploads:sweep -- --apply');
+  }
+}
+
+main().catch((err) => {
+  console.error('Aufräumen fehlgeschlagen:', err.message);
+  process.exit(1);
+});

@@ -24,11 +24,13 @@ backend/
   config/
     auth.js              JWT-/Cookie-Konfiguration
     db.js                MySQL Connection-Pool (Modul)
+    uploads.js           multer-Konfiguration + Pfad-/Löschhelfer für Bilder
 
   routes/                nur URL -> Controller-Funktion + Middleware
     authRoutes.js
-    adminRoutes.js
+    adminRoutes.js       Mitglieder + News (News zusätzlich admin/sub_admin)
     teamsRoutes.js
+    newsRoutes.js        GET /api/news (alle angemeldeten Mitglieder)
 
   middleware/
     authMiddleware.js    authenticate (JWT-Cookie) + checkRole (RBAC)
@@ -37,11 +39,19 @@ backend/
     authController.js    register / login / logout / me
     adminController.js    listUsers / updateUser (inkl. Sub-Admin-Sperren)
     teamsController.js    listTeams / getTeam / candidates / add / remove / callup
+    newsController.js     listNews / createNews / deleteNews (inkl. Bild-Aufräumen)
 
   repositories/          gesamter Datenbankzugriff (alle SELECT/INSERT/JOINs)
     userRepository.js    users + zusammengesetztes Profil, Transaktionen
     teamRepository.js    teams + user_teams (Kader, Kandidaten, Zuordnungen)
     serviceRepository.js user_services
+    newsRepository.js    news (Feed, Anlegen, Löschen)
+
+  scripts/
+    sweep-uploads.js     npm run uploads:sweep – verwaiste Bilder finden/löschen
+
+  uploads/               hochgeladene Beitragsbilder (nicht im Git)
+    news/
 
   utils/
     roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Dienste)
@@ -54,6 +64,7 @@ backend/
       001_initial_schema.sql             eingefrorener Startzustand
       002_team_confirmation.sql          is_confirmed + Freigabe abgeschafft
       003_activate_existing_accounts.sql Bestandskonten aktivieren
+      004_news_table.sql                 Tabelle news (Vereins-Ankündigungen)
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -176,6 +187,50 @@ Sperren für `sub_admin` (jeweils `403`):
 - Bearbeiten eines Kontos mit `role = 'admin'` – auch reine Team-Änderungen
 - Setzen von `role = 'admin'` bei irgendeinem Konto
 
+## Vereins-News
+
+| Methode | Pfad | Auth | Beschreibung |
+| ------- | ---- | ---- | ------------ |
+| GET | `/api/news` | angemeldet | Alle Beiträge, **neueste zuerst**. `?limit=` optional (max. 100). Antwort: `{ news: [{ id, title, content, imageUrl, createdAt, updatedAt, author }] }`. |
+| POST | `/api/admin/news` | `admin`, `sub_admin` | **`multipart/form-data`**: `title` (≤150), `content` (≤5000), `image` optional. Antwort `201` mit dem angelegten Beitrag. |
+| DELETE | `/api/admin/news/:id` | `admin`, `sub_admin` | Löscht Beitrag **und** zugehöriges Bild. |
+| GET | `/api/uploads/<pfad>` | angemeldet | Ausliefern der Beitragsbilder (statisch). |
+
+Trainer:innen dürfen News **lesen, aber nicht anlegen oder löschen** – der
+zweite `checkRole(ADMIN_ROLES)` in `adminRoutes.js` blockt sie.
+
+**Bild-Uploads** (`config/uploads.js`, `multer`):
+
+- erlaubt sind JPG, PNG, WEBP und GIF bis **5 MB** – **kein SVG** (kann Skripte
+  enthalten)
+- der Dateiname wird **verworfen** und durch 16 Zufalls-Bytes ersetzt; die
+  Endung kommt aus der Whitelist (kein `../`, keine Doppelendungen, keine
+  Null-Bytes)
+- der MIME-Typ stammt vom Client und wird deshalb zusätzlich gegen die
+  **Signatur (Magic Bytes)** der Datei geprüft; passt sie nicht, wird die Datei
+  gelöscht und der Beitrag mit `400` abgelehnt
+- Feld-Limits (`fields`, `parts`, `fieldSize`, `fieldNameSize`) begrenzen auch
+  die Textfelder – `express.json({ limit })` greift bei `multipart/form-data`
+  **nicht**
+- Speicherort `backend/uploads/news/` (per `.gitignore` ausgenommen, wird beim
+  ersten Upload automatisch angelegt)
+- in der DB steht nur der relative Pfad, ausgeliefert wird er als
+  `/api/uploads/news/<datei>` – bewusst unter `/api/`, damit der Vite-Dev-Proxy
+  ihn ohne Zusatzkonfiguration mitausliefert. `helmet` setzt dabei
+  `X-Content-Type-Options: nosniff` und `Cross-Origin-Resource-Policy`
+- schlägt Validierung oder Signaturprüfung **nach** dem Upload fehl, löscht der
+  Controller die Datei wieder; ist der Beitrag dagegen bereits gespeichert,
+  bleibt sein Bild erhalten
+
+**Verwaiste Bilder aufräumen.** Alle regulären Pfade räumen selbst auf. Bricht
+eine Anfrage jedoch mittendrin ab (Tab geschlossen, Netzwerk weg,
+Server-Neustart), kann eine Datei zurückbleiben:
+
+```bash
+npm run uploads:sweep            # nur anzeigen
+npm run uploads:sweep -- --apply # wirklich löschen
+```
+
 ### Beispiele (curl)
 
 ```bash
@@ -197,6 +252,14 @@ curl -b cookies.txt http://localhost:5000/api/auth/me
 # Trainer: offene Beitrittsanfrage bestätigen bzw. ablehnen
 curl -b cookies.txt -X POST http://localhost:5000/api/teams/MJC/members/5/confirm
 curl -b cookies.txt -X DELETE "http://localhost:5000/api/teams/MJC/members/5?relationType=player"
+
+# News lesen; Admin: Beitrag mit Bild anlegen und wieder löschen
+curl -b cookies.txt http://localhost:5000/api/news
+curl -b cookies.txt -X POST http://localhost:5000/api/admin/news \
+  -F "title=Heimspiel am Samstag" \
+  -F "content=Anwurf ist um 18:00 Uhr." \
+  -F "image=@plakat.jpg"
+curl -b cookies.txt -X DELETE http://localhost:5000/api/admin/news/1
 
 curl -b cookies.txt -X POST http://localhost:5000/api/auth/logout
 ```
@@ -226,6 +289,12 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | `sub_admin` kann Admin-Konten nicht bearbeiten und die Rolle `admin` nicht vergeben | `controllers/adminController.js` |
 | Team-Verwaltung nur für Admin/Sub-Admin oder **bestätigte:n** `coach` der jeweiligen Mannschaft | `controllers/teamsController.js` |
 | Zentraler Error-Handler – keine Stacktraces an den Client | `server.js` |
+| News anlegen/löschen nur `admin`+`sub_admin` (zweiter `checkRole` **vor** multer – ein Upload startet ohne Berechtigung gar nicht erst) | `routes/adminRoutes.js` |
+| Upload: MIME-Whitelist ohne SVG, Zufallsdateiname, Endung aus der Whitelist | `config/uploads.js` |
+| Upload: **Signaturprüfung** (Magic Bytes) – der Inhalt muss dem Format entsprechen | `config/uploads.js`, `controllers/newsController.js` |
+| Upload: Limits für Dateigröße **und** Anzahl/Größe der Textfelder (`express.json` greift bei multipart nicht) | `config/uploads.js` |
+| Upload-Pfade werden gegen das Upload-Wurzelverzeichnis geprüft (kein Ausbruch über manipulierte DB-Werte) | `config/uploads.js` |
+| multer-/busboy-Fehler werden als 4xx beantwortet, nicht als 500 mit interner Meldung | `config/uploads.js`, `server.js` |
 
 ### Bekannte Restrisiken
 
@@ -250,3 +319,16 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   Mitgliederliste inkl. E-Mail, um Spieler:innen Mannschaften zuzuordnen.
   Falls das enger gefasst werden soll, müsste die Antwort für `trainer`
   reduziert werden.
+- **News haben keine Eigentümerschaft**: Jede:r `admin`/`sub_admin` darf jeden
+  Beitrag löschen – auch den einer anderen Person. Für ein Schwarzes Brett ist
+  das gewollt; soll nur der/die Verfasser:in (plus `admin`) löschen dürfen,
+  müsste `deleteNews` zusätzlich `author_id` gegen `req.userId` prüfen.
+- **Kein Rate-Limit auf `POST /api/admin/news`**: Das Anlegen ist auf
+  `admin`/`sub_admin` beschränkt, ein Missbrauch setzt also ein übernommenes
+  Verwaltungskonto voraus. Die Feld- und Dateigrößen-Limits begrenzen den
+  Schaden pro Anfrage; bei Bedarf lässt sich derselbe `express-rate-limit`
+  wie bei den Auth-Routen davorhängen.
+- **Bilder sind an die Sitzung gebunden, nicht an den Beitrag**: `/api/uploads`
+  verlangt einen Login, unterscheidet aber nicht, welcher Beitrag zu welchem
+  Bild gehört. Wer die (zufällige, 128 Bit lange) URL kennt und angemeldet
+  ist, kann das Bild laden – für vereinsinterne Inhalte ausreichend.

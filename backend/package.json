@@ -7,6 +7,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "migrate": "node db/migrate.js",
+    "uploads:sweep": "node scripts/sweep-uploads.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -22,6 +23,7 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.3.0",
     "mysql2": "^3.24.3"
   },
   "devDependencies": {

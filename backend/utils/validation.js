@@ -15,6 +15,9 @@ const MAX_NAME_LENGTH = 100;
 const MIN_PASSWORD_LENGTH = 8;
 // bcrypt beachtet nur die ersten 72 Bytes -> längere Eingaben ablehnen.
 const MAX_PASSWORD_LENGTH = 72;
+// News: müssen zu den Spaltenbreiten in `news` passen (VARCHAR(150) / TEXT).
+const MAX_NEWS_TITLE_LENGTH = 150;
+const MAX_NEWS_CONTENT_LENGTH = 5000;
 
 const fail = (message, status = 400) => ({ ok: false, status, message });
 
@@ -250,7 +253,50 @@ async function validateUserPatch(body) {
   };
 }
 
+// --- Vereins-News -----------------------------------------------------------
+
+/**
+ * Prüft den Body für POST /api/admin/news.
+ *
+ * Kommt als multipart/form-data an (Bild-Upload), daher sind alle Felder
+ * Zeichenketten. Das Bild selbst prüft multer (Typ & Größe, siehe
+ * config/uploads.js).
+ *
+ * @returns {{ ok:true, title:string, content:string } | { ok:false, ... }}
+ */
+function validateNewsPost(body) {
+  const { title, content } = body || {};
+
+  if (typeof title !== 'string' || typeof content !== 'string') {
+    return fail('title und content sind erforderlich.');
+  }
+
+  const cleanTitle = title.trim();
+  const cleanContent = content.trim();
+
+  if (cleanTitle.length === 0) {
+    return fail('Bitte eine Überschrift angeben.');
+  }
+  if (cleanTitle.length > MAX_NEWS_TITLE_LENGTH) {
+    return fail(
+      `Die Überschrift darf höchstens ${MAX_NEWS_TITLE_LENGTH} Zeichen lang sein.`
+    );
+  }
+  if (cleanContent.length === 0) {
+    return fail('Bitte einen Nachrichtentext angeben.');
+  }
+  if (cleanContent.length > MAX_NEWS_CONTENT_LENGTH) {
+    return fail(
+      `Der Nachrichtentext darf höchstens ${MAX_NEWS_CONTENT_LENGTH} Zeichen lang sein.`
+    );
+  }
+
+  return { ok: true, title: cleanTitle, content: cleanContent };
+}
+
 module.exports = {
+  MAX_NEWS_TITLE_LENGTH,
+  MAX_NEWS_CONTENT_LENGTH,
   parseId,
   isRelationType,
   validateServiceList,
@@ -258,4 +304,5 @@ module.exports = {
   validateTeamRelations,
   validateRegistration,
   validateUserPatch,
+  validateNewsPost,
 };

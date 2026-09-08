@@ -18,11 +18,9 @@ export default function TeamSelect({
   disabled = false,
   size = 'md',
 }) {
-  const pad = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-sm';
-
   if (teams.length === 0) {
     return (
-      <p className="text-xs text-slate-500">Keine Mannschaften verfügbar.</p>
+      <p className="text-xs text-ink-muted">Keine Mannschaften verfügbar.</p>
     );
   }
 
@@ -39,10 +37,8 @@ export default function TeamSelect({
             disabled={disabled}
             onClick={() => onToggle(team.id)}
             title={team.name}
-            className={`rounded-full border font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${pad} ${
-              active
-                ? 'border-emerald-500 bg-emerald-500 text-slate-950'
-                : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500'
+            className={`chip ${size === 'sm' ? 'chip-sm' : ''} ${
+              active ? 'chip-active' : ''
             }`}
           >
             {team.code}

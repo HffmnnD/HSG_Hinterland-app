@@ -27,13 +27,18 @@ export function setSessionExpiredHandler(handler) {
 }
 
 export async function apiFetch(path, options = {}) {
+  // Bei FormData (Datei-Uploads) darf der Content-Type NICHT gesetzt werden:
+  // der Browser ergänzt ihn selbst inklusive multipart-Boundary.
+  const isFormData =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
+
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       credentials: 'include',
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(options.headers || {}),
       },
     });

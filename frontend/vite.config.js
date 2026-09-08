@@ -18,10 +18,11 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         manifest: {
           name: 'HSG Hinterland App',
-          short_name: 'HSG App',
+          short_name: 'HSG Hinterland',
           description: 'Vereins-App der HSG Hinterland',
-          theme_color: '#020617',
-          background_color: '#020617',
+          lang: 'de',
+          theme_color: '#2e2e2e',
+          background_color: '#ffffff',
           display: 'standalone',
           start_url: '/',
           icons: [
@@ -29,7 +30,7 @@ export default defineConfig(({ mode }) => {
               src: 'favicon.svg',
               sizes: 'any',
               type: 'image/svg+xml',
-              purpose: 'any',
+              purpose: 'any maskable',
             },
           ],
         },

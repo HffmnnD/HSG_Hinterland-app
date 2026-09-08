@@ -9,6 +9,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `schema.sql` | **Referenz.** Vollständiges, kommentiertes Schema, laufend gepflegt (= Stand aller Migrationen). Für eine frische DB in phpMyAdmin ausführen. |
 | `migrations/001_initial_schema.sql` | Eingefrorener Startzustand. |
 | `migrations/002_team_confirmation.sql` | `is_confirmed` ergänzt, globale Admin-Freigabe abgeschafft. |
+| `migrations/004_news_table.sql` | Tabelle `news` für Vereins-Ankündigungen. |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
@@ -24,10 +25,16 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 │ is_approved │        └────────────────┘        └──────────────┘
 │ ...         │───1:n──┐
 └─────────────┘        │   ┌────────────────┐
-                       └───│  user_services │
-                           │  service_type  │
-                           │  zeitnehmer|   │
-                           │  verkaufsdienst│
+      │                └───│  user_services │
+      │                    │  service_type  │
+      │                    │  zeitnehmer|   │
+      │                    │  verkaufsdienst│
+      │                    └────────────────┘
+      │                    ┌────────────────┐
+      └──────1:n───────────│      news      │
+       (author_id,         │  title         │
+        ON DELETE          │  content       │
+        SET NULL)          │  image_path    │
                            └────────────────┘
 ```
 
@@ -94,6 +101,27 @@ die Zeilen hier automatisch.
 Verbindungstabelle `users ↔ Dienst`. Primärschlüssel `(user_id, service_type)`.
 `service_type` ∈ { `zeitnehmer`, `verkaufsdienst` }. `ON DELETE CASCADE`.
 
+### `news` – Vereins-News & Ankündigungen
+
+Das „Schwarze Brett" des Vereins. Beiträge erscheinen im Dashboard aller
+angemeldeten Mitglieder, absteigend nach `created_at`.
+
+| Spalte | Bedeutung |
+| ------ | --------- |
+| `id` | Primärschlüssel |
+| `title` | Überschrift (max. 150 Zeichen) |
+| `content` | Fließtext (max. 5000 Zeichen, per Validierung). **Reiner Text** – das Frontend rendert ihn nie als HTML |
+| `image_path` | Relativer Pfad des Bilds in `backend/uploads/`, z. B. `news/ab12cd34.jpg`. `NULL` = ohne Bild |
+| `author_id` | FK → `users.id`, `ON DELETE SET NULL` (Beitrag überlebt das Löschen des Kontos) |
+| `created_at` / `updated_at` | Veröffentlichung / letzte Änderung |
+
+Rechte: Lesen alle angemeldeten Mitglieder, Anlegen und Löschen nur `admin`
+und `sub_admin` (Trainer:innen **nicht**).
+
+> Bilder liegen **nicht** in der Datenbank. `backend/config/uploads.js`
+> speichert sie unter zufälligem Namen im Dateisystem; beim Löschen eines
+> Beitrags räumt der Controller die Datei mit weg.
+
 ### `schema_migrations` – Migrationsverlauf
 
 Eine Zeile pro angewendeter Migrationsdatei (`filename`, `applied_at`). Vom
@@ -110,6 +138,7 @@ Kein Controller enthält rohes SQL. Alle Abfragen liegen in
 | `userRepository.js` | `users` + zusammengesetztes Profil (`getFullProfile`, `listAllWithProfiles`), Transaktionen für Registrierung und Admin-Änderungen |
 | `teamRepository.js` | `teams` + `user_teams` (Kader, Kandidaten, Zuordnungen) |
 | `serviceRepository.js` | `user_services` |
+| `newsRepository.js` | `news` (Feed, Anlegen, Löschen) |
 
 Eingabe-Prüfung (Typen, erlaubte Werte, Existenz von Team-IDs) liegt in
 `backend/utils/validation.js`, die erlaubten Enum-Werte in
