@@ -10,19 +10,25 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [savingId, setSavingId] = useState(null);
+  // Mehrere Zeilen können gleichzeitig gespeichert werden.
+  const [savingIds, setSavingIds] = useState(() => new Set());
 
-  // Für manuelles Neuladen (z. B. nach einem Fehler beim Speichern).
-  const loadUsers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const setSaving = useCallback((id, isSaving) => {
+    setSavingIds((prev) => {
+      const next = new Set(prev);
+      if (isSaving) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // Serverstand nachladen, OHNE eine bestehende Fehlermeldung zu überschreiben.
+  const reloadUsers = useCallback(async () => {
     try {
       const data = await apiFetch('/api/admin/users');
-      setUsers(data.users);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      setUsers(data?.users ?? []);
+    } catch {
+      // Die ursprüngliche Fehlermeldung bleibt stehen.
     }
   }, []);
 
@@ -32,7 +38,7 @@ export default function AdminPage() {
     (async () => {
       try {
         const data = await apiFetch('/api/admin/users');
-        if (!cancelled) setUsers(data.users);
+        if (!cancelled) setUsers(data?.users ?? []);
       } catch (err) {
         if (!cancelled) setError(err.message);
       } finally {
@@ -45,7 +51,8 @@ export default function AdminPage() {
   }, []);
 
   const patchUser = async (id, changes) => {
-    setSavingId(id);
+    const previous = users;
+    setSaving(id, true);
     setError(null);
     // Optimistisch aktualisieren.
     setUsers((prev) =>
@@ -57,10 +64,12 @@ export default function AdminPage() {
         body: JSON.stringify(changes),
       });
     } catch (err) {
+      // Optimistische Änderung zurückrollen und Fehler stehen lassen.
+      setUsers(previous);
       setError(err.message);
-      loadUsers(); // Serverstand wiederherstellen
+      reloadUsers();
     } finally {
-      setSavingId(null);
+      setSaving(id, false);
     }
   };
 
@@ -100,6 +109,10 @@ export default function AdminPage() {
 
         {loading ? (
           <p className="mt-6 text-sm text-slate-400">Wird geladen …</p>
+        ) : users.length === 0 ? (
+          <p className="mt-6 text-sm text-slate-400">
+            Keine Mitglieder gefunden.
+          </p>
         ) : (
           <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-800">
             <table className="w-full min-w-[640px] text-left text-sm">
@@ -113,8 +126,8 @@ export default function AdminPage() {
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {users.map((u) => {
-                  const isSelf = u.id === currentUser.id;
-                  const busy = savingId === u.id;
+                  const isSelf = u.id === currentUser?.id;
+                  const busy = savingIds.has(u.id);
                   return (
                     <tr key={u.id} className="align-middle">
                       <td className="px-4 py-3">

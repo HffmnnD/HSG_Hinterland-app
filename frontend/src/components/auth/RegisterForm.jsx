@@ -5,42 +5,58 @@ import Alert from './Alert';
 import TextField from './TextField';
 
 const EMPTY_FORM = { firstName: '', lastName: '', email: '', password: '' };
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 72;
 
 export default function RegisterForm({ onSwitchToLogin }) {
-  const { register } = useAuth();
+  const { register, error, clearError } = useAuth();
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  // Client-seitige Validierung, getrennt vom Server-Fehler aus dem Context.
+  const [validationError, setValidationError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-    setError(null);
+    setValidationError(null);
+    clearError();
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (submitting) return;
 
-    if (form.password.length < 8) {
-      setError('Das Passwort muss mindestens 8 Zeichen lang sein.');
+    if (form.password.length < MIN_PASSWORD_LENGTH) {
+      setValidationError(
+        `Das Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`
+      );
+      return;
+    }
+    if (form.password.length > MAX_PASSWORD_LENGTH) {
+      setValidationError(
+        `Das Passwort darf höchstens ${MAX_PASSWORD_LENGTH} Zeichen lang sein.`
+      );
       return;
     }
 
     setSubmitting(true);
-    const res = await register(form);
-    setSubmitting(false);
-
-    if (res.success) {
-      setSuccessMessage(
-        res.message ||
-          'Registrierung erfolgreich. Dein Konto muss noch von einem Admin freigegeben werden.'
-      );
-      setForm(EMPTY_FORM);
-    } else {
-      setError(res.message);
+    try {
+      const res = await register(form);
+      if (res.success) {
+        setSuccessMessage(
+          res.message ||
+            'Registrierung erfolgreich. Dein Konto muss noch von einem Admin freigegeben werden.'
+        );
+        setForm(EMPTY_FORM);
+      }
+      // Fehlerfall: Meldung steht in `error` aus dem AuthContext.
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  const shownError = validationError || error?.message;
 
   // Erfolgs-Ansicht: Hinweis auf die notwendige Admin-Freischaltung.
   if (successMessage) {
@@ -77,7 +93,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
         </p>
       </div>
 
-      {error && <Alert variant="error">{error}</Alert>}
+      {shownError && <Alert variant="error">{shownError}</Alert>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextField
@@ -86,6 +102,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
           name="firstName"
           autoComplete="given-name"
           required
+          maxLength={100}
           value={form.firstName}
           onChange={handleChange}
           placeholder="Max"
@@ -97,6 +114,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
           name="lastName"
           autoComplete="family-name"
           required
+          maxLength={100}
           value={form.lastName}
           onChange={handleChange}
           placeholder="Muster"
@@ -111,6 +129,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
         type="email"
         autoComplete="email"
         required
+        maxLength={255}
         value={form.email}
         onChange={handleChange}
         placeholder="name@example.com"
@@ -124,7 +143,8 @@ export default function RegisterForm({ onSwitchToLogin }) {
         type="password"
         autoComplete="new-password"
         required
-        minLength={8}
+        minLength={MIN_PASSWORD_LENGTH}
+        maxLength={MAX_PASSWORD_LENGTH}
         value={form.password}
         onChange={handleChange}
         placeholder="Mindestens 8 Zeichen"

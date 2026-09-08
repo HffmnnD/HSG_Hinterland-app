@@ -7,12 +7,24 @@ React Context und rollenbasiertem Routen-Schutz (RBAC).
 
 ```bash
 npm install
-cp .env.example .env   # bei Bedarf VITE_API_BASE_URL anpassen
+cp .env.example .env
 npm run dev            # http://localhost:5173
 ```
 
 Das Backend muss parallel laufen (`../backend`, http://localhost:5000).
-`VITE_API_BASE_URL` steuert die API-Basis-URL.
+
+### API-Anbindung über den Dev-Proxy
+
+`VITE_API_BASE_URL` bleibt **leer**. Dann verwendet `apiFetch()` relative
+Pfade (`/api/...`), die der Vite-Dev-Proxy an das Backend weiterreicht
+(`API_PROXY_TARGET`, Standard `http://localhost:5000`).
+
+Vorteil: Frontend und API teilen sich dieselbe Origin. Damit entfallen CORS
+und – wichtiger – das Auth-Cookie funktioniert auch beim Testen vom Handy
+über die LAN-IP (`http://<LAN-IP>:5173`). Trägt man stattdessen eine absolute
+`VITE_API_BASE_URL` mit anderem Host ein, ist der Request cross-site und der
+`SameSite=Lax`-Cookie wird nach einem Reload nicht mehr mitgeschickt – die
+Sitzung geht dann bei jedem Neuladen verloren.
 
 ## Struktur
 
@@ -29,6 +41,7 @@ frontend/src/
     roles.js                   Rollen-Konstanten + deutsche Labels
   components/
     FullScreenLoader.jsx
+    ErrorBoundary.jsx          fängt Render-Fehler ab (keine weisse Seite)
     ProtectedRoute.jsx         Routen-Schutz nach Login-Status + Rolle
     Dashboard.jsx              geschützte Ansicht; Admin-Bereich nur bei role === 'admin'
     AdminPage.jsx              /admin: Mitgliederliste, Freigabe & Rollen (nur admin)
@@ -59,6 +72,14 @@ frontend/src/
 Die Rolle kommt aus `useAuth().role` (aus `GET /api/auth/me` bzw. der
 Login-Antwort). Der Routen-Schutz ist nur UX – die eigentliche Autorisierung
 macht das Backend (`checkRole`).
+
+## Abgelaufene Sitzungen
+
+`apiFetch()` meldet einen `401` (bzw. `403` auf `/api/auth/me`) an den
+`AuthProvider`. Der setzt `user` auf `null`, woraufhin `ProtectedRoute`
+automatisch auf `/login` umleitet – inklusive Merken des ursprünglichen Ziels.
+Die Login-Endpunkte selbst sind ausgenommen, damit ein falsches Passwort
+weiterhin als Formularfehler und nicht als Sitzungsabbruch behandelt wird.
 
 ## Auth-Fluss
 

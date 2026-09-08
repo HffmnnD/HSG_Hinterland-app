@@ -4,7 +4,11 @@
 const jwt = require('jsonwebtoken');
 
 const pool = require('../config/db');
-const { JWT_SECRET, COOKIE_NAME } = require('../config/auth');
+const {
+  JWT_SECRET,
+  JWT_ALGORITHMS,
+  COOKIE_NAME,
+} = require('../config/auth');
 
 function authenticate(req, res, next) {
   const token = req.cookies && req.cookies[COOKIE_NAME];
@@ -14,14 +18,23 @@ function authenticate(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.userId = payload.sub;
+    // algorithms explizit setzen: verhindert Algorithm-Confusion-Angriffe.
+    const payload = jwt.verify(token, JWT_SECRET, {
+      algorithms: JWT_ALGORITHMS,
+    });
+
+    const userId = Number(payload.sub);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(401).json({ message: 'Ungültiges Token.' });
+    }
+
+    req.userId = userId;
     req.userEmail = payload.email;
     // Rolle aus dem Token (Stand: letzter Login). Die autoritative Prüfung
     // erfolgt in checkRole gegen die Datenbank.
     req.userRole = payload.role;
     return next();
-  } catch (err) {
+  } catch {
     return res
       .status(401)
       .json({ message: 'Ungültiges oder abgelaufenes Token.' });
@@ -70,10 +83,7 @@ function checkRole(allowedRoles) {
 
       return next();
     } catch (err) {
-      console.error('Fehler bei der Rollenprüfung:', err);
-      return res
-        .status(500)
-        .json({ message: 'Interner Serverfehler bei der Rollenprüfung.' });
+      return next(err);
     }
   };
 }

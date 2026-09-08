@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react';
 
-import { apiFetch } from '../lib/api';
+import { apiFetch, setSessionExpiredHandler } from '../lib/api';
 
 const AuthContext = createContext(null);
 
@@ -14,20 +14,19 @@ export function AuthProvider({ children }) {
   // Globaler Auth-Status.
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Letzter Auth-Fehler als { message, status } – wird von den Formularen
+  // angezeigt und beim Wechsel/Tippen zurückgesetzt.
   const [error, setError] = useState(null);
 
-  // Auf Wunsch (z. B. nach externem Statuswechsel) den Auth-Status neu laden.
-  const loadCurrentUser = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await apiFetch('/api/auth/me');
-      setUser(data.user);
-    } catch {
-      // 401 -> nicht eingeloggt, das ist ein normaler Zustand.
+  const clearError = useCallback(() => setError(null), []);
+
+  // Wird von apiFetch aufgerufen, wenn eine Sitzung abgelaufen oder das Konto
+  // gesperrt wurde: Nutzer lokal ausloggen, ProtectedRoute leitet dann um.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
       setUser(null);
-    } finally {
-      setLoading(false);
-    }
+    });
+    return () => setSessionExpiredHandler(null);
   }, []);
 
   // Beim ersten Laden prüfen, ob bereits ein gültiger Cookie existiert.
@@ -37,8 +36,9 @@ export function AuthProvider({ children }) {
     (async () => {
       try {
         const data = await apiFetch('/api/auth/me');
-        if (!cancelled) setUser(data.user);
+        if (!cancelled) setUser(data?.user ?? null);
       } catch {
+        // 401/403 -> nicht (mehr) eingeloggt, das ist ein normaler Zustand.
         if (!cancelled) setUser(null);
       } finally {
         if (!cancelled) setLoading(false);
@@ -50,7 +50,17 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const clearError = useCallback(() => setError(null), []);
+  // Auth-Status neu laden, ohne die gesamte App in den Ladezustand zu setzen.
+  const refresh = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/auth/me');
+      setUser(data?.user ?? null);
+      return data?.user ?? null;
+    } catch {
+      setUser(null);
+      return null;
+    }
+  }, []);
 
   const login = useCallback(async ({ email, password }) => {
     setError(null);
@@ -62,7 +72,7 @@ export function AuthProvider({ children }) {
       setUser(data.user);
       return { success: true, user: data.user };
     } catch (err) {
-      setError(err.message);
+      setError({ message: err.message, status: err.status });
       return { success: false, message: err.message, status: err.status };
     }
   }, []);
@@ -77,7 +87,7 @@ export function AuthProvider({ children }) {
         });
         return { success: true, message: data.message, user: data.user };
       } catch (err) {
-        setError(err.message);
+        setError({ message: err.message, status: err.status });
         return { success: false, message: err.message, status: err.status };
       }
     },
@@ -88,9 +98,10 @@ export function AuthProvider({ children }) {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' });
     } catch {
-      // Auch bei Fehler lokal ausloggen.
+      // Auch bei Fehler (z. B. Server offline) lokal ausloggen.
     } finally {
       setUser(null);
+      setError(null);
     }
   }, []);
 
@@ -105,7 +116,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
-    refresh: loadCurrentUser,
+    refresh,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

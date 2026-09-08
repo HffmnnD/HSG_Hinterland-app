@@ -12,6 +12,20 @@ const {
 } = require('../config/auth');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_EMAIL_LENGTH = 255;
+const MAX_NAME_LENGTH = 100;
+const MIN_PASSWORD_LENGTH = 8;
+// bcrypt berücksichtigt nur die ersten 72 Bytes – längere Eingaben ablehnen,
+// statt sie still abzuschneiden.
+const MAX_PASSWORD_LENGTH = 72;
+
+// Echter Hash eines Dummy-Passworts. Wird beim Login gegen nicht existierende
+// Accounts verglichen, damit die Antwortzeit nicht verrät, ob es die
+// E-Mail-Adresse gibt (Timing-basierte User-Enumeration).
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
+  'timing-attack-dummy-password',
+  SALT_ROUNDS
+);
 
 // Einheitliche Aufbereitung der User-Daten für die API-Antwort.
 function toPublicUser(row) {
@@ -27,7 +41,7 @@ function toPublicUser(row) {
 }
 
 // POST /api/auth/register
-async function register(req, res) {
+async function register(req, res, next) {
   try {
     const { firstName, lastName, email, password } = req.body || {};
 
@@ -37,73 +51,106 @@ async function register(req, res) {
       });
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      return res.status(400).json({ message: 'Ungültige E-Mail-Adresse.' });
-    }
-    if (String(password).length < 8) {
+    // Typen prüfen: JSON kann Objekte/Arrays liefern, die sonst als
+    // "[object Object]" in der DB landen würden.
+    if (
+      typeof firstName !== 'string' ||
+      typeof lastName !== 'string' ||
+      typeof email !== 'string' ||
+      typeof password !== 'string'
+    ) {
       return res
         .status(400)
-        .json({ message: 'Das Passwort muss mindestens 8 Zeichen lang sein.' });
+        .json({ message: 'Alle Felder müssen Zeichenketten sein.' });
     }
 
-    const [existing] = await pool.query(
-      'SELECT id FROM users WHERE email = ?',
-      [normalizedEmail]
-    );
-    if (existing.length > 0) {
-      return res
-        .status(409)
-        .json({ message: 'Diese E-Mail-Adresse ist bereits registriert.' });
+    const cleanFirstName = firstName.trim();
+    const cleanLastName = lastName.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (
+      cleanFirstName.length === 0 ||
+      cleanFirstName.length > MAX_NAME_LENGTH ||
+      cleanLastName.length === 0 ||
+      cleanLastName.length > MAX_NAME_LENGTH
+    ) {
+      return res.status(400).json({
+        message: `Vor- und Nachname dürfen nicht leer und höchstens ${MAX_NAME_LENGTH} Zeichen lang sein.`,
+      });
+    }
+    if (
+      normalizedEmail.length > MAX_EMAIL_LENGTH ||
+      !EMAIL_REGEX.test(normalizedEmail)
+    ) {
+      return res.status(400).json({ message: 'Ungültige E-Mail-Adresse.' });
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({
+        message: `Das Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`,
+      });
+    }
+    if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_LENGTH) {
+      return res.status(400).json({
+        message: `Das Passwort darf höchstens ${MAX_PASSWORD_LENGTH} Zeichen lang sein.`,
+      });
     }
 
-    const passwordHash = await bcrypt.hash(String(password), SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // Neue User werden mit is_approved = 0 angelegt und müssen von einem
-    // Admin freigegeben werden.
-    const [result] = await pool.query(
-      `INSERT INTO users (first_name, last_name, email, password_hash, is_approved)
-       VALUES (?, ?, ?, ?, 0)`,
-      [String(firstName).trim(), String(lastName).trim(), normalizedEmail, passwordHash]
-    );
+    // Neue User werden mit is_approved = 0 und der Standardrolle angelegt.
+    // Die Rolle kommt bewusst NICHT aus dem Request (keine Rechteausweitung),
+    // sondern aus dem Spaltenstandard bzw. später über den Admin-Bereich.
+    let result;
+    try {
+      [result] = await pool.query(
+        `INSERT INTO users (first_name, last_name, email, password_hash, is_approved)
+         VALUES (?, ?, ?, ?, 0)`,
+        [cleanFirstName, cleanLastName, normalizedEmail, passwordHash]
+      );
+    } catch (err) {
+      // Der UNIQUE-Index auf email ist die einzige Quelle der Wahrheit –
+      // kein SELECT-dann-INSERT (Race Condition).
+      if (err && err.code === 'ER_DUP_ENTRY') {
+        return res
+          .status(409)
+          .json({ message: 'Diese E-Mail-Adresse ist bereits registriert.' });
+      }
+      throw err;
+    }
 
     return res.status(201).json({
       message:
         'Registrierung erfolgreich. Dein Konto muss noch von einem Admin freigegeben werden.',
       user: {
         id: result.insertId,
-        firstName: String(firstName).trim(),
-        lastName: String(lastName).trim(),
+        firstName: cleanFirstName,
+        lastName: cleanLastName,
         email: normalizedEmail,
         isApproved: false,
       },
     });
   } catch (err) {
-    // Falls der eindeutige Index auf `email` doch greift (Race Condition).
-    if (err && err.code === 'ER_DUP_ENTRY') {
-      return res
-        .status(409)
-        .json({ message: 'Diese E-Mail-Adresse ist bereits registriert.' });
-    }
-    console.error('Fehler bei der Registrierung:', err);
-    return res
-      .status(500)
-      .json({ message: 'Interner Serverfehler bei der Registrierung.' });
+    return next(err);
   }
 }
 
 // POST /api/auth/login
-async function login(req, res) {
+async function login(req, res, next) {
   try {
     const { email, password } = req.body || {};
 
-    if (!email || !password) {
+    if (
+      !email ||
+      !password ||
+      typeof email !== 'string' ||
+      typeof password !== 'string'
+    ) {
       return res
         .status(400)
         .json({ message: 'email und password sind erforderlich.' });
     }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
 
     const [rows] = await pool.query(
       `SELECT id, first_name, last_name, email, password_hash, is_approved, role, created_at
@@ -115,15 +162,15 @@ async function login(req, res) {
     // damit keine gültigen E-Mail-Adressen preisgegeben werden.
     const user = rows[0];
     if (!user) {
+      // Dummy-Vergleich, damit die Antwortzeit nicht verrät, ob es den
+      // Account gibt.
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
       return res
         .status(401)
         .json({ message: 'E-Mail-Adresse oder Passwort ist falsch.' });
     }
 
-    const passwordMatches = await bcrypt.compare(
-      String(password),
-      user.password_hash
-    );
+    const passwordMatches = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatches) {
       return res
         .status(401)
@@ -142,32 +189,33 @@ async function login(req, res) {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
+    // Cookie-Lebensdauer exakt aus dem Token ableiten, damit Cookie und Token
+    // nicht auseinanderlaufen, wenn JWT_EXPIRES_IN geändert wird.
+    const { exp } = jwt.decode(token);
+    const maxAge = Math.max(0, exp * 1000 - Date.now());
+
     // JWT als HttpOnly-Cookie an den Client senden.
-    res.cookie(COOKIE_NAME, token, cookieOptions);
+    res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge });
 
     return res.json({
       message: 'Login erfolgreich.',
       user: toPublicUser(user),
     });
   } catch (err) {
-    console.error('Fehler beim Login:', err);
-    return res
-      .status(500)
-      .json({ message: 'Interner Serverfehler beim Login.' });
+    return next(err);
   }
 }
 
 // POST /api/auth/logout
 function logout(req, res) {
-  // Beim Löschen müssen dieselben Optionen (ohne maxAge) verwendet werden,
-  // mit denen der Cookie gesetzt wurde.
-  const { maxAge, ...clearOptions } = cookieOptions;
-  res.clearCookie(COOKIE_NAME, clearOptions);
+  // Beim Löschen müssen dieselben Optionen verwendet werden, mit denen der
+  // Cookie gesetzt wurde (ohne maxAge).
+  res.clearCookie(COOKIE_NAME, cookieOptions);
   return res.json({ message: 'Logout erfolgreich.' });
 }
 
-// GET /api/auth/me  (geschützt durch authMiddleware)
-async function me(req, res) {
+// GET /api/auth/me  (geschützt durch authenticate)
+async function me(req, res, next) {
   try {
     const [rows] = await pool.query(
       `SELECT id, first_name, last_name, email, is_approved, role, created_at
@@ -177,13 +225,23 @@ async function me(req, res) {
 
     const user = rows[0];
     if (!user) {
-      return res.status(404).json({ message: 'Benutzer nicht gefunden.' });
+      // Konto wurde gelöscht – Cookie entwerten.
+      res.clearCookie(COOKIE_NAME, cookieOptions);
+      return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
+    }
+
+    // Freigabe kann nach dem Login entzogen worden sein. Dann darf die Sitzung
+    // nicht weiterlaufen.
+    if (!user.is_approved) {
+      res.clearCookie(COOKIE_NAME, cookieOptions);
+      return res.status(403).json({
+        message: 'Dein Konto ist nicht (mehr) freigegeben.',
+      });
     }
 
     return res.json({ user: toPublicUser(user) });
   } catch (err) {
-    console.error('Fehler bei /me:', err);
-    return res.status(500).json({ message: 'Interner Serverfehler.' });
+    return next(err);
   }
 }
 

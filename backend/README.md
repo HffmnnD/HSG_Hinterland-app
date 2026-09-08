@@ -93,4 +93,37 @@ curl -b cookies.txt -X POST http://localhost:5000/api/auth/logout
 ## Frontend-Anbindung
 
 `fetch` muss `credentials: 'include'` setzen, damit der Cookie mitgesendet
-wird. Die erlaubte Origin wird über `CLIENT_ORIGIN` in der `.env` gesteuert.
+wird. Im Normalfall läuft das Frontend über den Vite-Dev-Proxy (same-origin),
+dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
+`CLIENT_ORIGIN` die erlaubten Origins (mehrere kommagetrennt).
+
+## Sicherheitsmaßnahmen
+
+| Maßnahme | Wo |
+| -------- | -- |
+| Kein Fallback-`JWT_SECRET` – Start bricht ab, wenn es fehlt oder ein Platzhalter ist | `config/auth.js` |
+| JWT nur mit `HS256` verifiziert (kein Algorithm-Confusion) | `middleware/authMiddleware.js` |
+| Cookie: `httpOnly`, `sameSite=lax`, `secure` über `COOKIE_SECURE`/`NODE_ENV` | `config/auth.js` |
+| Cookie-Lebensdauer wird aus dem `exp` des Tokens abgeleitet | `controllers/authController.js` |
+| Rolle wird bei jeder RBAC-Prüfung frisch aus der DB gelesen | `middleware/authMiddleware.js` |
+| `/api/auth/me` beendet die Sitzung, wenn die Freigabe entzogen wurde | `controllers/authController.js` |
+| Rate-Limit: Login 10/15 min, Registrierung 5/h pro IP | `routes/authRoutes.js` |
+| CSRF-Schutz: Origin-Prüfung bei allen schreibenden Requests | `server.js` |
+| Sicherheits-Header via `helmet` | `server.js` |
+| Alle SQL-Queries ausschließlich mit `?`-Platzhaltern (keine String-Konkatenation von Werten) | überall |
+| Selbst-Aussperrung und "letzter Admin" werden serverseitig verhindert | `controllers/adminController.js` |
+| Zentraler Error-Handler – keine Stacktraces an den Client | `server.js` |
+
+### Bekannte Restrisiken
+
+- **Logout ist clientseitig**: Das JWT bleibt bis zum Ablauf (`JWT_EXPIRES_IN`)
+  technisch gültig. Für echte Sofort-Invalidierung wäre eine Token-Denylist
+  oder eine Sitzungstabelle nötig. Kürzeres `JWT_EXPIRES_IN` reduziert das
+  Zeitfenster.
+- **User-Enumeration bei der Registrierung**: `409` verrät, dass eine
+  E-Mail-Adresse bereits registriert ist. Bewusst beibehalten, weil eine
+  generische Meldung die Registrierung unbrauchbar machen würde. Der Login
+  gibt bewusst keine Auskunft (gleiche Meldung + Dummy-Hash gegen
+  Timing-Analyse).
+- **Rate-Limit im Arbeitsspeicher**: Bei mehreren Server-Instanzen wäre ein
+  gemeinsamer Store (z. B. Redis) nötig.

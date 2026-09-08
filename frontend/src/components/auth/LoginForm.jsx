@@ -5,30 +5,31 @@ import Alert from './Alert';
 import TextField from './TextField';
 
 export default function LoginForm({ onSwitchToRegister }) {
-  const { login } = useAuth();
+  const { login, error, clearError } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState(null); // { status, message }
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
-    setResult(null);
+    clearError();
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
-    const res = await login(form);
-    setSubmitting(false);
-    if (!res.success) {
-      setResult({ status: res.status, message: res.message });
+    try {
+      await login(form);
+      // Bei Erfolg wechselt die App automatisch zum Dashboard (user gesetzt).
+      // Fehler stehen danach in `error` aus dem AuthContext.
+    } finally {
+      setSubmitting(false);
     }
-    // Bei Erfolg wechselt die App automatisch zum Dashboard (user gesetzt).
   };
 
   // Account noch nicht freigeschaltet -> Backend antwortet mit HTTP 403.
-  const notApproved = result?.status === 403;
+  const notApproved = error?.status === 403;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
@@ -39,8 +40,8 @@ export default function LoginForm({ onSwitchToRegister }) {
         </p>
       </div>
 
-      {result && (
-        <Alert variant={notApproved ? 'info' : 'error'}>{result.message}</Alert>
+      {error && (
+        <Alert variant={notApproved ? 'info' : 'error'}>{error.message}</Alert>
       )}
 
       <TextField

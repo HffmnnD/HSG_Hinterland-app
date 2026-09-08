@@ -14,6 +14,10 @@ export default function Dashboard() {
     // Kein setState mehr nötig: Komponente wird nach dem Logout unmounted.
   };
 
+  // Normalerweise garantiert ProtectedRoute einen Nutzer. Der Guard verhindert
+  // einen Absturz, falls die Sitzung während des Renderns wegfällt.
+  if (!user) return null;
+
   const initials = `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`
     .toUpperCase()
     .trim();
