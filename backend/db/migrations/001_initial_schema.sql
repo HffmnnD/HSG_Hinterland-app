@@ -1,17 +1,15 @@
 -- ============================================================================
---  HSG Hinterland App – Datenbankschema (Stand: konsolidiert)
+--  Migration 001 – Basis-Schema (eingefroren)
 -- ----------------------------------------------------------------------------
---  Dies ist die EINZIGE Quelle der Wahrheit für den Datenbankaufbau.
+--  Diese Datei ist der Ausgangszustand der Datenbank und ändert sich nicht
+--  mehr. Sie ist inhaltlich identisch mit ../schema.sql (dort steht die
+--  laufend gepflegte, kommentierte Referenz).
 --
---  Frische Datenbank aufsetzen:
---    - phpMyAdmin: diese Datei komplett ausführen
---    - oder Terminal:  npm run migrate   (führt db/migrations/*.sql aus,
---      die 001 ist identisch mit diesem Schema)
+--  Weitere Schemaänderungen kommen als 002_*.sql, 003_*.sql, ... dazu.
+--  `npm run migrate` führt alle Dateien in dieser Reihenfolge aus; alle
+--  Anweisungen sind idempotent und dürfen mehrfach laufen.
 --
---  Alle Anweisungen sind idempotent (CREATE TABLE IF NOT EXISTS /
---  INSERT ... ON DUPLICATE KEY) und können gefahrlos erneut laufen.
---
---  Beziehungsübersicht (Details in db/README.md):
+--  Beziehungsübersicht (Details in ../README.md):
 --
 --      users ──1:n──> user_teams <──n:1── teams
 --      users ──1:n──> user_services

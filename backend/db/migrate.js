@@ -3,10 +3,10 @@
 //
 //   npm run migrate
 //
-// Die Migrationen sind so geschrieben, dass sie mehrfach ausgeführt werden
-// können. Fehler, die "existiert bereits" bedeuten (Tabelle/Spalte/Key schon
-// vorhanden), werden übersprungen, damit ältere, nicht-idempotente Migrationen
-// nicht stören.
+// Die Migrationen sind idempotent (CREATE TABLE IF NOT EXISTS,
+// INSERT ... ON DUPLICATE KEY, ALTER ... MODIFY) und dürfen beliebig oft
+// laufen. Sollte eine künftige ALTER-Migration doch nicht idempotent sein,
+// überspringt der Runner "existiert bereits"-Fehler (siehe IGNORABLE).
 require('dotenv').config({ quiet: true });
 
 const fs = require('fs');

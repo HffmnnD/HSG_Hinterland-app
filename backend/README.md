@@ -9,10 +9,10 @@ Express-API mit MySQL (`mysql2`), Passwort-Hashing (`bcrypt`) und JWT-Auth
 2. `.env` anlegen: `cp .env.example .env` und Werte anpassen
    (v. a. `JWT_SECRET`).
 3. Abhängigkeiten installieren: `npm install`
-4. Datenbank aufsetzen:
-   - Frische DB: `backend/db/schema.sql` in phpMyAdmin ausführen.
-   - Bestehende DB: `npm run migrate` (führt alle `db/migrations/*.sql` aus,
-     idempotent – bereits vorhandene Tabellen/Spalten werden übersprungen).
+4. Datenbank aufsetzen: `npm run migrate`
+   (führt `db/migrations/*.sql` aus, idempotent). Alternativ in phpMyAdmin
+   die kommentierte Referenz `db/schema.sql` ausführen.
+   Details: [db/README.md](db/README.md).
 5. Server starten: `npm run dev` (nodemon) oder `npm start`
 
 Server: <http://localhost:5000>
@@ -22,34 +22,56 @@ Server: <http://localhost:5000>
 ```
 backend/
   config/
-    auth.js       JWT-/Cookie-Konfiguration
-    db.js         MySQL Connection-Pool (Modul)
-  controllers/
-    authController.js    register / login / logout / me
-    adminController.js    listUsers / updateUser (inkl. Sub-Admin-Sperren)
-    teamsController.js    listTeams / getTeam / candidates / add / remove / callup
-  middleware/
-    authMiddleware.js    authenticate (JWT-Cookie) + checkRole (RBAC)
-  utils/
-    roles.js      Rollen-, Beziehungs- und Dienst-Konstanten
-    teams.js      Validierung + Schreiben der user_teams
-    services.js   Validierung + Schreiben der user_services
-  routes/
+    auth.js              JWT-/Cookie-Konfiguration
+    db.js                MySQL Connection-Pool (Modul)
+
+  routes/                nur URL -> Controller-Funktion + Middleware
     authRoutes.js
     adminRoutes.js
     teamsRoutes.js
+
+  middleware/
+    authMiddleware.js    authenticate (JWT-Cookie) + checkRole (RBAC)
+
+  controllers/           HTTP + Geschäftsregeln, KEIN SQL
+    authController.js    register / login / logout / me
+    adminController.js    listUsers / updateUser (inkl. Sub-Admin-Sperren)
+    teamsController.js    listTeams / getTeam / candidates / add / remove / callup
+
+  repositories/          gesamter Datenbankzugriff (alle SELECT/INSERT/JOINs)
+    userRepository.js    users + zusammengesetztes Profil, Transaktionen
+    teamRepository.js    teams + user_teams (Kader, Kandidaten, Zuordnungen)
+    serviceRepository.js user_services
+
+  utils/
+    roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Dienste)
+    validation.js        Eingabe-Prüfung -> { ok, ... } | { ok:false, status, message }
+
   db/
-    schema.sql
-    migrate.js                       Runner: npm run migrate
-    migrations/001_add_role_to_users.sql
-    migrations/002_add_teams.sql
-    migrations/003_add_team_relations.sql
-    migrations/004_add_user_services.sql
-    migrations/005_add_sub_admin_role.sql
+    schema.sql           kommentierte Referenz (frische DB in phpMyAdmin)
+    migrate.js            Runner: npm run migrate
+    migrations/
+      001_initial_schema.sql   eingefrorener Startzustand (= schema.sql)
+    README.md            Tabellen & Beziehungen auf einen Blick
+
   server.js
 ```
 
+Der Datenfluss ist immer gleich:
+
+```
+Request → route → middleware → controller ──(validation.js)──> prüft Eingabe
+                                     │
+                                     └──(repositories/*)──────> spricht mit MySQL
+                                     │
+                                     ↓
+                                  Response (JSON)
+```
+
 ## Datenbank
+
+Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
+[db/README.md](db/README.md).
 
 | Tabelle         | Zweck |
 | --------------- | ----- |
