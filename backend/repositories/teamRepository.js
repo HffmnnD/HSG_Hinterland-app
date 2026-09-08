@@ -101,7 +101,6 @@ function mapMember(row, includeEmail) {
     firstName: row.first_name,
     lastName: row.last_name,
     role: row.role,
-    isApproved: Boolean(row.is_approved),
     ...(includeEmail ? { email: row.email } : {}),
   };
 }
@@ -112,7 +111,7 @@ function mapMember(row, includeEmail) {
  */
 async function getConfirmedRoster(teamId, { includeEmail = false } = {}, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT u.id, u.first_name, u.last_name, u.email, u.role, u.is_approved, ut.relation_type
+    `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ut.relation_type
        FROM user_teams ut
        JOIN users u ON u.id = ut.user_id
       WHERE ut.team_id = ? AND ut.is_confirmed = 1
@@ -135,7 +134,7 @@ async function getConfirmedRoster(teamId, { includeEmail = false } = {}, runner 
  */
 async function getPendingMembers(teamId, { includeEmail = false } = {}, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT u.id, u.first_name, u.last_name, u.email, u.role, u.is_approved, ut.relation_type
+    `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ut.relation_type
        FROM user_teams ut
        JOIN users u ON u.id = ut.user_id
       WHERE ut.team_id = ? AND ut.is_confirmed = 0

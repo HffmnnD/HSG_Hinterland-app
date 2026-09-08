@@ -39,7 +39,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `first_name`, `last_name` | Name |
 | `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert |
 | `password_hash` | bcrypt-Hash – nie im Klartext, nie an den Client |
-| `is_approved` | `1` = aktiv (Standard), `0` = von einem Admin gesperrt. **Keine** globale Registrierungs-Freigabe mehr – wird beim Login/Session-Check nicht geprüft |
+| `is_approved` | `1` = aktiv (Standard), `0` = von einem Admin gesperrt. **Keine** globale Registrierungs-Freigabe mehr. Wird bei Login, `/api/auth/me` und in `checkRole` geprüft, damit eine Sperre sofort wirkt |
 | `role` | RBAC-Rolle, siehe unten. Wird **nicht** bei der Registrierung gesetzt |
 | `created_at` | Registrierungszeitpunkt |
 

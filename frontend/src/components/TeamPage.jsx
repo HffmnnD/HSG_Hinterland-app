@@ -79,15 +79,16 @@ function TeamView({ code }) {
     };
   }, [code, addRelation, canManage, data]);
 
-  // Führt eine Verwaltungsaktion aus und lädt danach neu.
-  const run = async (action, successMessage) => {
+  // Führt eine Verwaltungsaktion aus und lädt danach neu. Zeigt bevorzugt die
+  // Meldung aus der Server-Antwort (z. B. „… hat jetzt die Rolle Trainer:in").
+  const run = async (action, fallbackMessage) => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await action();
+      const result = await action();
       await load();
-      if (successMessage) setNotice(successMessage);
+      setNotice(result?.message || fallbackMessage || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -148,7 +149,7 @@ function TeamView({ code }) {
           method: 'POST',
           body: JSON.stringify({ userId, targetTeamCode }),
         }),
-      `${name} zu ${targetTeamCode} hochgerufen.`
+      `Anfrage für ${name} an ${targetTeamCode} gesendet.`
     );
 
   if (loading) {
@@ -374,6 +375,7 @@ function TeamView({ code }) {
                               }
                             }}
                             className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-emerald-500 disabled:opacity-50"
+                            title="Sendet eine Anfrage an die Zielmannschaft – deren Trainer:in bestätigt sie."
                           >
                             <option value="">Hochrufen zu …</option>
                             {otherTeams.map((t) => (

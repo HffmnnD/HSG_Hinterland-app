@@ -56,12 +56,25 @@ async function findById(id, runner = pool) {
   return rows[0] ?? null;
 }
 
-/** Anzahl der aktiven (freigegebenen) Admin-Konten. */
+/** Anzahl der aktiven (nicht gesperrten) Admin-Konten. */
 async function countActiveAdmins(runner = pool) {
   const [[row]] = await runner.query(
     "SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND is_approved = 1"
   );
   return row.count;
+}
+
+/**
+ * Hebt die globale Rolle auf 'trainer' an, WENN sie aktuell nur 'spieler'
+ * oder 'zuschauer' ist. `admin`/`sub_admin`/`trainer` bleiben unangetastet.
+ * @returns {Promise<boolean>} true, wenn tatsächlich hochgestuft wurde
+ */
+async function promoteToTrainerIfBasic(userId, runner = pool) {
+  const [result] = await runner.query(
+    "UPDATE users SET role = 'trainer' WHERE id = ? AND role IN ('spieler', 'zuschauer')",
+    [userId]
+  );
+  return result.affectedRows > 0;
 }
 
 /**
@@ -132,9 +145,12 @@ async function createWithProfile({ account, relations, services }) {
   try {
     await conn.beginTransaction();
 
+    // is_approved wird bewusst NICHT gesetzt -> Spalten-Default 1 (aktiv).
+    // Es gibt keine Registrierungs-Freigabe mehr; `is_approved = 0` ist
+    // ausschliesslich eine spätere Admin-Sperre.
     const [result] = await conn.query(
-      `INSERT INTO users (first_name, last_name, email, password_hash, is_approved)
-       VALUES (?, ?, ?, ?, 0)`,
+      `INSERT INTO users (first_name, last_name, email, password_hash)
+       VALUES (?, ?, ?, ?)`,
       [account.firstName, account.lastName, account.email, account.passwordHash]
     );
     const userId = result.insertId;
@@ -161,6 +177,11 @@ async function createWithProfile({ account, relations, services }) {
  * @param {number[]} [change.playerTeamIds]  vollständige neue Spieler-Zuordnung
  * @param {string[]} [change.services]        vollständige neue Dienstliste
  */
+// Nur diese Spalten dürfen über applyAdminChange geschrieben werden.
+// Defense-in-depth: verhindert SQL-Injection über Spaltennamen, falls
+// validateUserPatch je erweitert wird.
+const WRITABLE_USER_COLUMNS = new Set(['role', 'is_approved']);
+
 async function applyAdminChange(userId, { accountFields, playerTeamIds, services }) {
   const conn = await pool.getConnection();
   try {
@@ -168,6 +189,10 @@ async function applyAdminChange(userId, { accountFields, playerTeamIds, services
 
     if (accountFields && Object.keys(accountFields).length > 0) {
       const cols = Object.keys(accountFields);
+      const unknown = cols.filter((c) => !WRITABLE_USER_COLUMNS.has(c));
+      if (unknown.length > 0) {
+        throw new Error(`Nicht erlaubte Spalte(n): ${unknown.join(', ')}`);
+      }
       await conn.query(
         `UPDATE users SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`,
         [...cols.map((c) => accountFields[c]), userId]
@@ -208,6 +233,7 @@ module.exports = {
   findByEmail,
   findById,
   countActiveAdmins,
+  promoteToTrainerIfBasic,
   buildProfile,
   getFullProfile,
   listAllWithProfiles,

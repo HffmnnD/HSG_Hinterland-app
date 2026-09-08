@@ -153,7 +153,19 @@ async function addMember(req, res, next) {
 
     // Vom Trainer/Admin manuell hinzugefügt -> direkt bestätigt.
     await teamRepository.addRelation(targetId, loaded.team.id, relationType, 1);
-    return res.status(201).json({ message: 'Zuordnung gespeichert.' });
+
+    // Wie bei /confirm: bestätigte Trainer-Beziehung -> globale Rolle anheben.
+    let roleUpgraded = false;
+    if (relationType === 'coach') {
+      roleUpgraded = await userRepository.promoteToTrainerIfBasic(targetId);
+    }
+
+    return res.status(201).json({
+      message: roleUpgraded
+        ? 'Zuordnung gespeichert. Die Person hat jetzt die Rolle „Trainer:in".'
+        : 'Zuordnung gespeichert.',
+      roleUpgraded,
+    });
   } catch (err) {
     return next(err);
   }
@@ -193,7 +205,26 @@ async function confirmMember(req, res, next) {
         .json({ message: 'Keine offene Beitrittsanfrage gefunden.' });
     }
 
-    return res.json({ message: 'Beitritt bestätigt.' });
+    // Wurde eine Trainer-Beziehung bestätigt, bekommt der Nutzer auch die
+    // globale Rolle 'trainer' (sofern er bisher nur spieler/zuschauer war).
+    let roleUpgraded = false;
+    if (relationType === undefined || relationType === 'coach') {
+      const nowCoach = await teamRepository.hasConfirmedRelation(
+        targetId,
+        loaded.team.id,
+        'coach'
+      );
+      if (nowCoach) {
+        roleUpgraded = await userRepository.promoteToTrainerIfBasic(targetId);
+      }
+    }
+
+    return res.json({
+      message: roleUpgraded
+        ? 'Beitritt bestätigt. Die Person hat jetzt die Rolle „Trainer:in".'
+        : 'Beitritt bestätigt.',
+      roleUpgraded,
+    });
   } catch (err) {
     return next(err);
   }
@@ -289,11 +320,13 @@ async function callUpPlayer(req, res, next) {
         .json({ message: 'Die Person spielt nicht in dieser Mannschaft.' });
     }
 
-    // Hochrufen durch den Trainer -> direkt bestätigt.
-    await teamRepository.addRelation(targetId, targetTeam.id, 'player', 1);
-    return res
-      .status(201)
-      .json({ message: `Hochgerufen zu ${targetTeam.name}.` });
+    // Der Trainer der QUELLmannschaft darf nicht ungefragt einen bestätigten
+    // Eintrag in einer fremden Mannschaft erzeugen -> als offene Anfrage
+    // anlegen, die der/die Trainer:in der Zielmannschaft bestätigt.
+    await teamRepository.addRelation(targetId, targetTeam.id, 'player', 0);
+    return res.status(201).json({
+      message: `Anfrage an ${targetTeam.name} gesendet – der/die dortige Trainer:in muss sie noch bestätigen.`,
+    });
   } catch (err) {
     return next(err);
   }

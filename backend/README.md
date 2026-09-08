@@ -51,8 +51,9 @@ backend/
     schema.sql           laufend gepflegte, kommentierte Referenz
     migrate.js            Runner: npm run migrate (einmalig je Datei, via schema_migrations)
     migrations/
-      001_initial_schema.sql    eingefrorener Startzustand
-      002_team_confirmation.sql  is_confirmed + Freigabe abgeschafft
+      001_initial_schema.sql             eingefrorener Startzustand
+      002_team_confirmation.sql          is_confirmed + Freigabe abgeschafft
+      003_activate_existing_accounts.sql Bestandskonten aktivieren
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -76,7 +77,7 @@ Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
 
 | Tabelle             | Zweck |
 | ------------------- | ----- |
-| `users`             | Konten inkl. `role` (ENUM). `is_approved` = Konto aktiv (Standard 1, reine Admin-Notbremse) |
+| `users`             | Konten inkl. `role` (ENUM). `is_approved` = Konto aktiv (Standard 1) bzw. vom Admin gesperrt (0) – bei Login/Session/RBAC geprüft |
 | `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1 |
 | `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)` |
 | `user_services`     | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
@@ -112,20 +113,31 @@ router.get('/users', authenticate, checkRole('admin'), listUsers);
 // oder mehrere: checkRole(['admin', 'trainer'])
 ```
 
-## Registrierung & Freigabe
+## Registrierung, Sperre & Team-Bestätigung
 
-Es gibt **keine globale Admin-Freigabe** mehr. Nach der Registrierung ist das
-Konto sofort aktiv und der Login funktioniert direkt. `users.is_approved` bleibt
-als Notbremse (Admin kann ein Konto sperren = `0`), wird beim Login/Session-
-Check aber nicht geprüft.
+**Keine globale Registrierungs-Freigabe.** Nach der Registrierung ist das Konto
+sofort aktiv (`is_approved = 1` per Spalten-Default – die Anwendung setzt das
+Feld beim INSERT nicht).
 
-Stattdessen bestätigt der/die **Trainer:in der Mannschaft** die Zugehörigkeit
+`is_approved = 0` heisst jetzt **von einem Admin gesperrt** und wird bei
+**Login**, **`/api/auth/me`** und in **`checkRole`** geprüft – eine Sperre
+greift also sofort (nicht erst nach Token-Ablauf). Die Meldung ist bewusst
+„Dieses Konto wurde gesperrt." (nicht „wartet auf Freigabe").
+
+Die **Zugehörigkeit zu einer Mannschaft** bestätigt der/die Trainer:in
 (`user_teams.is_confirmed`):
 
 - Registrierung mit `relationType` `player`/`coach` → `is_confirmed = 0`
   (offene Anfrage, taucht nur in `pendingMembers` auf)
 - `relationType = 'fan'` sowie alles, was Trainer/Admin manuell anlegen
-  (`addMember`, `callup`, Admin-`teamIds`) → `is_confirmed = 1`
+  (`addMember`, Admin-`teamIds`) → `is_confirmed = 1`
+- `callup` legt eine **offene Anfrage** in der Zielmannschaft an (der/die
+  dortige Trainer:in bestätigt)
+
+**Automatische Rollen-Anhebung:** Wird eine `coach`-Beziehung bestätigt
+(`/confirm` oder `addMember` mit `relationType=coach`), setzt das System die
+globale `users.role` auf `trainer` – **nur** wenn sie vorher `spieler` oder
+`zuschauer` war. `admin`/`sub_admin`/`trainer` bleiben unangetastet.
 
 ## Auth-Endpunkte
 
@@ -143,10 +155,10 @@ Stattdessen bestätigt der/die **Trainer:in der Mannschaft** die Zugehörigkeit
 | GET     | `/api/teams`                           | –    | Alle Mannschaften. Öffentlich (Registrierungsformular). |
 | GET     | `/api/teams/:code`                     | angemeldet | `team`, `members` (nur **bestätigte**, nach `player`/`coach`/`fan`), `counts`, `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). E-Mails nur für Verwaltende. |
 | GET     | `/api/teams/:code/candidates`          | Verwaltung | Aktive Mitglieder ohne diese Beziehung (`?relationType=`). |
-| POST    | `/api/teams/:code/members`             | Verwaltung | `{ userId, relationType }` – Beziehung direkt **bestätigt** anlegen. |
-| POST    | `/api/teams/:code/members/:userId/confirm` | Verwaltung | Offene Anfrage(n) bestätigen. `?relationType=` optional (sonst alle offenen). `404` wenn nichts offen. |
+| POST    | `/api/teams/:code/members`             | Verwaltung | `{ userId, relationType }` – Beziehung direkt **bestätigt** anlegen. Bei `relationType=coach` wird die globale Rolle ggf. auf `trainer` angehoben (`roleUpgraded` in der Antwort). |
+| POST    | `/api/teams/:code/members/:userId/confirm` | Verwaltung | Offene Anfrage(n) bestätigen. `?relationType=` optional (sonst alle offenen). `404` wenn nichts offen. Antwort: `{ message, roleUpgraded }` – bei bestätigter `coach`-Anfrage wird die globale Rolle ggf. auf `trainer` angehoben. |
 | DELETE  | `/api/teams/:code/members/:userId`     | Verwaltung | `?relationType=` – Beziehung entfernen / offene Anfrage ablehnen. |
-| POST    | `/api/teams/:code/callup`              | Verwaltung | `{ userId, targetTeamCode }` – Spieler:in hochrufen (bestätigt; bestehende Zuordnung bleibt). |
+| POST    | `/api/teams/:code/callup`              | Verwaltung | `{ userId, targetTeamCode }` – Spieler:in hochrufen. Legt eine **offene Anfrage** in der Zielmannschaft an (deren Trainer:in bestätigt). Voraussetzung: bestätigte:r Spieler:in der Quellmannschaft. |
 
 „Verwaltung“ = `admin`, `sub_admin` oder als **bestätigte:r** `coach` dieser
 Mannschaft eingetragen. Sonst `403`. Trainer:innen können sich nicht selbst als
@@ -204,13 +216,15 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | JWT nur mit `HS256` verifiziert (kein Algorithm-Confusion) | `middleware/authMiddleware.js` |
 | Cookie: `httpOnly`, `sameSite=lax`, `secure` über `COOKIE_SECURE`/`NODE_ENV` | `config/auth.js` |
 | Cookie-Lebensdauer wird aus dem `exp` des Tokens abgeleitet | `controllers/authController.js` |
-| Rolle wird bei jeder RBAC-Prüfung frisch aus der DB gelesen | `middleware/authMiddleware.js` |
-| `/api/auth/me` beendet die Sitzung, wenn das Konto gelöscht wurde | `controllers/authController.js` |
-| Rate-Limit: Login 10/15 min, Registrierung 5/h pro IP | `routes/authRoutes.js` |
+| Rolle **und Sperrstatus** werden bei jeder RBAC-Prüfung frisch aus der DB gelesen | `middleware/authMiddleware.js` |
+| `/api/auth/me` beendet die Sitzung, wenn das Konto gelöscht oder gesperrt wurde | `controllers/authController.js` |
+| Rate-Limit: Login 10/15 min, Registrierung 5/h pro IP; `trust proxy` konfiguriert (`TRUST_PROXY`) | `routes/authRoutes.js`, `server.js` |
 | CSRF-Schutz: Origin-Prüfung bei allen schreibenden Requests | `server.js` |
 | Sicherheits-Header via `helmet` | `server.js` |
-| Alle SQL-Queries ausschließlich mit `?`-Platzhaltern (keine String-Konkatenation von Werten) | überall |
+| Alle SQL-Queries mit `?`-Platzhaltern; dynamische Spaltennamen nur aus fester Allowlist | überall, `repositories/userRepository.js` |
 | Selbst-Aussperrung und "letzter Admin" werden serverseitig verhindert | `controllers/adminController.js` |
+| `sub_admin` kann Admin-Konten nicht bearbeiten und die Rolle `admin` nicht vergeben | `controllers/adminController.js` |
+| Team-Verwaltung nur für Admin/Sub-Admin oder **bestätigte:n** `coach` der jeweiligen Mannschaft | `controllers/teamsController.js` |
 | Zentraler Error-Handler – keine Stacktraces an den Client | `server.js` |
 
 ### Bekannte Restrisiken
@@ -225,4 +239,14 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   gibt bewusst keine Auskunft (gleiche Meldung + Dummy-Hash gegen
   Timing-Analyse).
 - **Rate-Limit im Arbeitsspeicher**: Bei mehreren Server-Instanzen wäre ein
-  gemeinsamer Store (z. B. Redis) nötig.
+  gemeinsamer Store (z. B. Redis) nötig. Hinter einem Proxy muss `TRUST_PROXY`
+  korrekt gesetzt sein (Standard `loopback` deckt den Vite-Dev-Proxy ab; hinter
+  echtem LB `TRUST_PROXY=1`), sonst greift die Zählung pro IP nicht.
+- **Roster-Sichtbarkeit**: Jede:r angemeldete Nutzer:in kann den bestätigten
+  Kader (Namen + Rollen, keine E-Mails) jeder Mannschaft über `GET
+  /api/teams/:code` einsehen. Bewusst so – im Vereinskontext sind Kader nicht
+  geheim. E-Mails und offene Beitrittsanfragen sehen nur Verwaltende.
+- **`GET /api/admin/users` für `trainer`**: Trainer:innen sehen die komplette
+  Mitgliederliste inkl. E-Mail, um Spieler:innen Mannschaften zuzuordnen.
+  Falls das enger gefasst werden soll, müsste die Antwort für `trainer`
+  reduziert werden.

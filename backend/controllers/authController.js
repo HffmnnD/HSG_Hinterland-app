@@ -18,6 +18,10 @@ const { validateRegistration } = require('../utils/validation');
 const REGISTER_OK_MESSAGE =
   'Registrierung erfolgreich. Du kannst dich sofort anmelden. Deine Mannschafts-Zuordnungen bestätigt jeweils der/die Trainer:in.';
 const BAD_CREDENTIALS_MESSAGE = 'E-Mail-Adresse oder Passwort ist falsch.';
+// `is_approved = 0` bedeutet NICHT mehr "wartet auf Freigabe", sondern
+// "von einem Admin gesperrt" – daher eine eigene, klare Meldung.
+const ACCOUNT_LOCKED_MESSAGE =
+  'Dieses Konto wurde gesperrt. Bitte wende dich an einen Admin.';
 
 // Echter Hash eines Dummy-Passworts. Wird beim Login gegen nicht existierende
 // Konten verglichen, damit die Antwortzeit nicht verrät, ob es die
@@ -108,6 +112,10 @@ async function login(req, res, next) {
     if (!(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ message: BAD_CREDENTIALS_MESSAGE });
     }
+    // Admin-Sperre: keine neue Sitzung für gesperrte Konten.
+    if (!user.is_approved) {
+      return res.status(403).json({ message: ACCOUNT_LOCKED_MESSAGE });
+    }
 
     setSessionCookie(res, user);
     const profile = await userRepository.buildProfile(user);
@@ -131,6 +139,10 @@ async function me(req, res, next) {
     if (!user) {
       clearSessionCookie(res); // Konto gelöscht -> Cookie entwerten
       return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
+    }
+    if (!user.is_approved) {
+      clearSessionCookie(res); // nachträglich gesperrt -> Sitzung beenden
+      return res.status(403).json({ message: ACCOUNT_LOCKED_MESSAGE });
     }
 
     const profile = await userRepository.buildProfile(user);

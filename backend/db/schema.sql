@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
                  COMMENT 'bcrypt-Hash des Passworts. Nie im Klartext, nie an den Client.',
 
   is_approved    TINYINT(1) NOT NULL DEFAULT 1
-                 COMMENT 'Konto aktiv (1) oder von einem Admin gesperrt (0). Standard 1 – es gibt KEINE globale Registrierungs-Freigabe mehr. Beim Login/Session-Check wird dieses Flag nicht geprüft; es ist nur eine Admin-Notbremse.',
+                 COMMENT 'Konto aktiv (1) oder von einem Admin gesperrt (0). Standard 1 – KEINE globale Registrierungs-Freigabe. Wird bei Login, Session (/me) und RBAC geprüft, damit eine Admin-Sperre sofort greift.',
 
   role           ENUM('admin','sub_admin','trainer','spieler','zuschauer')
                  NOT NULL DEFAULT 'spieler'
@@ -147,5 +147,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 -- als angewendet markieren, damit `npm run migrate` nichts nachträglich tut.
 INSERT INTO schema_migrations (filename) VALUES
   ('001_initial_schema.sql'),
-  ('002_team_confirmation.sql')
+  ('002_team_confirmation.sql'),
+  ('003_activate_existing_accounts.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

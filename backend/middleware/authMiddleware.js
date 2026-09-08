@@ -56,15 +56,21 @@ function checkRole(allowedRoles) {
     }
 
     try {
-      // Rolle frisch aus der DB lesen, damit Entzug/Änderung sofort greift.
+      // Rolle + Sperrstatus frisch aus der DB lesen, damit eine Änderung
+      // sofort greift (nicht erst nach Ablauf des 7-Tage-Tokens).
       const [rows] = await pool.query(
-        'SELECT role FROM users WHERE id = ?',
+        'SELECT role, is_approved FROM users WHERE id = ?',
         [req.userId]
       );
       const user = rows[0];
 
       if (!user) {
         return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
+      }
+      if (!user.is_approved) {
+        return res
+          .status(403)
+          .json({ message: 'Dieses Konto wurde gesperrt.' });
       }
 
       req.userRole = user.role;

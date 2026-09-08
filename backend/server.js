@@ -16,6 +16,16 @@ const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
+// Hinter einem Reverse-Proxy / Load-Balancer läuft, sonst kämen alle Requests
+// scheinbar von der Proxy-IP -> das Rate-Limiting pro IP wäre wirkungslos.
+// Standard: nur Loopback vertrauen (deckt den Vite-Dev-Proxy ab). In Produktion
+// hinter einem echten Proxy TRUST_PROXY=1 (o. ä.) setzen.
+const trustProxy = process.env.TRUST_PROXY ?? 'loopback';
+app.set(
+  'trust proxy',
+  /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy
+);
+
 // CLIENT_ORIGIN darf mehrere Origins enthalten (kommagetrennt), damit z. B.
 // localhost und die LAN-IP fürs Handy-Testen gleichzeitig erlaubt sind.
 const ALLOWED_ORIGINS = (
