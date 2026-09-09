@@ -39,6 +39,9 @@ frontend/src/
   hooks/
     useTeams.js                lädt GET /api/teams (öffentlich)
     useNews.js                 lädt GET /api/news (+ reload nach Anlegen/Löschen)
+    useHandball.js             useHandballTable / useHandballSchedule /
+                               useLiveTicker (Polling im 10-Sekunden-Takt)
+                               Quelle: nuLiga (HHV), siehe backend/README.md
   lib/
     api.js                     fetch-Wrapper, IMMER credentials: 'include'
                                (setzt bei FormData bewusst KEINEN Content-Type)
@@ -46,6 +49,8 @@ frontend/src/
     participation.js           Beteiligungsarten, Beziehungstypen, Helferdienste
     navigation.js              EINZIGE Quelle der Hauptnavigation (rollengefiltert)
     format.js                  deutsche Datumsformate
+    handball.js                Beschriftungen, Ergebnis-/Zeitformate und
+                               Ereignis-Symbole des Handball-Moduls
   components/
     AppLayout.jsx              Gerüst aller geschützten Seiten:
                                Kopfzeile + MainNav + Inhalt + BottomNav
@@ -67,7 +72,19 @@ frontend/src/
     TeamsPage.jsx              /teams: eigene + alle Mannschaften
     SchedulePage.jsx           /termine: Vorschau auf das Termin-Modul
     AdminPage.jsx              /admin: Mitgliederliste + News-Verwaltung
-    TeamPage.jsx               /teams/:code: offene Beitrittsanfragen + Kader
+    TeamPage.jsx               /teams/:code: Fan-Mannschaftsseite mit Reitern
+                               (Übersicht / Spielplan & Tabelle / Kader /
+                               Verwaltung), Live-Banner und nuLiga-Widgets
+    team/
+      TeamHero.jsx             Kopfbereich: Foto/Verlauf, Name, Liga, Sponsoren
+      NextGameCard.jsx         Karte „Nächstes Spiel" (Reiter Übersicht)
+      RosterSection.jsx        Kader: Trainerstab, Spielerkarten, Positionsfilter
+      TeamManagePanel.jsx      Verwaltung: Anfragen, Zuordnungen, Stammdaten
+      Skeleton.jsx             Lade-Platzhalter
+    handball/
+      TableWidget.jsx          Ligatabelle, eigene Mannschaft hervorgehoben
+      ScheduleWidget.jsx       nächste Spiele + letzte Ergebnisse, Status-Badge
+      LiveTickerWidget.jsx     Anzeigetafel + Ereignisse, lädt automatisch nach
     auth/
       AuthScreen.jsx           Umschalter Login <-> Registrierung
       AuthLayout.jsx           mobile-first zentriertes Karten-Layout
@@ -75,6 +92,75 @@ frontend/src/
       RegisterForm.jsx         Name/E-Mail/Passwort + Beteiligung + Teams + Dienste
       TextField.jsx / Alert.jsx
 ```
+
+## Mannschaftsseite (`/teams/:code`)
+
+Vier Reiter, damit die Seite nicht überläuft. Der aktive Reiter steht im
+Adressfeld (`?tab=kader`) – ein Link auf den Kader geht auch als Kader wieder
+auf, und der Zurück-Knopf des Browsers tut, was er soll. Der Reiter
+„Verwaltung" erscheint nur für Trainer:innen dieser Mannschaft und Admins.
+
+| Reiter | Inhalt |
+| ------ | ------ |
+| Übersicht | genau zwei Dinge: die Karte „Nächstes Spiel" und die Ligatabelle |
+| Spielplan & Tabelle | Umschalter „Nächste Spiele / Ergebnisse / Gesamter Spielplan" plus Ligatabelle |
+| Kader | Trainer-/Betreuerstab und Spielerkarten mit Positionsfilter |
+| Verwaltung | offene Beitrittsanfragen, Zuordnungen, Stammdaten (nur Admin) |
+
+Darüber – über allen Reitern – erscheint der **Live-Ticker-Banner**, sobald für
+die Mannschaft ein Spiel läuft. Wer die App am Spieltag öffnet, sucht genau
+das. Existiert für das laufende Spiel noch kein nuLiga-Spielbericht, zeigt der
+Banner die Begegnung mit einem Hinweis statt eines leeren Tickers.
+
+Weitere Entscheidungen, die beim Weiterbauen wichtig sind:
+
+* **Die Übersicht bleibt bei zwei Elementen.** Spielplan-Listen, vergangene
+  Ergebnisse und Match-Details gehören ausschließlich in „Spielplan & Tabelle".
+  Wer die Übersicht erweitern will, erweitert stattdessen den anderen Reiter.
+* **Der Kopfbereich trägt nur die Identität** der Mannschaft: Foto, Name, Liga,
+  Sponsoren. Kürzel, Rollen-Badge und Kaderzahlen stehen dort bewusst nicht –
+  das Kürzel zeigt schon die Kopfzeile, Zahlen gehören in die Reiter.
+* **Ohne Foto** trägt der Kopfbereich einen Verlauf im Anthrazit der Marke mit
+  grünem Schimmer (`.team-hero` in `index.css`), keine fremde Farbfamilie.
+* **Ohne `handballTeamId`** erscheint statt Tabelle und Spielplan der Hinweis
+  „Ligaspiele für diese Saison noch nicht terminiert.". Für Verwaltende steht
+  dabei, wo sich die Nummer eintragen lässt.
+* **Der Positionsfilter erscheint nur, wenn er etwas bringt** (mindestens zwei
+  verschiedene Positionen im Kader).
+* **Profilbilder gibt es noch nicht.** Die Karte zeigt die Rückennummer im
+  Trikot-Kreis, ersatzweise die Initialen.
+
+## Handball-Widgets
+
+Drei Widgets zeigen die Verbandsdaten aus `/api/handball/*` (Quelle ist das
+nuLiga-Portal des HHV; Details: `backend/README.md`). Alle drei brauchen nur
+eine ID – die Mannschafts-ID ist nuLigas `teamtable`-Nummer, die Spiel-ID
+stammt unverändert aus dem Spielplan:
+
+```jsx
+<TableWidget teamId={teamId} />              // Ligatabelle
+<ScheduleWidget teamId={teamId} />           // Spielplan + Ergebnisse
+<LiveTickerWidget gameId={gameId} />         // laufendes Spiel
+```
+
+Wissenswertes für den Einbau:
+
+* **Kein Absturz bei Ausfall.** Das Backend antwortet auch dann mit HTTP 200
+  und einem gültigen DTO. Die Widgets lesen `meta` und zeigen entweder den
+  Zeitstempel („Stand 14:25 Uhr"), ein Badge „Nicht aktuell" oder einen
+  Hinweistext.
+* **Spiele ohne Ticker-Link.** Künftige Partien haben in nuLiga noch keine
+  Spiel-ID; `ScheduleWidget` macht solche Zeilen dann nicht anklickbar.
+* **Sparsames Polling.** `useLiveTicker` fragt nur ein *laufendes* Spiel alle
+  10 Sekunden ab, pausiert im Hintergrund (`visibilitychange`), hört nach dem
+  Schlusspfiff ganz auf und streckt den Takt nach Fehlern.
+* **Restzeit ist gerechnet, keine Uhr.** nuLiga liefert nur die Spielzeit
+  der letzten gemeldeten Aktion. Das Ticker-Widget schreibt das ausdrücklich
+  dazu. Für Jugendspiele die Spieldauer mitgeben:
+  `<LiveTickerWidget gameId={id} durationMinutes={50} />`.
+* **Spalten nach Wichtigkeit.** Die Tabelle zeigt auf dem Handy Rang,
+  Mannschaft, Spiele und Punkte; S/U/N, Tordifferenz und Tore kommen ab `sm`
+  bzw. `md` dazu.
 
 ## Navigation
 

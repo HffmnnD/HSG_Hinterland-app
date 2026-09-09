@@ -9,6 +9,50 @@ const pool = require('../config/db');
 
 const RELATION_GROUPS = ['player', 'coach', 'fan'];
 
+// Spielpositionen (muss zum ENUM in `user_teams.position` passen).
+const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
+
+// Spalten der Mannschaft, die überall gleich ausgelesen werden.
+const TEAM_COLUMNS = 'id, code, name, handball_team_id, photo_path';
+
+// Nur diese Spalten dürfen über updateTeam bzw. updateRelationDetails
+// geschrieben werden. Defense-in-depth wie WRITABLE_USER_COLUMNS in
+// userRepository.js: die Spaltennamen werden in das UPDATE interpoliert
+// (Werte laufen über ?), deshalb dürfen sie NIE aus einer Anfrage stammen.
+// Heute liefert utils/validation.js ausschließlich feste Schlüssel – diese
+// Prüfung stellt sicher, dass das auch nach künftigen Erweiterungen gilt.
+const WRITABLE_TEAM_COLUMNS = new Set(['handball_team_id', 'photo_path']);
+const WRITABLE_RELATION_COLUMNS = new Set([
+  'jersey_number',
+  'position',
+  'staff_title',
+]);
+
+/**
+ * Wirft, sobald ein Feldname nicht auf der Whitelist steht.
+ * @param {string[]} keys
+ * @param {Set<string>} erlaubt
+ */
+function assertWritableColumns(keys, erlaubt) {
+  const unknown = keys.filter((key) => !erlaubt.has(key));
+  if (unknown.length > 0) {
+    throw new Error(`Nicht erlaubte Spalte(n): ${unknown.join(', ')}`);
+  }
+}
+
+/** DB-Zeile einer Mannschaft -> camelCase fürs Frontend. */
+function mapTeam(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    // nuLiga-Nummer für Tabelle/Spielplan/Ticker. null = keine Ligaanbindung.
+    handballTeamId: row.handball_team_id ?? null,
+    photoPath: row.photo_path ?? null,
+  };
+}
+
 // Beziehungstypen, die bei der Registrierung sofort als bestätigt gelten.
 const AUTO_CONFIRMED_RELATIONS = new Set(['fan']);
 
@@ -22,19 +66,78 @@ function initialConfirmation(relationType) {
 /** Alle Mannschaften, aufsteigend nach id. */
 async function listAll(runner = pool) {
   const [rows] = await runner.query(
-    'SELECT id, code, name FROM teams ORDER BY id'
+    `SELECT ${TEAM_COLUMNS} FROM teams ORDER BY id`
   );
-  return rows;
+  return rows.map(mapTeam);
 }
 
 /** Eine Mannschaft anhand ihres Codes (case-insensitiv). null wenn unbekannt. */
 async function findByCode(code, runner = pool) {
   if (typeof code !== 'string' || code.trim() === '') return null;
   const [rows] = await runner.query(
-    'SELECT id, code, name FROM teams WHERE code = ?',
+    `SELECT ${TEAM_COLUMNS} FROM teams WHERE code = ?`,
     [code.trim().toUpperCase()]
   );
-  return rows[0] ?? null;
+  return mapTeam(rows[0]);
+}
+
+/**
+ * Stammdaten einer Mannschaft ändern (Ligaverknüpfung, Foto).
+ * `fields` enthält bereits geprüfte Spaltennamen.
+ * @returns {Promise<number>} Anzahl geänderter Zeilen
+ */
+async function updateTeam(teamId, fields, runner = pool) {
+  const keys = Object.keys(fields);
+  if (keys.length === 0) return 0;
+  assertWritableColumns(keys, WRITABLE_TEAM_COLUMNS);
+
+  const [result] = await runner.query(
+    `UPDATE teams SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`,
+    [...keys.map((k) => fields[k]), teamId]
+  );
+  return result.affectedRows;
+}
+
+// --- Sponsoren --------------------------------------------------------------
+
+/**
+ * Nur http/https durchlassen.
+ *
+ * Sponsorenlinks landen im Frontend in einem `href`. Ein Wert wie
+ * `javascript:…` oder `data:text/html,…` gehört dort nicht hin – React und
+ * moderne Browser blocken beides zwar, aber die Zusage „nur http/https" steht
+ * in der Spaltenbeschreibung und muss auch durchgesetzt werden. Geprüft wird
+ * am Datenrand, damit die Regel für jeden Aufrufer gilt.
+ *
+ * @returns {string|null} null, wenn das Schema nicht erlaubt ist
+ */
+function sicherereWebsite(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(String(url));
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? parsed.href
+      : null;
+  } catch {
+    // Kein absoluter Link (z. B. "www.example.de") -> lieber nicht verlinken.
+    return null;
+  }
+}
+
+/** Sponsoren einer Mannschaft in Anzeigereihenfolge. */
+async function getSponsors(teamId, runner = pool) {
+  const [rows] = await runner.query(
+    `SELECT id, name, website_url, sort_order
+       FROM team_sponsors
+      WHERE team_id = ?
+      ORDER BY sort_order, name`,
+    [teamId]
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    websiteUrl: sicherereWebsite(row.website_url),
+  }));
 }
 
 /** Von einer Liste von IDs die tatsächlich existierenden zurückgeben. */
@@ -101,6 +204,10 @@ function mapMember(row, includeEmail) {
     firstName: row.first_name,
     lastName: row.last_name,
     role: row.role,
+    // Kaderangaben gelten je Mannschaft (siehe Migration 005).
+    jerseyNumber: row.jersey_number ?? null,
+    position: row.position ?? null,
+    staffTitle: row.staff_title ?? null,
     ...(includeEmail ? { email: row.email } : {}),
   };
 }
@@ -111,11 +218,14 @@ function mapMember(row, includeEmail) {
  */
 async function getConfirmedRoster(teamId, { includeEmail = false } = {}, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ut.relation_type
+    `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+            ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
        FROM user_teams ut
        JOIN users u ON u.id = ut.user_id
       WHERE ut.team_id = ? AND ut.is_confirmed = 1
-      ORDER BY u.last_name, u.first_name`,
+      -- Kader nach Rückennummer sortieren (ohne Nummer ans Ende), danach
+      -- alphabetisch. So steht die Liste wie im Spielberichtsbogen.
+      ORDER BY ut.jersey_number IS NULL, ut.jersey_number, u.last_name, u.first_name`,
     [teamId]
   );
 
@@ -134,7 +244,8 @@ async function getConfirmedRoster(teamId, { includeEmail = false } = {}, runner 
  */
 async function getPendingMembers(teamId, { includeEmail = false } = {}, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ut.relation_type
+    `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+            ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
        FROM user_teams ut
        JOIN users u ON u.id = ut.user_id
       WHERE ut.team_id = ? AND ut.is_confirmed = 0
@@ -189,6 +300,41 @@ async function addRelation(userId, teamId, relationType, isConfirmed = 1, runner
     [userId, teamId, relationType, confirmed]
   );
   return result;
+}
+
+/**
+ * Kaderangaben einer bestehenden Zuordnung ändern (Rückennummer, Position,
+ * Bezeichnung im Betreuerstab). `fields` enthält bereits geprüfte Spalten.
+ * @returns {Promise<number>} Anzahl geänderter Zeilen (0 = Zuordnung fehlt)
+ */
+async function updateRelationDetails(userId, teamId, relationType, fields, runner = pool) {
+  const keys = Object.keys(fields);
+  if (keys.length === 0) return 0;
+  assertWritableColumns(keys, WRITABLE_RELATION_COLUMNS);
+
+  const [result] = await runner.query(
+    `UPDATE user_teams
+        SET ${keys.map((k) => `${k} = ?`).join(', ')}
+      WHERE user_id = ? AND team_id = ? AND relation_type = ?`,
+    [...keys.map((k) => fields[k]), userId, teamId, relationType]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Ist die Rückennummer in dieser Mannschaft schon vergeben?
+ * Zwei Feldspieler mit derselben Nummer wären im Spielbericht unzulässig –
+ * deshalb prüft der Controller das, bevor er speichert.
+ */
+async function isJerseyNumberTaken(teamId, jerseyNumber, exceptUserId, runner = pool) {
+  const [rows] = await runner.query(
+    `SELECT 1 FROM user_teams
+      WHERE team_id = ? AND jersey_number = ? AND relation_type = 'player'
+        AND user_id <> ?
+      LIMIT 1`,
+    [teamId, jerseyNumber, exceptUserId]
+  );
+  return rows.length > 0;
 }
 
 /** Einzelne Beziehung entfernen (dient auch dem Ablehnen einer Anfrage). */
@@ -261,8 +407,13 @@ async function replaceRelationTeams(conn, userId, teamIds, relationType) {
 
 module.exports = {
   RELATION_GROUPS,
+  POSITIONS,
   listAll,
   findByCode,
+  updateTeam,
+  getSponsors,
+  updateRelationDetails,
+  isJerseyNumberTaken,
   findExistingIds,
   getTeamsForUser,
   isCoachOf,

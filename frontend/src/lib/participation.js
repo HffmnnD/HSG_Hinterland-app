@@ -69,3 +69,37 @@ export function relationLabel(relationType) {
 export function relationLabelPlural(relationType) {
   return RELATION_LABELS_PLURAL[relationType] ?? relationType;
 }
+
+// --------------------------------------------------------------- Positionen
+
+/**
+ * Spielpositionen im Handball (muss zum ENUM in `user_teams.position` passen).
+ * Die vier Gruppen sind bewusst grob gehalten – für den Kader einer
+ * Vereins-App reicht „Rückraum", die Unterscheidung RL/RM/RR gehört auf den
+ * Spielberichtsbogen, nicht auf eine Fan-Seite.
+ */
+export const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
+
+/** Kurzform für Filter-Chips und Kaderkarten. */
+export const POSITION_LABELS = {
+  tor: 'Tor',
+  rueckraum: 'Rückraum',
+  aussen: 'Außen',
+  kreis: 'Kreis',
+};
+
+/** Ausgeschrieben für Auswahlfelder in der Verwaltung. */
+export const POSITION_LABELS_LONG = {
+  tor: 'Torwart:in',
+  rueckraum: 'Rückraum',
+  aussen: 'Außen',
+  kreis: 'Kreisläufer:in',
+};
+
+export function positionLabel(position) {
+  return POSITION_LABELS[position] ?? null;
+}
+
+export function positionLabelLong(position) {
+  return POSITION_LABELS_LONG[position] ?? null;
+}

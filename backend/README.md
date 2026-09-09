@@ -25,12 +25,14 @@ backend/
     auth.js              JWT-/Cookie-Konfiguration
     db.js                MySQL Connection-Pool (Modul)
     uploads.js           multer-Konfiguration + Pfad-/Löschhelfer für Bilder
+    handball.js          nuLiga: URLs, Cache-Zeiten, ID-Kodierung/-Prüfung
 
   routes/                nur URL -> Controller-Funktion + Middleware
     authRoutes.js
     adminRoutes.js       Mitglieder + News (News zusätzlich admin/sub_admin)
     teamsRoutes.js
     newsRoutes.js        GET /api/news (alle angemeldeten Mitglieder)
+    handballRoutes.js    Tabelle/Spielplan/Ticker (+ Rate-Limit)
 
   middleware/
     authMiddleware.js    authenticate (JWT-Cookie) + checkRole (RBAC)
@@ -38,8 +40,15 @@ backend/
   controllers/           HTTP + Geschäftsregeln, KEIN SQL
     authController.js    register / login / logout / me
     adminController.js    listUsers / updateUser (inkl. Sub-Admin-Sperren)
-    teamsController.js    listTeams / getTeam / candidates / add / remove / callup
+    teamsController.js    listTeams / getTeam / Stammdaten / Foto /
+                          candidates / add / remove / callup / Kaderangaben
     newsController.js     listNews / createNews / deleteNews (inkl. Bild-Aufräumen)
+    handballController.js getTable / getSchedule / getTicker
+
+  services/              Anbindung fremder Systeme (kein SQL, kein HTTP-Request/Response)
+    handballClient.js    HTML-Abruf von nuLiga (axios + cheerio + Timeout)
+    handballMapper.js    nuLiga-HTML -> stabile App-DTOs (Scraping)
+    handballService.js   Cache, Anfrage-Bündelung, Notreserve
 
   repositories/          gesamter Datenbankzugriff (alle SELECT/INSERT/JOINs)
     userRepository.js    users + zusammengesetztes Profil, Transaktionen
@@ -65,6 +74,8 @@ backend/
       002_team_confirmation.sql          is_confirmed + Freigabe abgeschafft
       003_activate_existing_accounts.sql Bestandskonten aktivieren
       004_news_table.sql                 Tabelle news (Vereins-Ankündigungen)
+      005_team_page.sql                  Mannschaftsseite: Ligaverknüpfung,
+                                         Foto, Sponsoren, Kaderangaben
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -89,8 +100,9 @@ Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
 | Tabelle             | Zweck |
 | ------------------- | ----- |
 | `users`             | Konten inkl. `role` (ENUM). `is_approved` = Konto aktiv (Standard 1) bzw. vom Admin gesperrt (0) – bei Login/Session/RBAC geprüft |
-| `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1 |
-| `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)` |
+| `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1. Dazu `handball_team_id` (nuLiga) und `photo_path` (Mannschaftsfoto) |
+| `team_sponsors`     | Sponsoren je Mannschaft für den Kopfbereich der Mannschaftsseite |
+| `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)`. Kaderangaben je Mannschaft: `jersey_number`, `position`, `staff_title` |
 | `user_services`     | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
 | `schema_migrations` | vom Migrations-Runner gepflegt – welche Migration schon lief |
 
@@ -262,6 +274,171 @@ curl -b cookies.txt -X POST http://localhost:5000/api/admin/news \
 curl -b cookies.txt -X DELETE http://localhost:5000/api/admin/news/1
 
 curl -b cookies.txt -X POST http://localhost:5000/api/auth/logout
+```
+
+## Mannschaftsseite
+
+Die Fan-Ansicht unter `/teams/:code` zieht ihre Daten aus zwei Quellen: Kader
+und Stammdaten aus der eigenen Datenbank, Tabelle/Spielplan/Ticker aus nuLiga
+(siehe nächster Abschnitt). `GET /api/teams/:code` liefert alles in einem Zug:
+
+```jsonc
+{
+  "team": { "id": 4, "code": "H1", "name": "1. Herren",
+            "handballTeamId": "2218498",       // null = keine Ligaanbindung
+            "photoUrl": "/api/uploads/teams/…" },
+  "sponsors": [ { "id": 1, "name": "…", "websiteUrl": "…" } ],
+  "members": { "player": [ { "jerseyNumber": 7, "position": "rueckraum", … } ],
+               "coach":  [ { "staffTitle": "Co-Trainer", … } ],
+               "fan":    [ … ] },
+  "counts": { "player": 12, "coach": 3, "fan": 1 },
+  "canManage": true,
+  "pendingMembers": [ … ]                       // nur für die Verwaltung
+}
+```
+
+Schreibende Endpunkte:
+
+| Endpunkt | Wer darf |
+| -------- | -------- |
+| `PATCH /api/teams/:code` (`handballTeamId`) | nur `admin` / `sub_admin` |
+| `POST` / `DELETE /api/teams/:code/photo` | nur `admin` / `sub_admin` |
+| `PATCH /api/teams/:code/members/:userId` (`jerseyNumber`, `position`, `staffTitle`) | Trainer:in dieser Mannschaft oder Admin |
+
+Warum die Ligaverknüpfung nur Administration ändern darf: Eine falsche
+nuLiga-Nummer zeigt allen Mitgliedern Tabelle und Spielplan einer **fremden**
+Mannschaft – das ist kein Kaderdetail, sondern eine Vereins-Stammdate.
+
+Die Kaderangaben hängen bewusst an `user_teams` und nicht an `users`: Wer in
+zwei Mannschaften spielt, hat dort oft verschiedene Rückennummern und
+Positionen. Eine Rückennummer darf pro Mannschaft nur einmal vergeben sein
+(sonst `409`) – sonst stimmt der Spielberichtsbogen nicht mehr mit der App
+überein.
+
+Mannschaftsfotos laufen über dieselbe geprüfte Upload-Strecke wie die
+News-Bilder (`config/uploads.js`): Zufallsname, Whitelist der MIME-Typen und
+zusätzlich eine Signaturprüfung des Dateiinhalts. Sie liegen unter
+`uploads/teams/`. **Neue Bildarten müssen in `scripts/sweep-uploads.js`
+eingetragen werden** – sonst hält das Aufräumskript ihre Dateien für verwaist.
+
+## Handball-Modul (nuLiga / HHV)
+
+Tabellen, Spielpläne und Spielverläufe stammen aus dem nuLiga-Portal des
+Hessischen Handball-Verbands (`hhv-handball.liga.nu`). nuLiga hat **keine
+JSON-Schnittstelle** – die Daten werden aus dem HTML der öffentlichen Seiten
+gelesen (`axios` + `cheerio`), serverseitig gecacht und als eigenes, stabiles
+Format ausgeliefert.
+
+| Endpunkt | nuLiga-Seite | Cache |
+| -------- | ------------ | ----- |
+| `GET /api/handball/table/:teamId` | `teamPortrait` → `groupPage` | 15 Min |
+| `GET /api/handball/schedule/:teamId` | `teamPortrait` | 15 Min |
+| `GET /api/handball/ticker/:gameId` | `groupMeetingReport` | 10 Sek (laufendes Spiel), sonst 10 Min |
+
+### IDs
+
+* **`:teamId`** ist nuLigas `teamtable`-Nummer, rein numerisch (z. B. `2086554`).
+  Sie steht in der URL der Mannschaftsseite:
+  `…/teamPortrait?teamtable=2086554`. Die Tabelle braucht dieselbe ID – welche
+  Staffel dazugehört, liest das Backend selbst von der Mannschaftsseite ab.
+* **`:gameId`** ist zusammengesetzt: `<meeting>.<group>.<championship base64url>`,
+  z. B. `7929683.421558.SEhWIDI1LzI2`. Grund: `groupMeetingReport` antwortet mit
+  404, wenn auch nur einer der drei Parameter fehlt. Diese IDs baut immer der
+  Mapper beim Auslesen des Spielplans – das Frontend reicht sie nur zurück.
+
+Beide Muster werden vor dem Aufbau der URL streng geprüft (`config/handball.js`),
+damit über die Route weder fremde Pfade noch fremde Hosts erreichbar sind.
+
+### Warum der Mapper so gebaut ist
+
+nuLiga liefert HTML ohne stabile IDs oder Klassen an den Zellen. Feste
+Spaltennummern wären hier schlicht falsch:
+
+* Dieselbe Spalte enthält bei gespielten Partien das **Ergebnis**, bei noch
+  nicht gespielten die **Schiedsrichter**.
+* Das **Datum** steht nur in der ersten Zeile eines Spieltags; Folgezeilen
+  lassen die Zelle leer.
+* Verlegte Spiele tragen einen Marker an der Uhrzeit (`19:00 t`).
+* Siege/Unentschieden/Niederlagen heißen `S`/`U`/`N` – ein Teilstring-Vergleich
+  würde `S` in „Mannschaft" finden.
+
+Deshalb: Spalten über ihre **Überschrift** (exakt vor Teilstring), Ergebnis und
+Spiel-ID über den **Inhalt** (`34:32` bzw. ein Link mit `meeting=`), Datum
+**fortschreiben**. Anwurfzeiten werden explizit von `Europe/Berlin` nach UTC
+umgerechnet, damit der Spielplan auch auf einem UTC-Server stimmt.
+
+### Ausfallsicherheit
+
+Unverändert dreistufig – und bewusst auch gegen einen nuLiga-**Umbau**
+abgesichert: greift ein Selektor ins Leere, ist das für den Service derselbe
+Fall wie ein Netzwerkfehler.
+
+```jsonc
+{
+  "rows": [ /* … */ ],
+  "meta": {
+    "source": "network",   // network | cache | stale | unavailable
+    "stale": false,        // true -> Verband nicht erreichbar, Daten von früher
+    "available": true,     // false -> gar nichts vorhanden (leeres DTO)
+    "fetchedAt": "2026-09-09T12:59:16.956Z"
+  }
+}
+```
+
+Die Antwort ist deshalb **immer HTTP 200**. Zusätzlich bündelt der Service
+gleichzeitige Anfragen auf denselben Schlüssel: 25 parallele Abrufe lösen
+nachweislich genau **einen** Request zum Verband aus.
+
+### Absicherung gegen die Fremdquelle
+
+Das Modul redet mit einem System, das uns nicht gehört. Entsprechend sind die
+Annahmen darüber eng gefasst:
+
+* **IDs** werden vor dem URL-Bau gegen ein striktes Muster geprüft
+  (`teamId` rein numerisch, `gameId` als `meeting.group.base64url`). Die drei
+  Bestandteile der Spiel-ID landen über `URLSearchParams` in der Query und
+  werden dabei vollständig kodiert – Parameter-, Pfad- und CRLF-Injection
+  laufen ins Leere.
+* **Weiterleitungen dürfen den Host nicht wechseln** (`beforeRedirect` in
+  `handballClient.js`). Ohne das könnte eine Weiterleitung des Verbandsservers
+  – oder ein Angriff auf dessen DNS – uns auf `127.0.0.1` oder auf
+  Cloud-Metadaten (`169.254.169.254`) lenken.
+* **Gescrapte Inhalte sind ausschließlich Text.** cheerio liefert per `.text()`
+  nur Textknoten, React escapt beim Rendern. Ein Mannschaftsname mit
+  `<script>` erscheint als sichtbarer Text, nicht als Markup.
+* **Fehlt die erwartete Tabelle**, wirft der Mapper einen
+  `HandballStructureError`. Das ist der Fall „nuLiga liefert HTTP 200, aber
+  eine Wartungs-/Sperrseite". Ohne diese Unterscheidung würde so eine Seite als
+  gültiges LEERES Ergebnis gecacht und würde die Notreserve überschreiben – der
+  Spielstand verschwände mitten im Spiel. Im Log ist der Fall an
+  `SEITENSTRUKTUR GEÄNDERT?` zu erkennen und bedeutet: `handballMapper.js`
+  anpassen.
+* **Beide Caches sind in der Schlüsselzahl begrenzt**
+  (`HANDBALL_MAX_CACHE_KEYS`, Standard 500). Läuft ein Cache voll, werden die
+  Einträge mit der kürzesten Restlaufzeit verdrängt.
+* **Schreibende SQL-Zugriffe** nutzen Spalten-Whitelists
+  (`WRITABLE_TEAM_COLUMNS`, `WRITABLE_RELATION_COLUMNS`) – analog zu
+  `WRITABLE_USER_COLUMNS` in `userRepository.js`. Werte laufen immer über `?`,
+  Spaltennamen dürfen nie aus einer Anfrage stammen.
+* **Sponsorenlinks** werden beim Auslesen auf `http`/`https` begrenzt
+  (`getSponsors`); alles andere wird zu `null` und damit nicht verlinkt.
+
+### Grenzen (bekannt und bewusst)
+
+* **Künftige Spiele haben keine `id`.** Die Spiel-ID entsteht aus dem Link auf
+  den Spielbericht, den nuLiga erst mit dem Bericht anlegt. `ScheduleWidget`
+  macht solche Zeilen deshalb nicht anklickbar.
+* **Der Spielplan nennt nur Hallennummern**, keine Hallennamen (`Halle 12102`).
+  Den echten Namen liefert erst der Spielbericht.
+* **Live-Ticker hängt an nuScore.** Der Spielverlauf erscheint nur, wenn am
+  Zeitnehmertisch elektronisch erfasst wird. Liegt noch nichts vor, zeigt das
+  Widget den Hinweis, dass keine Ereignisse gemeldet sind.
+
+```bash
+# Beispiele (Cookie aus dem Login vorausgesetzt)
+curl -b cookies.txt http://localhost:5000/api/handball/table/2086554
+curl -b cookies.txt http://localhost:5000/api/handball/schedule/2086554
+curl -b cookies.txt http://localhost:5000/api/handball/ticker/7929683.421558.SEhWIDI1LzI2
 ```
 
 ## Frontend-Anbindung

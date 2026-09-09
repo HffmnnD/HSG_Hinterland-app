@@ -352,6 +352,20 @@
     @apply border border-hsg-green-line bg-hsg-green-soft text-hsg-green-darker;
   }
 
+  /* Laufendes Spiel (Handball-Ticker, Spielplan). Rot, weil es die einzige
+     Stelle in der App ist, die „jetzt gerade" bedeutet – bewusst kräftiger
+     als die übrigen Status-Chips. */
+  .badge-live {
+    @apply bg-danger text-white;
+  }
+
+  /* Pulsierender Punkt im LIVE-Badge. Steht still, wenn das Betriebssystem
+     reduzierte Bewegung verlangt. */
+  .live-dot {
+    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current;
+    animation: live-pulse 1.6s ease-in-out infinite;
+  }
+
   .status {
     @apply inline-flex items-center gap-2 text-sm font-semibold;
   }
@@ -374,11 +388,15 @@
       font-display text-[0.6875rem] font-semibold uppercase tracking-[0.07em] text-ink-muted;
   }
 
-  .data-table tbody td {
+  /* `th` im Tabellenkörper (Zeilenkopf, z. B. der Mannschaftsname) wird wie
+     eine normale Zelle gesetzt – die Semantik bleibt, die Optik auch. */
+  .data-table tbody td,
+  .data-table tbody th {
     @apply border-b border-line px-4 py-3 align-top;
   }
 
-  .data-table tbody tr:last-child td {
+  .data-table tbody tr:last-child td,
+  .data-table tbody tr:last-child th {
     @apply border-b-0;
   }
 
@@ -392,6 +410,32 @@
 
   .data-table tbody tr:hover {
     @apply bg-surface-strong;
+  }
+
+  /* Eigene Mannschaft in der Ligatabelle: grün getönt, fett, mit grünem
+     Balken links. Die :nth-child-Regel wird bewusst überschrieben, damit die
+     Hervorhebung auch in geraden Zeilen greift. */
+  .data-table tbody tr.row-own,
+  .data-table tbody tr.row-own:nth-child(even),
+  .data-table tbody tr.row-own:hover {
+    @apply bg-hsg-green-soft;
+  }
+
+  .data-table tbody tr.row-own td,
+  .data-table tbody tr.row-own th {
+    @apply font-bold text-ink;
+  }
+
+  .data-table tbody tr.row-own td:first-child {
+    box-shadow: inset 3px 0 0 #79b636;
+  }
+
+  /* Kompakte Tabelle für Widgets auf der Startseite (viele Spalten, wenig
+     Platz auf dem Handy). */
+  .data-table-compact thead th,
+  .data-table-compact tbody td,
+  .data-table-compact tbody th {
+    @apply px-2 py-2 sm:px-3;
   }
 
   /* --------------------------------------------------------------- Divers */
@@ -421,6 +465,114 @@
 
   .spinner {
     @apply inline-block animate-spin rounded-full border-2 border-line-strong border-t-hsg-green;
+  }
+
+  /* ------------------------------------------------------------- Reiter */
+  /* Seiten-Reiter (Mannschaftsseite). Anders als `.segment` (zwei feste
+     Spalten) beliebig viele Einträge, waagerecht scrollbar auf dem Handy.
+     Der aktive Reiter bekommt den grünen Balken der Hauptnavigation. */
+  .tabs {
+    @apply -mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    @apply relative min-h-11 shrink-0 whitespace-nowrap px-3 font-display text-xs
+      font-semibold uppercase tracking-[0.05em] text-ink-muted transition-colors
+      hover:text-ink sm:px-4 sm:text-sm;
+  }
+
+  .tab--active {
+    @apply text-hsg-green-dark;
+  }
+
+  .tab--active::after {
+    content: '';
+    @apply absolute inset-x-2 bottom-0 h-[3px] bg-hsg-green;
+  }
+
+  /* -------------------------------------------------- Mannschafts-Kopf */
+  /* Ohne Foto: diagonaler Verlauf im Anthrazit der Marke, dazu ein dezenter
+     grüner Schimmer oben rechts. Bewusst KEINE fremde Farbfamilie (Slate o. ä.)
+     – die Fläche steht direkt unter der Kopfzeile, und zwei verschiedene
+     Grautöne nebeneinander sähen nach Versehen aus. Das Ergebnis hat Tiefe,
+     bleibt aber dieselbe Farbwelt wie Kopfzeile und Navigation.
+     Mit Foto liegt das Bild darüber (siehe .team-hero__image). */
+  .team-hero {
+    @apply relative overflow-hidden rounded-md border border-white/10 text-white shadow-card;
+    background-color: #2e2e2e;
+    background-image:
+      radial-gradient(
+        120% 140% at 88% -15%,
+        rgb(121 182 54 / 0.3) 0%,
+        rgb(121 182 54 / 0.08) 38%,
+        transparent 62%
+      ),
+      linear-gradient(135deg, #1c1c1c 0%, #343434 45%, #212121 100%);
+  }
+
+  .team-hero__image {
+    @apply absolute inset-0 h-full w-full object-cover;
+  }
+
+  .team-hero__scrim {
+    @apply absolute inset-0;
+    background: linear-gradient(
+      to top,
+      rgb(30 30 30 / 0.92) 0%,
+      rgb(30 30 30 / 0.65) 45%,
+      rgb(30 30 30 / 0.25) 100%
+    );
+  }
+
+  .team-hero__body {
+    @apply relative px-5 pb-5 pt-6 sm:px-6 sm:pb-6 sm:pt-24;
+  }
+
+  /* Beschriftungen im Kopfbereich (z. B. „Präsentiert von"). Die Kachel
+     selbst wird aktuell nur dort verwendet – die Schnellinfos zum nächsten
+     Spiel stehen im Reiter „Übersicht" auf hellem Grund. */
+  .quick-stat {
+    @apply rounded border border-white/15 bg-white/10 px-3 py-2.5 backdrop-blur-sm;
+  }
+
+  .quick-stat__label {
+    @apply font-display text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-white/70;
+  }
+
+  .quick-stat__value {
+    @apply mt-1 truncate font-display text-sm font-bold leading-tight text-white;
+  }
+
+  /* ------------------------------------------------------------ Kader */
+  /* Spielerkarte: Rückennummer/Initialen, Name, Position. */
+  .player-card {
+    @apply flex items-center gap-3 rounded-md border border-line bg-paper p-3 transition-colors;
+  }
+
+  .player-card:hover {
+    @apply border-hsg-green;
+  }
+
+  /* Rückennummer als Trikot-Kreis. Ohne Nummer stehen dort die Initialen. */
+  .jersey {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full
+      bg-hsg-green-soft font-display text-base font-bold leading-none text-hsg-green-darker;
+  }
+
+  .jersey--empty {
+    @apply bg-surface text-sm text-ink-muted;
+  }
+
+  /* --------------------------------------------------------- Ladezustand */
+  /* Platzhalterfläche, die die Form des späteren Inhalts vorwegnimmt. */
+  .skeleton {
+    @apply block rounded-sm bg-surface-strong;
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
   }
 
   /* Umschalter (Tabs) Login / Registrierung */
@@ -453,5 +605,39 @@
     .pb-bottom-nav {
       padding-bottom: calc(2rem + var(--safe-b));
     }
+  }
+}
+
+/* Pulsieren des LIVE-Punkts – siehe .live-dot */
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
+/* Pulsieren der Lade-Platzhalter – siehe .skeleton */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
   }
 }

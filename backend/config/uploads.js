@@ -18,8 +18,10 @@ const multer = require('multer');
 
 // Wurzelverzeichnis aller Uploads (backend/uploads).
 const UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
-// Unterordner für News-Bilder.
+// Unterordner je Bildart. Ein eigener Ordner pro Art hält das Aufräumen
+// (scripts/sweep-uploads.js) und die Rechtevergabe übersichtlich.
 const NEWS_SUBDIR = 'news';
+const TEAMS_SUBDIR = 'teams';
 // Öffentliches URL-Präfix (siehe server.js).
 const PUBLIC_PREFIX = '/api/uploads';
 
@@ -83,10 +85,12 @@ function resolveInsideRoot(storedPath) {
   return target;
 }
 
-const storage = multer.diskStorage({
+/** Ablage in einem bestimmten Unterordner (Name = Zufall, Endung = MIME-Typ). */
+function storageFor(subdir) {
+  return multer.diskStorage({
   destination(req, file, cb) {
     try {
-      cb(null, ensureDir(NEWS_SUBDIR));
+      cb(null, ensureDir(subdir));
     } catch (err) {
       cb(err);
     }
@@ -103,7 +107,8 @@ const storage = multer.diskStorage({
     }
     return cb(null, `${crypto.randomBytes(16).toString('hex')}${type.ext}`);
   },
-});
+  });
+}
 
 function imageFileFilter(req, file, cb) {
   if (!ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
@@ -123,7 +128,7 @@ function imageFileFilter(req, file, cb) {
  * Fehler landen im zentralen Error-Handler (siehe describeUploadError).
  */
 const uploadNewsImage = multer({
-  storage,
+  storage: storageFor(NEWS_SUBDIR),
   fileFilter: imageFileFilter,
   limits: {
     fileSize: MAX_IMAGE_BYTES,
@@ -137,9 +142,31 @@ const uploadNewsImage = multer({
   },
 }).single('image');
 
+/**
+ * Mannschaftsfoto für den Kopfbereich der Mannschaftsseite.
+ * Enger begrenzt als der News-Upload: hier kommt ausschließlich eine Datei
+ * und kein einziges Textfeld mit.
+ */
+const uploadTeamPhoto = multer({
+  storage: storageFor(TEAMS_SUBDIR),
+  fileFilter: imageFileFilter,
+  limits: {
+    fileSize: MAX_IMAGE_BYTES,
+    files: 1,
+    fields: 0,
+    parts: 2,
+    fieldNameSize: 100,
+  },
+}).single('photo');
+
 /** Relativer Speicherpfad einer hochgeladenen Datei, z. B. "news/ab12.jpg". */
-function relativePathFor(file) {
-  return `${NEWS_SUBDIR}/${file.filename}`;
+function relativePathFor(file, subdir = NEWS_SUBDIR) {
+  return `${subdir}/${file.filename}`;
+}
+
+/** Relativer Speicherpfad eines Mannschaftsfotos, z. B. "teams/ab12.jpg". */
+function teamPhotoPathFor(file) {
+  return relativePathFor(file, TEAMS_SUBDIR);
 }
 
 /**
@@ -261,8 +288,12 @@ module.exports = {
   UPLOAD_ROOT,
   PUBLIC_PREFIX,
   MAX_IMAGE_BYTES,
+  NEWS_SUBDIR,
+  TEAMS_SUBDIR,
   uploadNewsImage,
+  uploadTeamPhoto,
   relativePathFor,
+  teamPhotoPathFor,
   publicUrlFor,
   hasValidImageSignature,
   removeUpload,

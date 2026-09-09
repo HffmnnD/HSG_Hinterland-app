@@ -11,6 +11,7 @@ const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const teamsRoutes = require('./routes/teamsRoutes');
 const newsRoutes = require('./routes/newsRoutes');
+const handballRoutes = require('./routes/handballRoutes');
 const { authenticate } = require('./middleware/authMiddleware');
 const { UPLOAD_ROOT, describeUploadError } = require('./config/uploads');
 
@@ -99,6 +100,10 @@ app.use('/api/teams', teamsRoutes);
 
 // Vereins-News (Lesen: alle angemeldeten Mitglieder)
 app.use('/api/news', newsRoutes);
+
+// Tabellen, Spielpläne und Live-Ticker von handball.net (serverseitig
+// gecacht, siehe services/handballService.js)
+app.use('/api/handball', handballRoutes);
 
 // Hochgeladene Beitragsbilder.
 //
