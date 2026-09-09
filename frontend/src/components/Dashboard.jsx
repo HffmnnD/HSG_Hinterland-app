@@ -2,20 +2,27 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
-import { MANAGEMENT_ROLES, roleBadge, roleLabel } from '../lib/roles';
-import { relationLabelPlural, serviceLabel } from '../lib/participation';
+import { useNews } from '../hooks/useNews';
+import { MANAGEMENT_ROLES, roleLabel } from '../lib/roles';
+import { serviceLabel } from '../lib/participation';
+import { formatDate } from '../lib/format';
+import AppLayout from './AppLayout';
+import MyTeams from './MyTeams';
+import NewsCard from './NewsCard';
+import { RoleBadge } from './Badge';
 
-const RELATION_ORDER = ['coach', 'player', 'fan'];
+// So viele Beiträge zeigt der Feed zunächst; der Rest kommt per Klick nach.
+const NEWS_PREVIEW_COUNT = 5;
 
 export default function Dashboard() {
-  const { user, role, teams, services, logout } = useAuth();
-  const [loggingOut, setLoggingOut] = useState(false);
+  const { user, role, teams, services } = useAuth();
+  const [showAllNews, setShowAllNews] = useState(false);
 
-  const handleLogout = async () => {
-    setLoggingOut(true);
-    await logout();
-    // Kein setState mehr nötig: Komponente wird nach dem Logout unmounted.
-  };
+  const {
+    news,
+    loading: newsLoading,
+    error: newsError,
+  } = useNews(showAllNews ? {} : { limit: NEWS_PREVIEW_COUNT });
 
   // Normalerweise garantiert ProtectedRoute einen Nutzer. Der Guard verhindert
   // einen Absturz, falls die Sitzung während des Renderns wegfällt.
@@ -28,201 +35,134 @@ export default function Dashboard() {
   const isAdmin = role === 'admin';
   const isSubAdmin = role === 'sub_admin';
   const canManageMembers = MANAGEMENT_ROLES.includes(role);
-  const badge = roleBadge(role);
 
-  // Mannschaften nach Beziehungstyp gruppieren.
-  const teamsByRelation = RELATION_ORDER.map((relation) => ({
-    relation,
-    entries: teams.filter((team) => team.relationType === relation),
-  })).filter((group) => group.entries.length > 0);
+  // Wurde der Vorschau-Umfang exakt ausgeschöpft, gibt es vermutlich mehr.
+  const mayHaveMoreNews = !showAllNews && news.length === NEWS_PREVIEW_COUNT;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/70">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 text-sm font-black text-slate-950">
-              H
-            </div>
-            <span className="font-semibold">HSG Hinterland</span>
+    <AppLayout width="max-w-3xl">
+      {/* Profil */}
+      <section className="flex items-center gap-4">
+        <div className="avatar h-14 w-14 text-lg">{initials || '?'}</div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="page-title">Willkommen, {user.firstName}!</h1>
+            <RoleBadge role={role} />
           </div>
-
-          <div className="flex items-center gap-2">
-            {canManageMembers && (
-              <Link
-                to="/admin"
-                className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
-              >
-                Mitglieder
-              </Link>
-            )}
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800 disabled:opacity-60"
-            >
-              {loggingOut ? 'Abmelden …' : 'Abmelden'}
-            </button>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
+            <span className="truncate">{user.email}</span>
+            <span className="tag" title="Deine Rolle">
+              {roleLabel(role)}
+            </span>
           </div>
         </div>
-      </header>
+      </section>
 
-      <main className="mx-auto max-w-3xl px-4 py-8">
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-800 text-lg font-bold text-emerald-400">
-            {initials || '?'}
+      {/* Aktuelle Vereins-News */}
+      <section className="mt-8">
+        <h2 className="section-title">Aktuelles aus dem Verein</h2>
+
+        {newsError && (
+          <div role="alert" className="alert alert-error mt-3">
+            {newsError}
           </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-bold">Willkommen, {user.firstName}!</h1>
-              {badge && (
-                <span className="rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
-                  {badge}
-                </span>
-              )}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-              <span className="truncate">{user.email}</span>
-              <span
-                className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-emerald-300"
-                title="Deine Rolle"
-              >
-                {roleLabel(role)}
-              </span>
-            </div>
+        )}
+
+        {newsLoading ? (
+          <p className="mt-3 text-sm text-ink-muted">Beiträge werden geladen …</p>
+        ) : news.length === 0 ? (
+          <div className="card-note mt-3">
+            Noch keine Ankündigungen veröffentlicht.
           </div>
+        ) : (
+          <div className="mt-3 space-y-4">
+            {news.map((item) => (
+              <NewsCard key={item.id} item={item} />
+            ))}
+          </div>
+        )}
+
+        {mayHaveMoreNews && (
+          <button
+            type="button"
+            onClick={() => setShowAllNews(true)}
+            className="btn btn-outline btn-sm mt-4"
+          >
+            Ältere Beiträge anzeigen
+          </button>
+        )}
+      </section>
+
+      {/* Meine Mannschaften */}
+      <section className="mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="section-title">Meine Mannschaften</h2>
+          <Link to="/teams" className="link text-sm">
+            Alle Mannschaften
+          </Link>
         </div>
+        <div className="card mt-3">
+          <MyTeams teams={teams} />
+        </div>
+      </section>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <h2 className="text-sm font-semibold text-slate-300">Kontostatus</h2>
-            <p className="mt-2 flex items-center gap-2 text-sm">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400" />
+      {/* Konto & Helferdienste */}
+      <section className="mt-8">
+        <h2 className="section-title">Mein Konto</h2>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div className="card">
+            <p className="eyebrow">Kontostatus</p>
+            <p className="status mt-2 text-ink">
+              <span className="status-dot bg-hsg-green" />
               Aktiv
             </p>
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <h2 className="text-sm font-semibold text-slate-300">Mitglied seit</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              {user.createdAt
-                ? new Date(user.createdAt).toLocaleDateString('de-DE')
-                : '—'}
+          <div className="card">
+            <p className="eyebrow">Mitglied seit</p>
+            <p className="mt-2 text-sm text-ink-soft">
+              {formatDate(user.createdAt)}
             </p>
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-          <h2 className="text-sm font-semibold text-slate-300">
-            Meine Mannschaften
-          </h2>
-          {teamsByRelation.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-400">
-              Noch keiner Mannschaft zugeordnet.
-            </p>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {teamsByRelation.map(({ relation, entries }) => (
-                <div key={relation}>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    {relationLabelPlural(relation)}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {entries.map((team) => (
-                      <Link
-                        key={`${relation}-${team.id}`}
-                        to={`/teams/${team.code}`}
-                        title={
-                          team.isConfirmed
-                            ? team.name
-                            : `${team.name} – wartet auf Bestätigung durch den/die Trainer:in`
-                        }
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                          team.isConfirmed
-                            ? 'border-slate-700 bg-slate-950 text-slate-200 hover:border-emerald-500 hover:text-emerald-300'
-                            : 'border-amber-500/40 bg-amber-500/10 text-amber-200 hover:border-amber-400'
-                        }`}
-                      >
-                        {team.name}
-                        {!team.isConfirmed && (
-                          <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[10px] uppercase tracking-wide">
-                            ausstehend
-                          </span>
-                        )}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {teamsByRelation.some((g) => g.entries.some((t) => !t.isConfirmed)) && (
-            <p className="mt-3 text-xs text-amber-300/80">
-              „Ausstehend" bedeutet: der/die Trainer:in muss deine Mitgliedschaft
-              noch bestätigen.
-            </p>
-          )}
-        </div>
-
         {services.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-            <h2 className="text-sm font-semibold text-slate-300">
-              Meine Helferdienste
-            </h2>
+          <div className="card mt-4">
+            <p className="eyebrow">Meine Helferdienste</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {services.map((service) => (
-                <span
-                  key={service}
-                  className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs font-medium text-slate-200"
-                >
+                <span key={service} className="tag">
                   {serviceLabel(service)}
                 </span>
               ))}
             </div>
           </div>
         )}
+      </section>
 
-        {/* Verwaltung: Admins, Sub-Admins und Trainer:innen */}
-        {canManageMembers && (
-          <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-6">
-            <div className="flex items-center gap-2">
-              {badge && (
-                <span className="rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
-                  {badge}
-                </span>
-              )}
-              <h2 className="text-sm font-semibold text-emerald-200">
-                {isAdmin || isSubAdmin
-                  ? 'Administration'
-                  : 'Mannschaftsverwaltung'}
-              </h2>
-            </div>
-            <p className="mt-2 text-sm text-slate-300">
-              {isAdmin &&
-                'Verwalte Mitglieder, Rollen und Mannschaftszuordnungen.'}
-              {isSubAdmin &&
-                'Verwalte Mitglieder, Rollen und Mannschaften. Admin-Konten sind für dich gesperrt.'}
-              {!isAdmin &&
-                !isSubAdmin &&
-                'Ändere die Mannschaftszuordnung der Mitglieder.'}
-            </p>
-            <Link
-              to="/admin"
-              className="mt-4 inline-flex rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
-            >
-              Zur Mitgliederverwaltung
-            </Link>
+      {/* Verwaltung: Admins, Sub-Admins und Trainer:innen */}
+      {canManageMembers && (
+        <div className="card-accent mt-8">
+          <div className="flex items-center gap-2">
+            <RoleBadge role={role} />
+            <h2 className="section-title text-base">
+              {isAdmin || isSubAdmin ? 'Administration' : 'Mannschaftsverwaltung'}
+            </h2>
           </div>
-        )}
-
-        <div className="mt-6 rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-6 text-center">
-          <p className="text-sm text-slate-400">
-            Dies ist eine geschützte Dummy-Ansicht. Hier entstehen als Nächstes
-            Kalender, Dienstplanung und das Schwarze Brett.
+          <p className="mt-2 text-sm text-ink-soft">
+            {isAdmin &&
+              'Verwalte Mitglieder, Rollen, Mannschaftszuordnungen und die Vereins-News.'}
+            {isSubAdmin &&
+              'Verwalte Mitglieder, Rollen, Mannschaften und die Vereins-News. Admin-Konten sind für dich gesperrt.'}
+            {!isAdmin &&
+              !isSubAdmin &&
+              'Ändere die Mannschaftszuordnung der Mitglieder.'}
           </p>
+          <Link to="/admin" className="btn btn-primary mt-4">
+            Zur Verwaltung
+          </Link>
         </div>
-      </main>
-    </div>
+      )}
+    </AppLayout>
   );
 }

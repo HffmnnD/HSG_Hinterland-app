@@ -1,1 +1,457 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@config '../tailwind.config.js';
+
+/* ==========================================================================
+   HSG Hinterland – Corporate Design
+   Vereinsgrün #79b636 · Anthrazit #2e2e2e · Headline "Oswald" · Text "Lato"
+   ========================================================================== */
+
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Safe-Area (PWA im Standalone-Modus, viewport-fit=cover) */
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-paper font-sans text-ink-soft antialiased;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5 {
+    @apply font-display font-semibold text-ink;
+    line-height: 1.15;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* Sichtbarer, markenkonformer Fokus */
+  :focus-visible {
+    outline: 2px solid #79b636;
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: #79b636;
+    color: #fff;
+  }
+
+  /* native Formularfelder erben die Schrift */
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Autofill nicht blau einfärben */
+  input:-webkit-autofill,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #2e2e2e;
+    -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  }
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- Layout */
+  .app-shell {
+    @apply min-h-[100dvh] bg-surface text-ink-soft;
+    padding-left: var(--safe-l);
+    padding-right: var(--safe-r);
+  }
+
+  /* Grüner Marken-Streifen ganz oben (das durchgehende Akzent-Element) */
+  .brand-ribbon {
+    @apply h-1 w-full bg-hsg-green;
+  }
+
+  .app-header {
+    @apply sticky top-0 z-30 border-b border-line bg-paper;
+    padding-top: var(--safe-t);
+  }
+
+  .app-header__inner {
+    @apply mx-auto flex h-14 items-center justify-between gap-3 px-4;
+  }
+
+  .app-main {
+    @apply mx-auto w-full px-4 py-6 sm:py-8;
+  }
+
+  /* ----------------------------------------------------------- Navigation */
+  /* Mobile Bottom-Navigation (PWA-Look). Ab `md` übernimmt .main-nav in der
+     Kopfzeile – deshalb hier md:hidden. */
+  .bottom-nav {
+    @apply fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper md:hidden;
+    padding-bottom: var(--safe-b);
+    padding-left: var(--safe-l);
+    padding-right: var(--safe-r);
+  }
+
+  .bottom-nav__list {
+    @apply mx-auto grid max-w-lg;
+  }
+
+  .bottom-nav__item {
+    @apply relative flex min-h-14 flex-col items-center justify-center gap-1
+      px-1 py-1.5 font-display text-[0.625rem] font-semibold uppercase
+      leading-none tracking-[0.06em] text-ink-muted transition-colors;
+  }
+
+  .bottom-nav__item:hover {
+    @apply text-ink;
+  }
+
+  .bottom-nav__item--active {
+    @apply text-hsg-green-dark;
+  }
+
+  /* Grüner Indikator über dem aktiven Reiter – greift den Marken-Streifen
+     der Kopfzeile auf. */
+  .bottom-nav__item--active::before {
+    content: '';
+    @apply absolute inset-x-4 top-0 h-[3px] bg-hsg-green;
+  }
+
+  /* Kopfzeilen-Navigation am Desktop: aktiver Reiter grün gefüllt – wie die
+     Hauptnavigation auf hsg-hinterland.de. */
+  .main-nav {
+    @apply hidden items-center gap-1 md:flex;
+  }
+
+  .main-nav__item {
+    @apply inline-flex min-h-9 items-center rounded-sm px-3 font-display text-xs
+      font-semibold uppercase tracking-[0.06em] text-ink-soft transition-colors
+      hover:bg-surface hover:text-ink;
+  }
+
+  .main-nav__item--active {
+    @apply bg-hsg-green text-white hover:bg-hsg-green-dark hover:text-white;
+  }
+
+  /* --------------------------------------------------------------- Marke */
+  .brand {
+    @apply flex min-w-0 items-center gap-2.5;
+  }
+
+  .brand__mark {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center bg-hsg-green font-display text-lg font-bold leading-none text-white;
+    border-radius: 4px;
+  }
+
+  .brand__name {
+    @apply truncate font-display text-base font-bold uppercase tracking-[0.04em] text-ink sm:text-lg;
+  }
+
+  /* --------------------------------------------------------------- Buttons */
+  .btn {
+    @apply inline-flex min-h-11 select-none items-center justify-center gap-2 rounded px-4
+      font-display text-sm font-semibold uppercase tracking-[0.05em] transition-colors
+      disabled:cursor-not-allowed disabled:opacity-55;
+  }
+
+  .btn-sm {
+    @apply min-h-11 gap-1.5 px-3 text-xs;
+  }
+
+  .btn-block {
+    @apply w-full;
+  }
+
+  .btn-primary {
+    @apply bg-hsg-green text-white hover:bg-hsg-green-dark active:bg-hsg-green-darker;
+  }
+
+  .btn-secondary {
+    @apply bg-hsg-dark text-white hover:bg-hsg-dark-hover;
+  }
+
+  .btn-outline {
+    @apply border border-line-strong bg-paper text-ink
+      hover:border-hsg-green hover:text-hsg-green-dark;
+  }
+
+  .btn-ghost {
+    @apply text-ink-soft hover:bg-surface hover:text-ink;
+  }
+
+  /* zurückhaltende, aber eindeutige „Entfernen/Ablehnen"-Aktion */
+  .btn-danger {
+    @apply border border-line-strong bg-paper text-ink-muted
+      hover:border-danger hover:text-danger;
+  }
+
+  /* ---------------------------------------------------------------- Karten */
+  .card {
+    @apply rounded-md border border-line bg-paper p-5 shadow-card;
+  }
+
+  .card-plain {
+    @apply rounded-md border border-line bg-paper p-5;
+  }
+
+  /* Karte mit grünem Akzentstrich links – für Hervorhebungen/Verwaltung */
+  .card-accent {
+    @apply rounded-md border border-line border-l-[3px] border-l-hsg-green bg-paper p-5 shadow-card;
+  }
+
+  /* Karte mit bernsteinfarbenem Akzent – offene Anfragen / Warnhinweise */
+  .card-warn {
+    @apply rounded-md border border-warn-line border-l-[3px] border-l-warn bg-paper p-5 shadow-card;
+  }
+
+  .stat-value {
+    @apply mt-1 font-display text-2xl font-bold leading-none text-hsg-green-dark;
+  }
+
+  /* ----------------------------------------------------------- News-Feed */
+  /* Beitragsbild: feste 16:9-Fläche, damit der Feed beim Laden nicht springt. */
+  .news-image {
+    @apply w-full rounded-sm border border-line bg-surface object-cover;
+    aspect-ratio: 16 / 9;
+  }
+
+  /* Fließtext eines Beitrags – Zeilenumbrüche aus dem Formular bleiben
+     erhalten (der Text wird als Text gerendert, niemals als HTML). */
+  .news-body {
+    @apply whitespace-pre-line text-sm leading-relaxed text-ink-soft;
+  }
+
+  /* dezenter, aber sichtbarer Hinweiskasten */
+  .card-note {
+    @apply rounded border border-dashed border-line-strong bg-surface p-5 text-sm text-ink-muted;
+  }
+
+  /* --------------------------------------------------------- Überschriften */
+  .eyebrow {
+    @apply font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-ink-muted;
+  }
+
+  .section-title {
+    @apply font-display text-lg font-bold uppercase tracking-[0.03em] text-ink;
+  }
+
+  .page-title {
+    @apply font-display text-xl font-bold uppercase tracking-[0.02em] text-ink sm:text-2xl;
+  }
+
+  /* Kopfzeilen-Titel der Unterseiten (Team-Name, „Mitgliederverwaltung") */
+  .header-title {
+    @apply truncate font-display text-base font-bold uppercase tracking-[0.03em] text-ink sm:text-lg;
+  }
+
+  /* ------------------------------------------------------------ Formulare */
+  .field-label {
+    @apply mb-1.5 block text-sm font-bold text-ink;
+  }
+
+  .field-control {
+    @apply block min-h-11 w-full rounded-sm border border-line-strong bg-paper px-3.5 py-2.5
+      text-sm text-ink placeholder:text-ink-muted transition-colors
+      focus:border-hsg-green focus:outline-none focus:ring-2 focus:ring-hsg-green/25
+      disabled:bg-surface disabled:opacity-60;
+  }
+
+  /* kompakte Variante für Auswahlfelder in dichten Zeilen (Höhe bleibt 44px) */
+  .field-control-sm {
+    @apply min-h-11 rounded-sm border border-line-strong bg-paper px-2.5 text-xs text-ink
+      transition-colors focus:border-hsg-green focus:outline-none focus:ring-2
+      focus:ring-hsg-green/25 disabled:bg-surface disabled:opacity-50;
+  }
+
+  .field-hint {
+    @apply mt-1.5 text-xs text-ink-muted;
+  }
+
+  .fieldset {
+    @apply rounded-md border border-line bg-surface/60 p-4;
+  }
+
+  .fieldset > legend {
+    @apply px-1 text-sm font-bold text-ink;
+  }
+
+  /* --------------------------------------------------------------- Chips */
+  .chip {
+    @apply inline-flex min-h-11 select-none items-center justify-center gap-1.5 rounded-sm border
+      border-line-strong bg-paper px-3 text-sm font-semibold text-ink-soft transition-colors
+      hover:border-hsg-green hover:text-hsg-green-dark
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .chip-active {
+    @apply border-hsg-green bg-hsg-green text-white hover:bg-hsg-green-dark hover:text-white;
+  }
+
+  .chip-sm {
+    @apply min-h-9 px-2.5 text-xs;
+  }
+
+  /* wartet auf Bestätigung – Bernstein statt Grün */
+  .chip-pending {
+    @apply border-warn-line bg-warn-soft text-warn hover:border-warn hover:text-warn;
+  }
+
+  /* statisches Etikett (Helferdienste, Rollen-Label in Listen) */
+  .tag {
+    @apply inline-flex items-center gap-1.5 rounded-sm border border-line-strong
+      bg-paper px-2.5 py-1 text-xs font-semibold text-ink-soft;
+  }
+
+  .avatar {
+    @apply flex shrink-0 items-center justify-center rounded-full bg-surface
+      font-display font-bold uppercase leading-none text-hsg-green-dark;
+  }
+
+  /* ------------------------------------------------------- Badges / Status */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-sm px-2 py-1 font-display text-[0.625rem]
+      font-semibold uppercase leading-none tracking-[0.08em];
+  }
+
+  .badge-admin {
+    @apply bg-hsg-dark text-white;
+  }
+
+  .badge-trainer {
+    @apply bg-hsg-green text-white;
+  }
+
+  .badge-neutral {
+    @apply border border-line-strong bg-surface text-ink-muted;
+  }
+
+  .badge-pending {
+    @apply border border-warn-line bg-warn-soft text-warn;
+  }
+
+  .badge-confirmed {
+    @apply border border-hsg-green-line bg-hsg-green-soft text-hsg-green-darker;
+  }
+
+  .status {
+    @apply inline-flex items-center gap-2 text-sm font-semibold;
+  }
+
+  .status-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+  }
+
+  /* ------------------------------------------------------------- Tabellen */
+  .table-wrap {
+    @apply w-full overflow-x-auto rounded-md border border-line;
+  }
+
+  .data-table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+
+  .data-table thead th {
+    @apply whitespace-nowrap border-b border-line-strong bg-surface px-4 py-3
+      font-display text-[0.6875rem] font-semibold uppercase tracking-[0.07em] text-ink-muted;
+  }
+
+  .data-table tbody td {
+    @apply border-b border-line px-4 py-3 align-top;
+  }
+
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .data-table tbody tr {
+    @apply transition-colors;
+  }
+
+  .data-table tbody tr:nth-child(even) {
+    @apply bg-surface/60;
+  }
+
+  .data-table tbody tr:hover {
+    @apply bg-surface-strong;
+  }
+
+  /* --------------------------------------------------------------- Divers */
+  .link {
+    @apply font-semibold text-hsg-green-dark underline-offset-2 hover:text-hsg-green-darker hover:underline;
+  }
+
+  .list-panel {
+    @apply divide-y divide-line overflow-hidden rounded-md border border-line bg-paper;
+  }
+
+  .alert {
+    @apply flex gap-2 rounded border px-3.5 py-3 text-sm;
+  }
+
+  .alert-error {
+    @apply border-danger-line bg-danger-soft text-danger;
+  }
+
+  .alert-success {
+    @apply border-hsg-green-line bg-hsg-green-soft text-hsg-green-darker;
+  }
+
+  .alert-info {
+    @apply border-warn-line bg-warn-soft text-warn;
+  }
+
+  .spinner {
+    @apply inline-block animate-spin rounded-full border-2 border-line-strong border-t-hsg-green;
+  }
+
+  /* Umschalter (Tabs) Login / Registrierung */
+  .segment {
+    @apply grid grid-cols-2 gap-1 rounded-md bg-surface p-1;
+  }
+
+  .segment__btn {
+    @apply min-h-11 rounded font-display text-sm font-semibold uppercase tracking-[0.05em]
+      text-ink-muted transition-colors hover:text-ink;
+  }
+
+  .segment__btn--active {
+    @apply bg-hsg-dark text-white hover:text-white;
+  }
+}
+
+@layer utilities {
+  .safe-pb {
+    padding-bottom: calc(1.5rem + var(--safe-b));
+  }
+
+  /* Platz für die fixierte Bottom-Navigation, damit sie nichts verdeckt.
+     Ab `md` ist die Leiste ausgeblendet -> nur noch normaler Abstand. */
+  .pb-bottom-nav {
+    padding-bottom: calc(5rem + var(--safe-b));
+  }
+
+  @media (min-width: 768px) {
+    .pb-bottom-nav {
+      padding-bottom: calc(2rem + var(--safe-b));
+    }
+  }
+}

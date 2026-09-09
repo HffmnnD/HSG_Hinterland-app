@@ -18,26 +18,20 @@ export default function AuthScreen() {
   return (
     <AuthLayout>
       {/* Umschalter zwischen Login und Registrierung */}
-      <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-950 p-1 text-sm font-medium">
+      <div className="segment mb-6">
         <button
           type="button"
           onClick={() => switchTo('login')}
-          className={`rounded-lg py-2 transition ${
-            mode === 'login'
-              ? 'bg-slate-800 text-white'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
+          aria-pressed={mode === 'login'}
+          className={`segment__btn ${mode === 'login' ? 'segment__btn--active' : ''}`}
         >
           Anmelden
         </button>
         <button
           type="button"
           onClick={() => switchTo('register')}
-          className={`rounded-lg py-2 transition ${
-            mode === 'register'
-              ? 'bg-slate-800 text-white'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
+          aria-pressed={mode === 'register'}
+          className={`segment__btn ${mode === 'register' ? 'segment__btn--active' : ''}`}
         >
           Registrieren
         </button>

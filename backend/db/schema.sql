@@ -134,6 +134,42 @@ CREATE TABLE IF NOT EXISTS user_services (
 
 
 -- ----------------------------------------------------------------------------
+--  news – Vereins-News / Ankündigungen (Schwarzes Brett)
+-- ----------------------------------------------------------------------------
+--  Erstellen/Löschen nur `admin` und `sub_admin`, Lesen alle angemeldeten
+--  Mitglieder. Bilder liegen im Dateisystem (backend/uploads/), hier steht
+--  nur der relative Pfad.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS news (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT
+              COMMENT 'Primärschlüssel des Beitrags',
+
+  title       VARCHAR(150) NOT NULL
+              COMMENT 'Überschrift der Ankündigung (Pflicht, max. 150 Zeichen)',
+  content     TEXT NOT NULL
+              COMMENT 'Fließtext der Ankündigung (Pflicht). Reiner Text – wird im Frontend nie als HTML gerendert.',
+
+  image_path  VARCHAR(255) DEFAULT NULL
+              COMMENT 'Relativer Pfad des Beitragsbilds in backend/uploads/, z. B. "news/ab12cd34.jpg". NULL = ohne Bild.',
+
+  author_id   INT UNSIGNED DEFAULT NULL
+              COMMENT 'FK -> users.id. NULL, wenn das Konto gelöscht wurde – der Beitrag bleibt erhalten.',
+
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+              COMMENT 'Veröffentlichungszeitpunkt. Sortierkriterium des Feeds (absteigend).',
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+              COMMENT 'Letzte Änderung',
+
+  PRIMARY KEY (id),
+  KEY idx_news_created (created_at),
+  KEY idx_news_author (author_id),
+
+  CONSTRAINT fk_news_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Vereins-News und Ankündigungen. Erstellen/Löschen nur admin & sub_admin, Lesen alle angemeldeten Mitglieder.';
+
+
+-- ----------------------------------------------------------------------------
 --  schema_migrations – vom Migrations-Runner (db/migrate.js) gepflegt
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -148,5 +184,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 INSERT INTO schema_migrations (filename) VALUES
   ('001_initial_schema.sql'),
   ('002_team_confirmation.sql'),
-  ('003_activate_existing_accounts.sql')
+  ('003_activate_existing_accounts.sql'),
+  ('004_news_table.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

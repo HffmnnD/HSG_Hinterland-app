@@ -17,6 +17,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Hochgeladene Dateien (Bilder der Vereins-News). Das Verzeichnis legt das
+# Backend beim ersten Upload selbst an – siehe backend/config/uploads.js.
+backend/uploads/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

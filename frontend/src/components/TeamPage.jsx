@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 
 import { apiFetch } from '../lib/api';
 import { useTeams } from '../hooks/useTeams';
 import { relationLabel, relationLabelPlural } from '../lib/participation';
 import { roleLabel } from '../lib/roles';
+import AppLayout from './AppLayout';
 
 // Reihenfolge im Kader (Trainer:innen zuerst)
 const SECTIONS = ['coach', 'player', 'fan'];
@@ -155,7 +156,7 @@ function TeamView({ code }) {
   if (loading) {
     return (
       <Shell code={code}>
-        <p className="text-sm text-slate-400">Wird geladen …</p>
+        <p className="text-sm text-ink-muted">Wird geladen …</p>
       </Shell>
     );
   }
@@ -163,10 +164,7 @@ function TeamView({ code }) {
   if (!data) {
     return (
       <Shell code={code}>
-        <div
-          role="alert"
-          className="rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-3 text-sm text-red-200"
-        >
+        <div role="alert" className="alert alert-error">
           {error ?? 'Mannschaft konnte nicht geladen werden.'}
         </div>
       </Shell>
@@ -180,43 +178,34 @@ function TeamView({ code }) {
   return (
     <Shell code={team.code} name={team.name} canManage={canManage}>
       {error && (
-        <div
-          role="alert"
-          className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-3 text-sm text-red-200"
-        >
+        <div role="alert" className="alert alert-error mb-4">
           {error}
         </div>
       )}
-      {notice && (
-        <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-3 text-sm text-emerald-100">
-          {notice}
-        </div>
-      )}
+      {notice && <div className="alert alert-success mb-4">{notice}</div>}
 
       {/* Offene Beitrittsanfragen – ganz oben, nur für Verwaltung */}
       {canManage && pendingMembers.length > 0 && (
-        <section className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-5">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-200">
+        <section className="card-warn">
+          <h2 className="flex items-center gap-2 section-title text-base">
             Offene Beitrittsanfragen
-            <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs">
-              {pendingMembers.length}
-            </span>
+            <span className="badge badge-pending">{pendingMembers.length}</span>
           </h2>
-          <ul className="mt-3 divide-y divide-amber-500/20 overflow-hidden rounded-xl border border-amber-500/20">
+          <ul className="list-panel mt-3">
             {pendingMembers.map((member) => {
               const name = `${member.firstName} ${member.lastName}`;
               return (
                 <li
                   key={`pending-${member.id}-${member.relationType}`}
-                  className="flex flex-col gap-2 bg-slate-950/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0 text-sm">
-                    <span className="font-medium text-slate-100">{name}</span>
-                    <span className="ml-2 text-slate-400">
+                    <span className="font-bold text-ink">{name}</span>
+                    <span className="ml-2 text-ink-muted">
                       möchte als {relationLabel(member.relationType)} beitreten
                     </span>
                     {member.email && (
-                      <span className="block truncate text-xs text-slate-500">
+                      <span className="mt-0.5 block truncate text-xs text-ink-muted">
                         {member.email}
                       </span>
                     )}
@@ -228,7 +217,7 @@ function TeamView({ code }) {
                       onClick={() =>
                         handleConfirm(member.id, member.relationType, name)
                       }
-                      className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-60"
+                      className="btn btn-primary btn-sm"
                     >
                       Bestätigen
                     </button>
@@ -238,7 +227,7 @@ function TeamView({ code }) {
                       onClick={() =>
                         handleReject(member.id, member.relationType, name)
                       }
-                      className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-500/50 hover:text-red-300 disabled:opacity-60"
+                      className="btn btn-danger btn-sm"
                     >
                       Ablehnen
                     </button>
@@ -250,43 +239,31 @@ function TeamView({ code }) {
         </section>
       )}
 
-      {/* Mannschaftsinfos */}
+      {/* Kennzahlen */}
       <div
         className={`grid gap-4 sm:grid-cols-3 ${
           canManage && pendingMembers.length > 0 ? 'mt-6' : ''
         }`}
       >
         {SECTIONS.map((relation) => (
-          <div
-            key={relation}
-            className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5"
-          >
-            <h2 className="text-sm font-semibold text-slate-300">
-              {relationLabelPlural(relation)}
-            </h2>
-            <p className="mt-1 text-2xl font-bold text-emerald-400">
-              {counts[relation]}
-            </p>
+          <div key={relation} className="card">
+            <p className="eyebrow">{relationLabelPlural(relation)}</p>
+            <p className="stat-value">{counts[relation]}</p>
           </div>
         ))}
       </div>
 
       {/* Verwaltung nur für Trainer:innen dieser Mannschaft / Admins */}
       {canManage && (
-        <form
-          onSubmit={handleAdd}
-          className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-5"
-        >
-          <h2 className="text-sm font-semibold text-emerald-200">
-            Mitglied hinzufügen
-          </h2>
+        <form onSubmit={handleAdd} className="card-accent mt-6">
+          <h2 className="section-title text-base">Mitglied hinzufügen</h2>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <select
               value={addRelation}
               onChange={(e) => setAddRelation(e.target.value)}
               disabled={busy}
               aria-label="Rolle in der Mannschaft"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500 disabled:opacity-50"
+              className="field-control-sm sm:w-auto"
             >
               {ADD_RELATIONS.map((relation) => (
                 <option key={relation} value={relation}>
@@ -300,7 +277,7 @@ function TeamView({ code }) {
               onChange={(e) => setAddUserId(e.target.value)}
               disabled={busy || candidates.length === 0}
               aria-label="Mitglied auswählen"
-              className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500 disabled:opacity-50"
+              className="field-control-sm min-w-0 flex-1"
             >
               <option value="">
                 {candidates.length === 0
@@ -317,12 +294,12 @@ function TeamView({ code }) {
             <button
               type="submit"
               disabled={busy || !addUserId}
-              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-primary btn-sm btn-block sm:w-auto"
             >
               Hinzufügen
             </button>
           </div>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="field-hint">
             Manuell hinzugefügte Mitglieder sind sofort bestätigt.
           </p>
         </form>
@@ -331,16 +308,14 @@ function TeamView({ code }) {
       {/* Kader (nur bestätigte Mitglieder) */}
       {SECTIONS.map((relation) => (
         <section key={relation} className="mt-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-            {relationLabelPlural(relation)}
-          </h2>
+          <h2 className="eyebrow">{relationLabelPlural(relation)}</h2>
 
           {members[relation].length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-ink-muted">
               Noch niemand zugeordnet.
             </p>
           ) : (
-            <ul className="mt-2 divide-y divide-slate-800 overflow-hidden rounded-2xl border border-slate-800">
+            <ul className="list-panel mt-2">
               {members[relation].map((member) => {
                 const name = `${member.firstName} ${member.lastName}`;
                 return (
@@ -349,14 +324,14 @@ function TeamView({ code }) {
                     className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-100">
+                      <p className="truncate text-sm font-bold text-ink">
                         {name}
-                        <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-normal text-slate-400">
+                        <span className="tag ml-2 font-semibold">
                           {roleLabel(member.role)}
                         </span>
                       </p>
                       {member.email && (
-                        <p className="truncate text-xs text-slate-500">
+                        <p className="truncate text-xs text-ink-muted">
                           {member.email}
                         </p>
                       )}
@@ -374,7 +349,7 @@ function TeamView({ code }) {
                                 handleCallUp(member.id, e.target.value, name);
                               }
                             }}
-                            className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-emerald-500 disabled:opacity-50"
+                            className="field-control-sm"
                             title="Sendet eine Anfrage an die Zielmannschaft – deren Trainer:in bestätigt sie."
                           >
                             <option value="">Hochrufen zu …</option>
@@ -388,10 +363,8 @@ function TeamView({ code }) {
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() =>
-                            handleRemove(member.id, relation, name)
-                          }
-                          className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition hover:border-red-500/50 hover:text-red-300 disabled:opacity-50"
+                          onClick={() => handleRemove(member.id, relation, name)}
+                          className="btn btn-danger btn-sm"
                         >
                           Entfernen
                         </button>
@@ -410,32 +383,21 @@ function TeamView({ code }) {
 
 function Shell({ code, name, canManage = false, children }) {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/70">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 rounded-md bg-emerald-500 px-2 py-0.5 text-xs font-bold text-slate-950">
-              {code?.toUpperCase()}
-            </span>
-            <span className="truncate font-semibold">
-              {name ?? 'Mannschaft'}
-            </span>
-            {canManage && (
-              <span className="shrink-0 rounded-full border border-emerald-500/40 px-2 py-0.5 text-xs text-emerald-300">
-                Trainer:in
-              </span>
-            )}
-          </div>
-          <Link
-            to="/"
-            className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
-          >
-            Zurück
-          </Link>
+    <AppLayout
+      width="max-w-4xl"
+      header={
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="badge badge-trainer shrink-0">
+            {code?.toUpperCase()}
+          </span>
+          <span className="header-title">{name ?? 'Mannschaft'}</span>
+          {canManage && (
+            <span className="badge badge-neutral shrink-0">Trainer:in</span>
+          )}
         </div>
-      </header>
-
-      <main className="mx-auto max-w-4xl px-4 py-8">{children}</main>
-    </div>
+      }
+    >
+      {children}
+    </AppLayout>
   );
 }

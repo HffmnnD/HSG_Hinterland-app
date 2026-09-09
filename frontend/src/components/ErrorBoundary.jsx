@@ -23,24 +23,27 @@ export default class ErrorBoundary extends Component {
     }
 
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-100">
-        <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-center">
-          <h1 className="text-lg font-semibold">Etwas ist schiefgelaufen</h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Die Ansicht konnte nicht geladen werden. Bitte lade die Seite neu.
-          </p>
-          {this.state.message && (
-            <p className="mt-3 break-words rounded-lg bg-slate-950 px-3 py-2 text-xs text-slate-500">
-              {this.state.message}
+      <div className="flex min-h-[100dvh] flex-col bg-hsg-dark text-white">
+        <div className="brand-ribbon" />
+        <div className="flex flex-1 items-center justify-center px-4">
+          <div className="w-full max-w-md rounded-md border-t-[3px] border-t-hsg-green bg-paper p-6 text-center text-ink-soft shadow-pop">
+            <h1 className="section-title">Etwas ist schiefgelaufen</h1>
+            <p className="mt-2 text-sm text-ink-muted">
+              Die Ansicht konnte nicht geladen werden. Bitte lade die Seite neu.
             </p>
-          )}
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="mt-5 w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
-          >
-            Seite neu laden
-          </button>
+            {this.state.message && (
+              <p className="mt-3 break-words rounded-sm bg-surface px-3 py-2 text-xs text-ink-muted">
+                {this.state.message}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="btn btn-primary btn-block mt-5"
+            >
+              Seite neu laden
+            </button>
+          </div>
         </div>
       </div>
     );
