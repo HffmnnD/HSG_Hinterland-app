@@ -192,7 +192,6 @@ function TeamView({ code }) {
   }
 
   const { team, members } = data;
-  const sponsors = data.sponsors ?? [];
   const pendingMembers = data.pendingMembers ?? [];
   const otherTeams = allTeams.filter((entry) => entry.code !== team.code);
 
@@ -239,7 +238,6 @@ function TeamView({ code }) {
         team={team}
         competition={table?.competition ?? nextGame?.competition ?? null}
         season={table?.season ?? null}
-        sponsors={sponsors}
       />
 
       {/* ------------------------------------------------------------ Reiter */}

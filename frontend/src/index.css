@@ -533,21 +533,6 @@
     @apply relative px-5 pb-5 pt-6 sm:px-6 sm:pb-6 sm:pt-24;
   }
 
-  /* Beschriftungen im Kopfbereich (z. B. „Präsentiert von"). Die Kachel
-     selbst wird aktuell nur dort verwendet – die Schnellinfos zum nächsten
-     Spiel stehen im Reiter „Übersicht" auf hellem Grund. */
-  .quick-stat {
-    @apply rounded border border-white/15 bg-white/10 px-3 py-2.5 backdrop-blur-sm;
-  }
-
-  .quick-stat__label {
-    @apply font-display text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-white/70;
-  }
-
-  .quick-stat__value {
-    @apply mt-1 truncate font-display text-sm font-bold leading-tight text-white;
-  }
-
   /* ------------------------------------------------------------ Kader */
   /* Spielerkarte: Rückennummer/Initialen, Name, Position. */
   .player-card {

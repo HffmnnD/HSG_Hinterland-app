@@ -76,7 +76,7 @@ frontend/src/
                                (Übersicht / Spielplan & Tabelle / Kader /
                                Verwaltung), Live-Banner und nuLiga-Widgets
     team/
-      TeamHero.jsx             Kopfbereich: Foto/Verlauf, Name, Liga, Sponsoren
+      TeamHero.jsx             Kopfbereich: Foto/Verlauf, Name, Liga
       NextGameCard.jsx         Karte „Nächstes Spiel" (Reiter Übersicht)
       RosterSection.jsx        Kader: Trainerstab, Spielerkarten, Positionsfilter
       TeamManagePanel.jsx      Verwaltung: Anfragen, Zuordnungen, Stammdaten
@@ -117,9 +117,9 @@ Weitere Entscheidungen, die beim Weiterbauen wichtig sind:
 * **Die Übersicht bleibt bei zwei Elementen.** Spielplan-Listen, vergangene
   Ergebnisse und Match-Details gehören ausschließlich in „Spielplan & Tabelle".
   Wer die Übersicht erweitern will, erweitert stattdessen den anderen Reiter.
-* **Der Kopfbereich trägt nur die Identität** der Mannschaft: Foto, Name, Liga,
-  Sponsoren. Kürzel, Rollen-Badge und Kaderzahlen stehen dort bewusst nicht –
-  das Kürzel zeigt schon die Kopfzeile, Zahlen gehören in die Reiter.
+* **Der Kopfbereich trägt nur die Identität** der Mannschaft: Foto, Name, Liga.
+  Kürzel, Rollen-Badge und Kaderzahlen stehen dort bewusst nicht – das Kürzel
+  zeigt schon die Kopfzeile, Zahlen gehören in die Reiter.
 * **Ohne Foto** trägt der Kopfbereich einen Verlauf im Anthrazit der Marke mit
   grünem Schimmer (`.team-hero` in `index.css`), keine fremde Farbfamilie.
 * **Ohne `handballTeamId`** erscheint statt Tabelle und Spielplan der Hinweis
