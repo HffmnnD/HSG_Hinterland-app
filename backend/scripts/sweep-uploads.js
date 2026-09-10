@@ -1,4 +1,4 @@
-// Wartungsskript: findet verwaiste Beitragsbilder.
+// Wartungsskript: findet verwaiste Bilder (News-Beiträge und Mannschaftsfotos).
 //
 //   npm run uploads:sweep            nur anzeigen (Standard)
 //   npm run uploads:sweep -- --apply wirklich löschen
@@ -9,6 +9,10 @@
 // zurückbleiben, wenn eine Anfrage mittendrin abbricht (Netzwerk weg, Tab
 // geschlossen, Server-Neustart) – nachdem multer geschrieben hat, aber bevor
 // der Controller fertig war. Dieses Skript räumt solche Reste weg.
+//
+// WICHTIG bei neuen Bildarten: Jede Tabelle, die einen Upload-Pfad speichert,
+// MUSS unten in REFERENCE_QUERIES stehen. Fehlt sie, hält das Skript ihre
+// Dateien für verwaist und löscht sie mit --apply.
 require('dotenv').config({ quiet: true });
 
 const fs = require('fs');
@@ -19,6 +23,12 @@ const { UPLOAD_ROOT } = require('../config/uploads');
 
 const APPLY = process.argv.includes('--apply');
 
+// Alle Stellen, an denen ein Upload-Pfad in der Datenbank steht.
+const REFERENCE_QUERIES = [
+  { label: 'News-Bilder', sql: 'SELECT image_path AS path FROM news WHERE image_path IS NOT NULL' },
+  { label: 'Mannschaftsfotos', sql: 'SELECT photo_path AS path FROM teams WHERE photo_path IS NOT NULL' },
+];
+
 async function main() {
   const connection = await mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
@@ -28,12 +38,13 @@ async function main() {
     database: process.env.DB_NAME || 'hsg_hinterland',
   });
 
-  let referenced;
+  const referenced = new Set();
   try {
-    const [rows] = await connection.query(
-      'SELECT image_path FROM news WHERE image_path IS NOT NULL'
-    );
-    referenced = new Set(rows.map((row) => row.image_path));
+    for (const query of REFERENCE_QUERIES) {
+      const [rows] = await connection.query(query.sql);
+      rows.forEach((row) => referenced.add(row.path));
+      console.log(`${query.label.padEnd(24)} : ${rows.length}`);
+    }
   } finally {
     await connection.end();
   }

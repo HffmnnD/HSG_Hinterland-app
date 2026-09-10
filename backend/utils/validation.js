@@ -31,6 +31,112 @@ function isRelationType(value) {
   return RELATION_TYPES.includes(value);
 }
 
+// --- Mannschaftsseite -------------------------------------------------------
+
+// nuLiga-Mannschaftsnummer (`teamtable`): rein numerisch, siehe
+// config/handball.js. Hier bewusst dieselbe Regel, damit gar nicht erst ein
+// unbrauchbarer Wert in der Datenbank landet.
+const HANDBALL_TEAM_ID_PATTERN = /^\d{1,12}$/;
+
+// Rückennummern im Handball: 1-99 (die 0 ist nicht vorgesehen).
+const MIN_JERSEY = 1;
+const MAX_JERSEY = 99;
+const MAX_STAFF_TITLE_LENGTH = 60;
+
+/**
+ * Prüft den PATCH-Body für /api/teams/:code (Stammdaten der Mannschaft).
+ *
+ * Aktuell nur `handballTeamId`. Leerstring oder null hebt die Ligaverknüpfung
+ * wieder auf – die Mannschaftsseite zeigt dann den Hinweis, dass keine
+ * Ligaspiele terminiert sind.
+ *
+ * @returns {{ ok:true, fields: object } | { ok:false, status, message }}
+ */
+function validateTeamPatch(body) {
+  const { handballTeamId } = body || {};
+  const fields = {};
+
+  if (handballTeamId !== undefined) {
+    if (handballTeamId === null || handballTeamId === '') {
+      fields.handball_team_id = null;
+    } else if (
+      typeof handballTeamId !== 'string' ||
+      !HANDBALL_TEAM_ID_PATTERN.test(handballTeamId.trim())
+    ) {
+      return fail(
+        'Ungültige nuLiga-Nummer. Erwartet wird die Zahl aus der Adresse der Mannschaftsseite, z. B. 2086554.'
+      );
+    } else {
+      fields.handball_team_id = handballTeamId.trim();
+    }
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return fail('Keine Änderungen übergeben (handballTeamId).');
+  }
+  return { ok: true, fields };
+}
+
+/**
+ * Prüft den PATCH-Body für /api/teams/:code/members/:userId (Kaderangaben).
+ *
+ * Jedes Feld ist einzeln optional. `null` löscht den Wert bewusst – so lässt
+ * sich eine Rückennummer auch wieder freigeben.
+ *
+ * @returns {{ ok:true, fields: object } | { ok:false, status, message }}
+ */
+function validateRosterPatch(body) {
+  const { jerseyNumber, position, staffTitle } = body || {};
+  const fields = {};
+
+  if (jerseyNumber !== undefined) {
+    if (jerseyNumber === null || jerseyNumber === '') {
+      fields.jersey_number = null;
+    } else {
+      const number = Number(jerseyNumber);
+      if (!Number.isInteger(number) || number < MIN_JERSEY || number > MAX_JERSEY) {
+        return fail(
+          `Die Rückennummer muss zwischen ${MIN_JERSEY} und ${MAX_JERSEY} liegen.`
+        );
+      }
+      fields.jersey_number = number;
+    }
+  }
+
+  if (position !== undefined) {
+    if (position === null || position === '') {
+      fields.position = null;
+    } else if (!teamRepository.POSITIONS.includes(position)) {
+      return fail(
+        `Ungültige Position. Erlaubt: ${teamRepository.POSITIONS.join(', ')}.`
+      );
+    } else {
+      fields.position = position;
+    }
+  }
+
+  if (staffTitle !== undefined) {
+    if (staffTitle === null || staffTitle === '') {
+      fields.staff_title = null;
+    } else if (typeof staffTitle !== 'string') {
+      return fail('staffTitle muss eine Zeichenkette sein.');
+    } else {
+      const clean = staffTitle.trim();
+      if (clean.length > MAX_STAFF_TITLE_LENGTH) {
+        return fail(
+          `Die Bezeichnung darf höchstens ${MAX_STAFF_TITLE_LENGTH} Zeichen lang sein.`
+        );
+      }
+      fields.staff_title = clean.length > 0 ? clean : null;
+    }
+  }
+
+  if (Object.keys(fields).length === 0) {
+    return fail('Keine Änderungen übergeben (jerseyNumber, position, staffTitle).');
+  }
+  return { ok: true, fields };
+}
+
 // --- Helferdienste -------------------------------------------------------
 
 /**
@@ -297,8 +403,12 @@ function validateNewsPost(body) {
 module.exports = {
   MAX_NEWS_TITLE_LENGTH,
   MAX_NEWS_CONTENT_LENGTH,
+  MIN_JERSEY,
+  MAX_JERSEY,
   parseId,
   isRelationType,
+  validateTeamPatch,
+  validateRosterPatch,
   validateServiceList,
   validateTeamIdList,
   validateTeamRelations,

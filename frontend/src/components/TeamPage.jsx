@@ -1,16 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import { apiFetch } from '../lib/api';
 import { useTeams } from '../hooks/useTeams';
-import { relationLabel, relationLabelPlural } from '../lib/participation';
-import { roleLabel } from '../lib/roles';
+import { useHandballSchedule, useHandballTable } from '../hooks/useHandball';
+import { ADMIN_ROLES } from '../lib/roles';
+import { useAuth } from '../context/AuthContext';
 import AppLayout from './AppLayout';
+import TableWidget from './handball/TableWidget';
+import ScheduleWidget from './handball/ScheduleWidget';
+import LiveTickerWidget from './handball/LiveTickerWidget';
+import TeamHero from './team/TeamHero';
+import NextGameCard from './team/NextGameCard';
+import RosterSection from './team/RosterSection';
+import TeamManagePanel from './team/TeamManagePanel';
+import { HeroSkeleton, ListSkeleton } from './team/Skeleton';
 
-// Reihenfolge im Kader (Trainer:innen zuerst)
-const SECTIONS = ['coach', 'player', 'fan'];
-// Reihenfolge im Auswahlfeld „Mitglied hinzufügen“ (häufigster Fall zuerst)
-const ADD_RELATIONS = ['player', 'coach', 'fan'];
+// Reiter der Seite. `key` steht im Adressfeld (?tab=kader), damit ein Link auf
+// den Kader auch als Link auf den Kader wieder aufgeht – und der
+// Zurück-Knopf des Browsers funktioniert.
+const TABS = [
+  { key: 'uebersicht', label: 'Übersicht' },
+  { key: 'spielplan', label: 'Spielplan & Tabelle' },
+  { key: 'kader', label: 'Kader' },
+];
+const MANAGE_TAB = { key: 'verwaltung', label: 'Verwaltung' };
+
+// Umschalter im Spielplan-Reiter.
+const SCHEDULE_MODES = [
+  { key: 'upcoming', label: 'Nächste Spiele' },
+  { key: 'past', label: 'Ergebnisse' },
+  { key: 'all', label: 'Gesamter Spielplan' },
+];
 
 // `key={code}` sorgt dafür, dass beim Wechsel der Mannschaft der komplette
 // Zustand neu initialisiert wird – ohne setState im Effekt-Body.
@@ -19,19 +40,44 @@ export default function TeamPage() {
   return <TeamView key={code} code={code} />;
 }
 
-function TeamView({ code }) {
-  const { teams: allTeams } = useTeams();
+/**
+ * Hinweis, wenn die Mannschaft (noch) keine Ligaanbindung hat.
+ * Bewusst freundlich formuliert: Für eine Jugendmannschaft ohne Ligabetrieb
+ * ist das der Normalfall und kein Fehler.
+ */
+function LeagueFallback({ canManage }) {
+  return (
+    <p className="card-note">
+      Ligaspiele für diese Saison noch nicht terminiert.
+      {canManage && (
+        <>
+          {' '}
+          Sobald die Mannschaft im Spielbetrieb gemeldet ist, kann ein:e
+          Administrator:in die nuLiga-Nummer im Reiter „Verwaltung" eintragen –
+          Tabelle, Spielplan und Live-Ticker erscheinen dann automatisch.
+        </>
+      )}
+    </p>
+  );
+}
 
+function TeamView({ code }) {
+  const { user } = useAuth();
+  const { teams: allTeams } = useTeams();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Ein Zustandsobjekt statt vieler Einzel-States: `loading` ergibt sich
+  // daraus, ob schon etwas geladen wurde (kein setState im Effekt-Body).
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Zähler, der nach jeder Verwaltungsaktion hochgeht – daran hängt das
+  // Nachladen der Kandidatenliste im Verwaltungsbereich.
+  const [reloadToken, setReloadToken] = useState(0);
 
-  // Formular „Mitglied hinzufügen“
-  const [candidates, setCandidates] = useState([]);
-  const [addRelation, setAddRelation] = useState('player');
-  const [addUserId, setAddUserId] = useState('');
+  const [scheduleMode, setScheduleMode] = useState('upcoming');
 
   const load = useCallback(async () => {
     const result = await apiFetch(`/api/teams/${encodeURIComponent(code)}`);
@@ -57,31 +103,46 @@ function TeamView({ code }) {
   }, [code]);
 
   const canManage = data?.canManage ?? false;
+  const isAdmin = ADMIN_ROLES.includes(user?.role);
+  const handballTeamId = data?.team?.handballTeamId ?? null;
 
-  // Kandidatenliste für den gewählten Beziehungstyp nachladen.
-  useEffect(() => {
-    if (!canManage) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await apiFetch(
-          `/api/teams/${encodeURIComponent(code)}/candidates?relationType=${addRelation}`
-        );
-        if (!cancelled) {
-          setCandidates(result?.candidates ?? []);
-          setAddUserId('');
-        }
-      } catch {
-        if (!cancelled) setCandidates([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
+  // Verbandsdaten. Ohne nuLiga-Nummer laden die Hooks bewusst nichts.
+  const { games, meta: scheduleMeta, loading: scheduleLoading } =
+    useHandballSchedule(handballTeamId);
+  // Nur für Liga- und Saisonbezeichnung im Kopfbereich – die Tabelle selbst
+  // lädt das TableWidget (aus dem Browser-Cache, siehe Cache-Control).
+  const { table } = useHandballTable(handballTeamId);
+
+  // Laufendes Spiel (für den Banner) und nächstes Spiel (für die Übersicht).
+  // Vergangene Ergebnisse werden hier nicht mehr abgeleitet – sie stehen
+  // ausschließlich im Reiter „Spielplan & Tabelle".
+  const { liveGame, nextGame } = useMemo(() => {
+    const byKickoff = (a, b) => new Date(a.startsAt) - new Date(b.startsAt);
+    return {
+      liveGame: games.find((game) => game.state === 'live') ?? null,
+      nextGame:
+        games
+          .filter((game) => game.state === 'upcoming' && game.startsAt)
+          .sort(byKickoff)[0] ?? null,
     };
-  }, [code, addRelation, canManage, data]);
+  }, [games]);
 
-  // Führt eine Verwaltungsaktion aus und lädt danach neu. Zeigt bevorzugt die
-  // Meldung aus der Server-Antwort (z. B. „… hat jetzt die Rolle Trainer:in").
+  const tabs = canManage ? [...TABS, MANAGE_TAB] : TABS;
+  const requestedTab = searchParams.get('tab');
+  const activeTab = tabs.some((tab) => tab.key === requestedTab)
+    ? requestedTab
+    : 'uebersicht';
+
+  const selectTab = (key) => {
+    // `replace`, damit das Blättern durch die Reiter nicht die gesamte
+    // Browser-Historie füllt.
+    setSearchParams(key === 'uebersicht' ? {} : { tab: key }, { replace: true });
+  };
+
+  /**
+   * Führt eine Verwaltungsaktion aus und lädt danach neu. Zeigt bevorzugt die
+   * Meldung aus der Server-Antwort (z. B. „… hat jetzt die Rolle Trainer:in").
+   */
   const run = async (action, fallbackMessage) => {
     setBusy(true);
     setError(null);
@@ -89,6 +150,7 @@ function TeamView({ code }) {
     try {
       const result = await action();
       await load();
+      setReloadToken((value) => value + 1);
       setNotice(result?.message || fallbackMessage || null);
     } catch (err) {
       setError(err.message);
@@ -97,66 +159,24 @@ function TeamView({ code }) {
     }
   };
 
-  const handleAdd = (event) => {
-    event.preventDefault();
-    if (!addUserId) return;
-    run(
-      () =>
-        apiFetch(`/api/teams/${encodeURIComponent(code)}/members`, {
-          method: 'POST',
-          body: JSON.stringify({
-            userId: Number(addUserId),
-            relationType: addRelation,
-          }),
-        }),
-      'Mitglied hinzugefügt.'
-    );
-  };
-
-  const handleConfirm = (userId, relationType, name) =>
-    run(
-      () =>
-        apiFetch(
-          `/api/teams/${encodeURIComponent(code)}/members/${userId}/confirm?relationType=${relationType}`,
-          { method: 'POST' }
-        ),
-      `${name} bestätigt.`
-    );
-
-  const handleReject = (userId, relationType, name) =>
+  const handleSaveDetails = (userId, relationType, fields) =>
     run(
       () =>
         apiFetch(
           `/api/teams/${encodeURIComponent(code)}/members/${userId}?relationType=${relationType}`,
-          { method: 'DELETE' }
+          { method: 'PATCH', body: JSON.stringify(fields) }
         ),
-      `Anfrage von ${name} abgelehnt.`
+      'Kaderangaben gespeichert.'
     );
 
-  const handleRemove = (userId, relationType, name) =>
-    run(
-      () =>
-        apiFetch(
-          `/api/teams/${encodeURIComponent(code)}/members/${userId}?relationType=${relationType}`,
-          { method: 'DELETE' }
-        ),
-      `${name} entfernt.`
-    );
-
-  const handleCallUp = (userId, targetTeamCode, name) =>
-    run(
-      () =>
-        apiFetch(`/api/teams/${encodeURIComponent(code)}/callup`, {
-          method: 'POST',
-          body: JSON.stringify({ userId, targetTeamCode }),
-        }),
-      `Anfrage für ${name} an ${targetTeamCode} gesendet.`
-    );
-
+  // ----------------------------------------------------------- Ladezustand
   if (loading) {
     return (
       <Shell code={code}>
-        <p className="text-sm text-ink-muted">Wird geladen …</p>
+        <HeroSkeleton />
+        <div className="mt-6">
+          <ListSkeleton rows={3} />
+        </div>
       </Shell>
     );
   }
@@ -171,12 +191,12 @@ function TeamView({ code }) {
     );
   }
 
-  const { team, members, counts } = data;
+  const { team, members } = data;
   const pendingMembers = data.pendingMembers ?? [];
-  const otherTeams = allTeams.filter((t) => t.code !== team.code);
+  const otherTeams = allTeams.filter((entry) => entry.code !== team.code);
 
   return (
-    <Shell code={team.code} name={team.name} canManage={canManage}>
+    <Shell code={team.code} name={team.name}>
       {error && (
         <div role="alert" className="alert alert-error mb-4">
           {error}
@@ -184,204 +204,185 @@ function TeamView({ code }) {
       )}
       {notice && <div className="alert alert-success mb-4">{notice}</div>}
 
-      {/* Offene Beitrittsanfragen – ganz oben, nur für Verwaltung */}
-      {canManage && pendingMembers.length > 0 && (
-        <section className="card-warn">
-          <h2 className="flex items-center gap-2 section-title text-base">
-            Offene Beitrittsanfragen
-            <span className="badge badge-pending">{pendingMembers.length}</span>
-          </h2>
-          <ul className="list-panel mt-3">
-            {pendingMembers.map((member) => {
-              const name = `${member.firstName} ${member.lastName}`;
-              return (
-                <li
-                  key={`pending-${member.id}-${member.relationType}`}
-                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0 text-sm">
-                    <span className="font-bold text-ink">{name}</span>
-                    <span className="ml-2 text-ink-muted">
-                      möchte als {relationLabel(member.relationType)} beitreten
-                    </span>
-                    {member.email && (
-                      <span className="mt-0.5 block truncate text-xs text-ink-muted">
-                        {member.email}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        handleConfirm(member.id, member.relationType, name)
-                      }
-                      className="btn btn-primary btn-sm"
-                    >
-                      Bestätigen
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        handleReject(member.id, member.relationType, name)
-                      }
-                      className="btn btn-danger btn-sm"
-                    >
-                      Ablehnen
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {/* Kennzahlen */}
-      <div
-        className={`grid gap-4 sm:grid-cols-3 ${
-          canManage && pendingMembers.length > 0 ? 'mt-6' : ''
-        }`}
-      >
-        {SECTIONS.map((relation) => (
-          <div key={relation} className="card">
-            <p className="eyebrow">{relationLabelPlural(relation)}</p>
-            <p className="stat-value">{counts[relation]}</p>
+      {/* ------------------------------------------------- Live-Ticker-Banner */}
+      {/* Ganz oben und über allen Reitern: Wer die App öffnet, während gespielt
+          wird, sucht genau das – und nichts anderes. */}
+      {liveGame &&
+        (liveGame.id ? (
+          <div className="mb-6">
+            <LiveTickerWidget gameId={liveGame.id} title="Jetzt live" />
           </div>
+        ) : (
+          // nuLiga legt den Spielbericht erst mit der ersten Meldung an –
+          // bis dahin gibt es die Begegnung, aber noch keinen Ticker.
+          <div className="card-accent mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="section-title text-base">Jetzt live</h2>
+              <span className="badge badge-live">
+                <span className="live-dot" aria-hidden="true" />
+                Live
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-ink-soft">
+              {liveGame.home?.name} – {liveGame.away?.name}
+            </p>
+            <p className="field-hint">
+              Für dieses Spiel liegt noch kein Ticker vor. Sobald am
+              Zeitnehmertisch die erste Aktion gemeldet wird, erscheint er hier.
+            </p>
+          </div>
+        ))}
+
+      {/* ------------------------------------------------------- Kopfbereich */}
+      <TeamHero
+        team={team}
+        competition={table?.competition ?? nextGame?.competition ?? null}
+        season={table?.season ?? null}
+      />
+
+      {/* ------------------------------------------------------------ Reiter */}
+      <div className="tabs mt-6" role="tablist" aria-label="Bereiche der Mannschaftsseite">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            id={`tab-${tab.key}`}
+            aria-selected={activeTab === tab.key}
+            aria-controls={`panel-${tab.key}`}
+            onClick={() => selectTab(tab.key)}
+            className={`tab ${activeTab === tab.key ? 'tab--active' : ''}`}
+          >
+            {tab.label}
+            {tab.key === 'verwaltung' && pendingMembers.length > 0 && (
+              <span className="badge badge-pending ml-2">
+                {pendingMembers.length}
+              </span>
+            )}
+          </button>
         ))}
       </div>
 
-      {/* Verwaltung nur für Trainer:innen dieser Mannschaft / Admins */}
-      {canManage && (
-        <form onSubmit={handleAdd} className="card-accent mt-6">
-          <h2 className="section-title text-base">Mitglied hinzufügen</h2>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <select
-              value={addRelation}
-              onChange={(e) => setAddRelation(e.target.value)}
-              disabled={busy}
-              aria-label="Rolle in der Mannschaft"
-              className="field-control-sm sm:w-auto"
-            >
-              {ADD_RELATIONS.map((relation) => (
-                <option key={relation} value={relation}>
-                  {relationLabelPlural(relation)}
-                </option>
-              ))}
-            </select>
+      <div
+        role="tabpanel"
+        id={`panel-${activeTab}`}
+        aria-labelledby={`tab-${activeTab}`}
+        className="mt-6"
+      >
+        {/* --------------------------------------------------- Übersicht */}
+        {/* Bewusst nur zwei Dinge: das nächste Spiel und die Tabelle.
+            Spielplan-Listen und vergangene Ergebnisse stehen ausschließlich im
+            Reiter „Spielplan & Tabelle" – sonst wäre die Übersicht genau die
+            überladene Seite, die sie ersetzen soll. */}
+        {activeTab === 'uebersicht' && (
+          <div className="space-y-6">
+            {!handballTeamId ? (
+              <LeagueFallback canManage={canManage} />
+            ) : (
+              <>
+                {scheduleLoading ? (
+                  <ListSkeleton rows={1} />
+                ) : (
+                  <NextGameCard game={nextGame} />
+                )}
 
-            <select
-              value={addUserId}
-              onChange={(e) => setAddUserId(e.target.value)}
-              disabled={busy || candidates.length === 0}
-              aria-label="Mitglied auswählen"
-              className="field-control-sm min-w-0 flex-1"
-            >
-              <option value="">
-                {candidates.length === 0
-                  ? 'Keine passenden Mitglieder'
-                  : 'Mitglied wählen …'}
-              </option>
-              {candidates.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.firstName} {c.lastName} ({roleLabel(c.role)})
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="submit"
-              disabled={busy || !addUserId}
-              className="btn btn-primary btn-sm btn-block sm:w-auto"
-            >
-              Hinzufügen
-            </button>
+                <TableWidget
+                  teamId={handballTeamId}
+                  highlightTeamId={handballTeamId}
+                />
+              </>
+            )}
           </div>
-          <p className="field-hint">
-            Manuell hinzugefügte Mitglieder sind sofort bestätigt.
-          </p>
-        </form>
-      )}
+        )}
 
-      {/* Kader (nur bestätigte Mitglieder) */}
-      {SECTIONS.map((relation) => (
-        <section key={relation} className="mt-6">
-          <h2 className="eyebrow">{relationLabelPlural(relation)}</h2>
-
-          {members[relation].length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">
-              Noch niemand zugeordnet.
-            </p>
-          ) : (
-            <ul className="list-panel mt-2">
-              {members[relation].map((member) => {
-                const name = `${member.firstName} ${member.lastName}`;
-                return (
-                  <li
-                    key={`${relation}-${member.id}`}
-                    className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        {/* -------------------------------------------- Spielplan & Tabelle */}
+        {activeTab === 'spielplan' && (
+          <div className="space-y-8">
+            {!handballTeamId ? (
+              <LeagueFallback canManage={canManage} />
+            ) : (
+              <>
+                <section>
+                  <div
+                    role="group"
+                    aria-label="Spielplan-Ansicht"
+                    className="flex flex-wrap gap-2"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-ink">
-                        {name}
-                        <span className="tag ml-2 font-semibold">
-                          {roleLabel(member.role)}
-                        </span>
-                      </p>
-                      {member.email && (
-                        <p className="truncate text-xs text-ink-muted">
-                          {member.email}
-                        </p>
-                      )}
-                    </div>
+                    {SCHEDULE_MODES.map((mode) => (
+                      <button
+                        key={mode.key}
+                        type="button"
+                        onClick={() => setScheduleMode(mode.key)}
+                        aria-pressed={scheduleMode === mode.key}
+                        className={`chip chip-sm ${
+                          scheduleMode === mode.key ? 'chip-active' : ''
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
 
-                    {canManage && (
-                      <div className="flex shrink-0 items-center gap-2">
-                        {relation === 'player' && otherTeams.length > 0 && (
-                          <select
-                            value=""
-                            disabled={busy}
-                            aria-label={`${name} hochrufen`}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                handleCallUp(member.id, e.target.value, name);
-                              }
-                            }}
-                            className="field-control-sm"
-                            title="Sendet eine Anfrage an die Zielmannschaft – deren Trainer:in bestätigt sie."
-                          >
-                            <option value="">Hochrufen zu …</option>
-                            {otherTeams.map((t) => (
-                              <option key={t.id} value={t.code}>
-                                {t.code}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleRemove(member.id, relation, name)}
-                          className="btn btn-danger btn-sm"
-                        >
-                          Entfernen
-                        </button>
-                      </div>
+                  <div className="mt-4">
+                    {scheduleLoading ? (
+                      <ListSkeleton rows={4} />
+                    ) : (
+                      <ScheduleWidget
+                        teamId={handballTeamId}
+                        title="Spielplan"
+                        mode={scheduleMode}
+                      />
                     )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ))}
+                  </div>
+                </section>
+
+                <TableWidget
+                  teamId={handballTeamId}
+                  highlightTeamId={handballTeamId}
+                />
+
+                {scheduleMeta?.available === false && (
+                  <p className="field-hint">
+                    Hinweis: Die Verbandsseite antwortet gerade nicht. Angezeigt
+                    wird, was zuletzt geladen werden konnte.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ------------------------------------------------------- Kader */}
+        {activeTab === 'kader' && (
+          <RosterSection
+            players={members.player}
+            staff={members.coach}
+            canManage={canManage}
+            busy={busy}
+            onSaveDetails={handleSaveDetails}
+          />
+        )}
+
+        {/* -------------------------------------------------- Verwaltung */}
+        {activeTab === 'verwaltung' && canManage && (
+          <TeamManagePanel
+            code={code}
+            team={team}
+            isAdmin={isAdmin}
+            pendingMembers={pendingMembers}
+            members={members}
+            otherTeams={otherTeams}
+            busy={busy}
+            onRun={run}
+            reloadToken={reloadToken}
+          />
+        )}
+      </div>
     </Shell>
   );
 }
 
-function Shell({ code, name, canManage = false, children }) {
+function Shell({ code, name, children }) {
   return (
     <AppLayout
       width="max-w-4xl"
@@ -391,9 +392,6 @@ function Shell({ code, name, canManage = false, children }) {
             {code?.toUpperCase()}
           </span>
           <span className="header-title">{name ?? 'Mannschaft'}</span>
-          {canManage && (
-            <span className="badge badge-neutral shrink-0">Trainer:in</span>
-          )}
         </div>
       }
     >

@@ -17,6 +17,7 @@
 --
 --      users ──1:n──> user_teams <──n:1── teams
 --      users ──1:n──> user_services
+--      teams ──1:n──> team_sponsors
 --
 -- ============================================================================
 
@@ -64,12 +65,16 @@ CREATE TABLE IF NOT EXISTS users (
 --  teams – Mannschaften des Vereins
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS teams (
-  id    INT UNSIGNED NOT NULL AUTO_INCREMENT
-        COMMENT 'Primärschlüssel, wird als team_id referenziert',
-  name  VARCHAR(100) NOT NULL
-        COMMENT 'Ausgeschriebener Name, z. B. "Männliche Jugend C"',
-  code  VARCHAR(20) NOT NULL
-        COMMENT 'Kurzkürzel für URLs und Chips, z. B. "MJC". Eindeutig, immer GROSS.',
+  id               INT UNSIGNED NOT NULL AUTO_INCREMENT
+                   COMMENT 'Primärschlüssel, wird als team_id referenziert',
+  name             VARCHAR(100) NOT NULL
+                   COMMENT 'Ausgeschriebener Name, z. B. "Männliche Jugend C"',
+  handball_team_id VARCHAR(20) DEFAULT NULL
+                   COMMENT 'nuLiga-Mannschaftsnummer (`teamtable`, rein numerisch). Speist Tabelle, Spielplan und Live-Ticker der Mannschaftsseite. NULL = keine Ligaanbindung.',
+  photo_path       VARCHAR(255) DEFAULT NULL
+                   COMMENT 'Relativer Pfad des Mannschaftsfotos in backend/uploads/, z. B. "teams/ab12.jpg". Ausgeliefert über /api/uploads/<pfad>.',
+  code             VARCHAR(20) NOT NULL
+                   COMMENT 'Kurzkürzel für URLs und Chips, z. B. "MJC". Eindeutig, immer GROSS.',
 
   PRIMARY KEY (id),
   UNIQUE KEY uq_teams_code (code)
@@ -108,6 +113,13 @@ CREATE TABLE IF NOT EXISTS user_teams (
   is_confirmed   TINYINT(1) NOT NULL DEFAULT 0
                  COMMENT 'Vom Trainer bestätigt (1) oder offene Beitrittsanfrage (0). player/coach starten mit 0, fan wird direkt mit 1 angelegt.',
 
+  jersey_number  TINYINT UNSIGNED DEFAULT NULL
+                 COMMENT 'Rückennummer in DIESER Mannschaft (1-99). NULL = keine feste Nummer.',
+  position       ENUM('tor','rueckraum','aussen','kreis') DEFAULT NULL
+                 COMMENT 'Spielposition in DIESER Mannschaft. NULL = nicht angegeben. Bewusst hier und nicht an `users`: wer in zwei Mannschaften spielt, spielt dort oft auf verschiedenen Positionen.',
+  staff_title    VARCHAR(60) DEFAULT NULL
+                 COMMENT 'Bezeichnung im Trainer-/Betreuerstab, z. B. "Co-Trainer". Nur für relation_type = coach.',
+
   PRIMARY KEY (user_id, team_id, relation_type),
   KEY idx_user_teams_team (team_id),
   KEY idx_user_teams_user (user_id),
@@ -131,6 +143,32 @@ CREATE TABLE IF NOT EXISTS user_services (
   CONSTRAINT fk_user_services_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Welche Helferdienste ein "Mitwirkender" übernimmt. ON DELETE CASCADE.';
+
+
+-- ----------------------------------------------------------------------------
+--  team_sponsors – Haupt-Sponsoren einer Mannschaft
+-- ----------------------------------------------------------------------------
+--  Werden im Kopfbereich der Mannschaftsseite angezeigt. Eigene Tabelle statt
+--  Textspalte: Sponsoren kommen und gehen einzeln, brauchen eine Reihenfolge
+--  und je einen eigenen Link.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS team_sponsors (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT
+              COMMENT 'Primärschlüssel',
+  team_id     INT UNSIGNED NOT NULL
+              COMMENT 'FK -> teams.id',
+  name        VARCHAR(100) NOT NULL
+              COMMENT 'Name des Sponsors',
+  website_url VARCHAR(255) DEFAULT NULL
+              COMMENT 'Optionale Website (nur http/https). NULL = nicht verlinkt.',
+  sort_order  SMALLINT UNSIGNED NOT NULL DEFAULT 0
+              COMMENT 'Anzeigereihenfolge, kleinste Zahl zuerst',
+
+  PRIMARY KEY (id),
+  KEY idx_team_sponsors_team (team_id, sort_order),
+  CONSTRAINT fk_team_sponsors_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Sponsoren je Mannschaft. ON DELETE CASCADE.';
 
 
 -- ----------------------------------------------------------------------------
@@ -185,5 +223,6 @@ INSERT INTO schema_migrations (filename) VALUES
   ('001_initial_schema.sql'),
   ('002_team_confirmation.sql'),
   ('003_activate_existing_accounts.sql'),
-  ('004_news_table.sql')
+  ('004_news_table.sql'),
+  ('005_team_page.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

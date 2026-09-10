@@ -4,6 +4,10 @@
 //   GET  /api/teams                              öffentliche Mannschaftsliste
 //   GET  /api/teams/:code                        Infos + bestätigter Kader
 //                                                (+ offene Anfragen für Verwaltung)
+//   PATCH /api/teams/:code                       Stammdaten (nuLiga-Nummer)
+//   POST /api/teams/:code/photo                  Mannschaftsfoto setzen
+//   DEL  /api/teams/:code/photo                  Mannschaftsfoto entfernen
+//   PATCH /api/teams/:code/members/:userId       Kaderangaben (Nummer/Position)
 //   GET  /api/teams/:code/candidates             Auswahlliste zum Hinzufügen (Verwaltung)
 //   POST /api/teams/:code/members                Zuordnung anlegen (Verwaltung)
 //   POST /api/teams/:code/members/:userId/confirm offene Anfrage bestätigen (Verwaltung)
@@ -14,13 +18,35 @@
 // Mannschaft eingetragen.
 const teamRepository = require('../repositories/teamRepository');
 const userRepository = require('../repositories/userRepository');
-const { parseId, isRelationType } = require('../utils/validation');
+const {
+  parseId,
+  isRelationType,
+  validateTeamPatch,
+  validateRosterPatch,
+} = require('../utils/validation');
 const { ADMIN_ROLES, RELATION_TYPES } = require('../utils/roles');
+const {
+  publicUrlFor,
+  teamPhotoPathFor,
+  hasValidImageSignature,
+  removeUpload,
+} = require('../config/uploads');
 
 const MANAGE_ROSTER_DENIED =
   'Nur Trainer:innen dieser Mannschaft dürfen den Kader ändern.';
 const CALLUP_DENIED =
   'Nur Trainer:innen dieser Mannschaft dürfen Spieler hochrufen.';
+const TEAM_DATA_DENIED =
+  'Nur Administrator:innen dürfen die Stammdaten der Mannschaft ändern.';
+
+/**
+ * Mannschaft für die Ausgabe aufbereiten: der gespeicherte Foto-Pfad wird zur
+ * abrufbaren URL. Der interne Dateipfad verlässt den Server nicht.
+ */
+function presentTeam(team) {
+  const { photoPath, ...rest } = team;
+  return { ...rest, photoUrl: publicUrlFor(photoPath) };
+}
 
 /**
  * Lädt die Mannschaft per Code und prüft, ob der:die Anfragende sie verwalten
@@ -67,8 +93,11 @@ async function getTeam(req, res, next) {
       includeEmail: canManage,
     });
 
+    const sponsors = await teamRepository.getSponsors(team.id);
+
     const response = {
-      team,
+      team: presentTeam(team),
+      sponsors,
       members,
       counts: {
         player: members.player.length,
@@ -332,9 +361,176 @@ async function callUpPlayer(req, res, next) {
   }
 }
 
+// PATCH /api/teams/:code   Body: { handballTeamId }
+//
+// Stammdaten der Mannschaft. Bewusst NUR für admin/sub_admin: die
+// nuLiga-Nummer entscheidet, welche Tabelle und welcher Spielplan auf der
+// Mannschaftsseite stehen – eine falsche Nummer zeigt allen Mitgliedern die
+// Daten einer fremden Mannschaft.
+async function updateTeam(req, res, next) {
+  try {
+    if (!ADMIN_ROLES.includes(req.userRole)) {
+      return res.status(403).json({ message: TEAM_DATA_DENIED });
+    }
+
+    const team = await teamRepository.findByCode(req.params.code);
+    if (!team) {
+      return res.status(404).json({ message: 'Mannschaft nicht gefunden.' });
+    }
+
+    const check = validateTeamPatch(req.body);
+    if (!check.ok) {
+      return res.status(check.status).json({ message: check.message });
+    }
+
+    await teamRepository.updateTeam(team.id, check.fields);
+    return res.json({
+      message: check.fields.handball_team_id
+        ? 'Ligaverknüpfung gespeichert.'
+        : 'Ligaverknüpfung entfernt.',
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// POST /api/teams/:code/photo   multipart/form-data, Feld `photo`
+async function setTeamPhoto(req, res, next) {
+  // Ab hier liegt die Datei bereits auf der Platte (multer). Jeder Fehlerpfad
+  // muss sie deshalb selbst wieder aufräumen, sonst bleibt sie verwaist.
+  const cleanup = async () => {
+    if (req.file) await removeUpload(teamPhotoPathFor(req.file));
+  };
+
+  try {
+    if (!ADMIN_ROLES.includes(req.userRole)) {
+      await cleanup();
+      return res.status(403).json({ message: TEAM_DATA_DENIED });
+    }
+    if (!req.file) {
+      return res.status(400).json({ message: 'Bitte ein Bild auswählen.' });
+    }
+
+    const team = await teamRepository.findByCode(req.params.code);
+    if (!team) {
+      await cleanup();
+      return res.status(404).json({ message: 'Mannschaft nicht gefunden.' });
+    }
+
+    const storedPath = teamPhotoPathFor(req.file);
+    // Der MIME-Typ kommt vom Client – der Inhalt muss wirklich ein Bild sein.
+    if (!(await hasValidImageSignature(storedPath, req.file.mimetype))) {
+      await cleanup();
+      return res
+        .status(400)
+        .json({ message: 'Die Datei ist kein gültiges Bild.' });
+    }
+
+    await teamRepository.updateTeam(team.id, { photo_path: storedPath });
+    // Erst nach dem erfolgreichen Speichern das alte Foto löschen.
+    if (team.photoPath) await removeUpload(team.photoPath);
+
+    return res.status(201).json({
+      message: 'Mannschaftsfoto gespeichert.',
+      photoUrl: publicUrlFor(storedPath),
+    });
+  } catch (err) {
+    await cleanup();
+    return next(err);
+  }
+}
+
+// DELETE /api/teams/:code/photo
+async function deleteTeamPhoto(req, res, next) {
+  try {
+    if (!ADMIN_ROLES.includes(req.userRole)) {
+      return res.status(403).json({ message: TEAM_DATA_DENIED });
+    }
+
+    const team = await teamRepository.findByCode(req.params.code);
+    if (!team) {
+      return res.status(404).json({ message: 'Mannschaft nicht gefunden.' });
+    }
+    if (!team.photoPath) {
+      return res
+        .status(404)
+        .json({ message: 'Kein Mannschaftsfoto hinterlegt.' });
+    }
+
+    await teamRepository.updateTeam(team.id, { photo_path: null });
+    await removeUpload(team.photoPath);
+    return res.json({ message: 'Mannschaftsfoto entfernt.' });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// PATCH /api/teams/:code/members/:userId?relationType=player
+//   Body: { jerseyNumber?, position?, staffTitle? }
+async function updateMemberDetails(req, res, next) {
+  try {
+    const loaded = await loadManageableTeam(
+      req,
+      req.params.code,
+      MANAGE_ROSTER_DENIED
+    );
+    if (!loaded.ok) {
+      return res.status(loaded.status).json({ message: loaded.message });
+    }
+
+    const targetId = parseId(req.params.userId);
+    if (!targetId) {
+      return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
+    }
+
+    const relationType = req.query.relationType ?? 'player';
+    if (!isRelationType(relationType)) {
+      return res.status(400).json({ message: 'Ungültiger Beziehungstyp.' });
+    }
+
+    const check = validateRosterPatch(req.body);
+    if (!check.ok) {
+      return res.status(check.status).json({ message: check.message });
+    }
+
+    // Eine Rückennummer darf im Kader nur einmal vorkommen – sonst stimmt der
+    // Spielberichtsbogen nicht mehr mit der App überein.
+    if (check.fields.jersey_number != null) {
+      const taken = await teamRepository.isJerseyNumberTaken(
+        loaded.team.id,
+        check.fields.jersey_number,
+        targetId
+      );
+      if (taken) {
+        return res.status(409).json({
+          message: `Die Rückennummer ${check.fields.jersey_number} ist in dieser Mannschaft schon vergeben.`,
+        });
+      }
+    }
+
+    const changed = await teamRepository.updateRelationDetails(
+      targetId,
+      loaded.team.id,
+      relationType,
+      check.fields
+    );
+    if (changed === 0) {
+      return res.status(404).json({ message: 'Zuordnung nicht gefunden.' });
+    }
+
+    return res.json({ message: 'Kaderangaben gespeichert.' });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   listTeams,
   getTeam,
+  updateTeam,
+  setTeamPhoto,
+  deleteTeamPhoto,
+  updateMemberDetails,
   listCandidates,
   addMember,
   confirmMember,
