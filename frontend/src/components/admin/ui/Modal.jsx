@@ -13,20 +13,48 @@ import { X } from 'lucide-react';
  *   3. Der Fokus springt beim Öffnen hinein und die Seite dahinter scrollt
  *      nicht mit.
  *
+ * ── Warum `onClose` in einem Ref liegt ──────────────────────────────────────
+ * Der Effekt unten setzt beim Öffnen den Fokus ins erste Feld. Stünde
+ * `onClose` in seiner Abhängigkeitsliste, liefe er bei JEDEM Rendern des
+ * Dialogs erneut – und aufrufende Komponenten geben dort fast immer eine
+ * frisch erzeugte Funktion mit (`onClose={() => …}` oder ein `close` aus dem
+ * Funktionskörper). Ergebnis: Jeder Tastendruck in einem Feld löst ein
+ * Rendern aus, der Effekt läuft nochmal, und der Fokus springt zurück ins
+ * ERSTE Feld. Genau dieser Fehler ließ das Textfeld nach jedem Buchstaben den
+ * Fokus verlieren.
+ *
+ * Der Ref hält die jeweils aktuelle Funktion, ohne dass ihre Identität den
+ * Effekt neu auslöst. Der Effekt hängt damit ausschließlich an `open` – er
+ * läuft beim Öffnen und beim Schließen, sonst nie.
+ *
  * @param {boolean}    open
  * @param {() => void} onClose
  * @param {string}     title
  * @param {string}     [description]
+ * @param {'sm'|'md'|'lg'} [size]
  */
-export default function Modal({ open, onClose, title, description, children }) {
+export default function Modal({
+  open,
+  onClose,
+  title,
+  description,
+  size = 'md',
+  children,
+}) {
   const panelRef = useRef(null);
+  const onCloseRef = useRef(onClose);
 
-  // Escape schließen + Hintergrund festhalten, solange der Dialog offen ist.
+  // Immer die neueste Funktion bereithalten – ohne Abhängigkeitsliste, damit
+  // das bei jedem Rendern passiert.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return undefined;
 
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKeyDown);
 
@@ -34,6 +62,7 @@ export default function Modal({ open, onClose, title, description, children }) {
     document.body.style.overflow = 'hidden';
 
     // Fokus in den Dialog holen – sonst tabbt man in die Seite dahinter.
+    // Läuft dank der Abhängigkeitsliste nur beim Öffnen.
     const firstField = panelRef.current?.querySelector(
       'input, select, textarea, button'
     );
@@ -43,9 +72,15 @@ export default function Modal({ open, onClose, title, description, children }) {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
+
+  const width = {
+    sm: 'sm:max-w-sm',
+    md: 'sm:max-w-lg',
+    lg: 'sm:max-w-2xl',
+  }[size];
 
   return (
     <div
@@ -61,7 +96,7 @@ export default function Modal({ open, onClose, title, description, children }) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="modal-panel"
+        className={`modal-panel ${width}`}
       >
         <div className="modal-header">
           <div className="min-w-0">

@@ -23,6 +23,7 @@ const {
   relativePathFor,
   removeUpload,
   hasValidImageSignature,
+  newsImageFiles,
 } = require('../config/uploads');
 
 // Obergrenze für ?limit= – schützt vor absurd großen Antworten.
@@ -49,36 +50,45 @@ async function listNews(req, res, next) {
   }
 }
 
-// POST /api/admin/news   multipart/form-data: title, content, image?
+// POST /api/admin/news
+//   multipart/form-data: title, content, image?, image2?
 async function createNews(req, res, next) {
-  // Multer hat ein hochgeladenes Bild bereits auf die Platte geschrieben.
-  // Scheitert danach etwas, muss es wieder weg – sonst sammeln sich verwaiste
-  // Dateien an. Sobald der Datensatz steht, gehört das Bild jedoch zu ihm und
-  // darf NICHT mehr gelöscht werden (sonst bliebe ein Beitrag ohne Bild übrig).
-  const imagePath = req.file ? relativePathFor(req.file) : null;
+  // Multer hat hochgeladene Bilder bereits auf die Platte geschrieben.
+  // Scheitert danach etwas, müssen sie wieder weg – sonst sammeln sich
+  // verwaiste Dateien an. Sobald der Datensatz steht, gehören sie jedoch zu
+  // ihm und dürfen NICHT mehr gelöscht werden (sonst bliebe ein Beitrag ohne
+  // Bild übrig).
+  const files = newsImageFiles(req.files);
+  const imagePaths = files.map((file) => relativePathFor(file));
   let persisted = false;
+
+  /** Alle noch nicht zugeordneten Dateien wegräumen. */
+  const cleanup = () => Promise.all(imagePaths.map((path) => removeUpload(path)));
 
   try {
     const check = validateNewsPost(req.body);
     if (!check.ok) {
-      await removeUpload(imagePath);
+      await cleanup();
       return res.status(check.status).json({ message: check.message });
     }
 
     // Der MIME-Typ kommt vom Client. Erst die Signatur beweist, dass die Datei
-    // wirklich das behauptete Bildformat ist.
-    if (imagePath && !(await hasValidImageSignature(imagePath, req.file.mimetype))) {
-      await removeUpload(imagePath);
-      return res.status(400).json({
-        message:
-          'Die Datei ist kein gültiges Bild (JPG, PNG, WEBP oder GIF). Bitte eine andere Datei wählen.',
-      });
+    // wirklich das behauptete Bildformat ist – geprüft wird JEDE Datei, nicht
+    // nur die erste.
+    for (const [index, path] of imagePaths.entries()) {
+      if (!(await hasValidImageSignature(path, files[index].mimetype))) {
+        await cleanup();
+        return res.status(400).json({
+          message:
+            'Mindestens eine Datei ist kein gültiges Bild (JPG, PNG, WEBP oder GIF). Bitte andere Dateien wählen.',
+        });
+      }
     }
 
     const id = await newsRepository.create({
       title: check.title,
       content: check.content,
-      imagePath,
+      imagePaths,
       authorId: req.userId,
     });
     persisted = true;
@@ -89,7 +99,7 @@ async function createNews(req, res, next) {
       news: created,
     });
   } catch (err) {
-    if (!persisted) await removeUpload(imagePath);
+    if (!persisted) await cleanup();
     return next(err);
   }
 }
@@ -173,9 +183,10 @@ async function deleteNews(req, res, next) {
       return res.status(400).json({ message: 'Ungültige Beitrags-ID.' });
     }
 
-    // Bildpfad VOR dem Löschen merken, sonst ist er danach nicht mehr bekannt.
-    const imagePath = await newsRepository.findImagePath(id);
-    if (imagePath === undefined) {
+    // Bildpfade VOR dem Löschen merken, sonst sind sie danach nicht mehr
+    // bekannt.
+    const imagePaths = await newsRepository.findImagePaths(id);
+    if (imagePaths === undefined) {
       return res.status(404).json({ message: 'Beitrag nicht gefunden.' });
     }
 
@@ -184,8 +195,8 @@ async function deleteNews(req, res, next) {
       return res.status(404).json({ message: 'Beitrag nicht gefunden.' });
     }
 
-    // Erst wenn der Datensatz weg ist, die Datei aufräumen.
-    await removeUpload(imagePath);
+    // Erst wenn der Datensatz weg ist, die Dateien aufräumen.
+    await Promise.all(imagePaths.map((path) => removeUpload(path)));
 
     return res.json({ message: 'Beitrag gelöscht.' });
   } catch (err) {

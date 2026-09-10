@@ -16,7 +16,7 @@ const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
 const TEAM_COLUMNS =
   'id, code, name, age_group, gender, sort_order, handball_team_id, photo_path';
 
-// Reihenfolge im gesamten Frontend: gepflegte Sortierung zuerst, bei
+// Reihenfolge im gesamten Frontend: interner Sortierschlüssel zuerst, bei
 // Gleichstand alphabetisch. Steht hier einmal, damit jede Abfrage dieselbe
 // Reihenfolge liefert.
 const TEAM_ORDER = 'sort_order, name, id';
@@ -35,6 +35,8 @@ const WRITABLE_TEAM_COLUMNS = new Set([
   'code',
   'age_group',
   'gender',
+  // Nur `createTeam` setzt sie (siehe nextSortOrder) – über einen PATCH ist
+  // sie nicht erreichbar, weil validateTeamPatch das Feld nicht kennt.
   'sort_order',
   'handball_team_id',
   'photo_path',
@@ -67,7 +69,10 @@ function mapTeam(row) {
     // Stammdaten aus der Verwaltung (Migration 006).
     ageGroup: row.age_group ?? null,
     gender: row.gender ?? null,
-    sortOrder: row.sort_order ?? 0,
+    // `sort_order` bleibt bewusst im Server: es ist der interne Schlüssel für
+    // die Anzeigereihenfolge (vergibt `nextSortOrder`), kein Feld, das jemand
+    // pflegt – und damit nichts, was das Frontend zeigen oder senden müsste.
+    // Die Reihenfolge steckt bereits in der Reihenfolge der Liste.
     // nuLiga-Nummer für Tabelle/Spielplan/Ticker. null = keine Ligaanbindung.
     handballTeamId: row.handball_team_id ?? null,
     photoPath: row.photo_path ?? null,

@@ -197,6 +197,9 @@ CREATE TABLE IF NOT EXISTS news (
   image_path  VARCHAR(255) DEFAULT NULL
               COMMENT 'Relativer Pfad des Beitragsbilds in backend/uploads/, z. B. "news/ab12cd34.jpg". NULL = ohne Bild.',
 
+  image_path_2 VARCHAR(255) DEFAULT NULL
+              COMMENT 'Zweites Beitragsbild (gleiches Format). NULL = kein zweites Bild. Höchstens zwei Bilder je Beitrag.',
+
   is_archived TINYINT(1) NOT NULL DEFAULT 0
               COMMENT 'Archiviert (1) oder aktiv (0). Archivierte Beiträge verschwinden aus dem Feed, bleiben in der Verwaltung unter "Archiv" erhalten und lassen sich zurückholen.',
 
@@ -236,5 +239,6 @@ INSERT INTO schema_migrations (filename) VALUES
   ('003_activate_existing_accounts.sql'),
   ('004_news_table.sql'),
   ('005_team_page.sql'),
-  ('006_admin_console.sql')
+  ('006_admin_console.sql'),
+  ('007_news_second_image.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CircleSlash, RotateCcw, SearchX, ShieldCheck, UserCheck, Users } from 'lucide-react';
+import { RotateCcw, SearchX, ShieldCheck, Users } from 'lucide-react';
 
 import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -155,29 +155,16 @@ export default function MembersSection() {
 
   return (
     <div className="space-y-5">
-      {/* Kennzahlen des gesamten Vereins – unabhängig von den Filtern. */}
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {/* Kennzahlen des gesamten Vereins – unabhängig von den Filtern.
+          Aktiv/Gesperrt stehen bewusst NICHT mehr hier: der Status jedes
+          Kontos ist in der Tabelle abzulesen und über den Status-Filter in
+          einem Klick zu haben. Zwei Karten dafür wären doppelte Buchführung. */}
+      <div className="grid grid-cols-2 gap-3">
         <StatCard
           icon={Users}
           label="Mitglieder"
           value={formatNumber(stats?.total ?? total)}
           hint={`${formatNumber(stats?.recent ?? 0)} in den letzten 30 Tagen dazugekommen`}
-        />
-        <StatCard
-          icon={UserCheck}
-          label="Aktiv"
-          value={formatNumber(stats?.active ?? 0)}
-          hint="Konten ohne Admin-Sperre"
-        />
-        <StatCard
-          icon={CircleSlash}
-          label="Gesperrt"
-          value={formatNumber(stats?.inactive ?? 0)}
-          hint={
-            stats?.inactive > 0
-              ? 'Kein Login möglich, bis reaktiviert'
-              : 'Kein Konto gesperrt'
-          }
         />
         <StatCard
           icon={ShieldCheck}

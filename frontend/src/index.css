@@ -561,64 +561,9 @@
   }
 
   /* ================================================== Verwaltung (/admin) */
-  /* Zweispaltiges Gerüst: links die Bereichsnavigation, rechts der Inhalt.
-     Unter `lg` fällt die Navigation über den Inhalt (siehe .admin-rail). */
-  .admin-layout {
-    @apply mt-6 gap-6 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start;
-  }
-
-  /* Seitenleiste am Desktop: klebt beim Scrollen unter der Kopfzeile. */
-  .admin-rail {
-    @apply hidden lg:block lg:sticky lg:top-20;
-  }
-
-  .admin-rail__list {
-    @apply space-y-1 rounded-md border border-line bg-paper p-2 shadow-card;
-  }
-
-  .admin-rail__item {
-    @apply flex w-full items-center gap-3 rounded px-3 py-2.5 text-left
-      font-display text-xs font-semibold uppercase tracking-[0.05em]
-      text-ink-soft transition-colors hover:bg-surface hover:text-ink;
-  }
-
-  .admin-rail__item--active {
-    @apply bg-hsg-dark text-white hover:bg-hsg-dark hover:text-white;
-  }
-
-  /* Zähler rechts im Menüpunkt (Mitglieder, Beiträge, Mannschaften). */
-  .admin-rail__count {
-    @apply ml-auto rounded-sm bg-surface px-1.5 py-0.5 font-display text-[0.625rem]
-      font-semibold leading-none tracking-normal text-ink-muted;
-  }
-
-  .admin-rail__item--active .admin-rail__count {
-    @apply bg-white/15 text-white;
-  }
-
-  /* Mobiler Ersatz der Seitenleiste: waagerecht scrollbare Reiterleiste,
-     die beim Scrollen oben stehen bleibt. Der halbtransparente Grund mit
-     Weichzeichner hält die Leiste lesbar, ohne den Inhalt darunter zu
-     verstecken. */
-  .admin-tabs {
-    @apply sticky top-14 z-20 -mx-4 flex gap-1 overflow-x-auto border-b border-line
-      bg-paper/85 px-4 py-2 backdrop-blur lg:hidden;
-    scrollbar-width: none;
-  }
-
-  .admin-tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .admin-tabs__item {
-    @apply inline-flex min-h-10 shrink-0 items-center gap-2 rounded px-3
-      font-display text-xs font-semibold uppercase tracking-[0.05em]
-      text-ink-muted transition-colors hover:text-ink;
-  }
-
-  .admin-tabs__item--active {
-    @apply bg-hsg-dark text-white hover:text-white;
-  }
+  /* Die Bereichsnavigation nutzt `.tabs` / `.tab` – dieselben Klassen wie die
+     Mannschaftsseite. Es gibt bewusst KEIN eigenes Navigationsmuster für die
+     Verwaltung: Reiter sollen in der ganzen App gleich aussehen. */
 
   /* Karte eines Verwaltungsabschnitts. */
   .admin-card {
@@ -688,9 +633,11 @@
     @apply fixed inset-0 z-50 flex items-end justify-center bg-hsg-dark/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4;
   }
 
+  /* Die Breite setzt <Modal> je nach `size` als Utility (sm:max-w-…) – hier
+     steht nur, was für jeden Dialog gilt. */
   .modal-panel {
     @apply max-h-[92dvh] w-full overflow-y-auto rounded-t-lg border border-line bg-paper
-      shadow-pop sm:max-w-lg sm:rounded-lg;
+      shadow-pop sm:rounded-lg;
     padding-bottom: var(--safe-b);
   }
 

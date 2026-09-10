@@ -87,6 +87,7 @@ backend/
       006_admin_console.sql              News-Archiv (`is_archived`),
                                          Mannschafts-Stammdaten
                                          (Altersklasse, Geschlecht, Sortierung)
+      007_news_second_image.sql          zweites Beitragsbild (image_path_2)
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -243,15 +244,18 @@ Vereinsgröße.
 | Methode | Pfad | Body | Beschreibung |
 | ------- | ---- | ---- | ------------ |
 | GET | `/api/admin/teams` | – | Wie `/api/teams`, zusätzlich `counts` je Mannschaft (`player`, `coach`, `fan`, `pending`). |
-| POST | `/api/admin/teams` | `name`, `code`, `ageGroup?`, `gender?`, `sortOrder?`, `handballTeamId?` | Legt eine Mannschaft an. `409`, wenn das Kürzel vergeben ist. |
+| POST | `/api/admin/teams` | `name`, `code`, `ageGroup?`, `gender?`, `handballTeamId?` | Legt eine Mannschaft an. `409`, wenn das Kürzel vergeben ist. |
+| PATCH | `/api/teams/:code` | `name?`, `ageGroup?`, `gender?`, `handballTeamId?` | Ändert die Stammdaten einer bestehenden Mannschaft (liegt bei den Team-Routen, nicht unter `/api/admin`). Leerstring löscht ein Feld. `code` ist **nicht** änderbar. |
 
 - `code` wird auf Großbuchstaben normalisiert und muss `[A-Z0-9-]{2,20}`
   entsprechen – es steht in der URL (`/teams/:code`) und auf den Chips.
 - `gender` ist das ENUM `male` / `female` / `mixed`, `ageGroup` freier Text
   (die Verbände benennen Altersklassen regelmäßig um).
-- Ohne `sortOrder` hängt der Controller die Mannschaft hinten an
-  (`nextSortOrder`, Zehnerschritte – so lässt sich später etwas dazwischen
-  schieben).
+- `sort_order` ist **kein Eingabefeld**. Die Anzeigereihenfolge vergibt der
+  Server selbst (`nextSortOrder`, Zehnerschritte – so lässt sich später etwas
+  dazwischen schieben); die Spalte bleibt ein interner Sortierschlüssel und
+  taucht weder in einem Formular noch in einer API-Antwort auf. Ein `PATCH`
+  mit `sortOrder` wird ignoriert bzw. als „keine Änderungen" abgelehnt.
 - `handballTeamId` ist die nuLiga-Nummer (`teamtable`). Ist sie gesetzt,
   bedienen Tabelle, Spielplan und Live-Ticker der Mannschaftsseite sich
   **sofort** aus dem bestehenden nuLiga-Modul – es ist kein weiterer Schritt
@@ -265,13 +269,34 @@ Vereinsgröße.
 | ------- | ---- | ---- | ------------ |
 | GET | `/api/news` | angemeldet | **Aktive** Beiträge, neueste zuerst. `?limit=` optional (max. 100). Antwort: `{ news: [{ id, title, content, imageUrl, isArchived, createdAt, updatedAt, author }] }`. |
 | GET | `/api/admin/news` | `admin`, `sub_admin` | Verwaltungssicht. `?status=active` (Standard) / `archived` / `all`. Antwort zusätzlich `counts: { active, archived }`. |
-| POST | `/api/admin/news` | `admin`, `sub_admin` | **`multipart/form-data`**: `title` (≤150), `content` (≤5000), `image` optional. Antwort `201` mit dem angelegten Beitrag. |
+| POST | `/api/admin/news` | `admin`, `sub_admin` | **`multipart/form-data`**: `title` (≤150), `content` (≤5000), `image` und `image2` optional (max. 2 Bilder). Antwort `201` mit dem angelegten Beitrag. |
 | PATCH | `/api/admin/news/:id` | `admin`, `sub_admin` | `{ isArchived: boolean }` – archiviert einen Beitrag oder holt ihn zurück. |
 | DELETE | `/api/admin/news/:id` | `admin`, `sub_admin` | Löscht Beitrag **und** zugehöriges Bild – endgültig. |
 | GET | `/api/uploads/<pfad>` | angemeldet | Ausliefern der Beitragsbilder (statisch). |
 
 Trainer:innen dürfen News **lesen, aber nicht anlegen, archivieren oder
 löschen** – der zweite `checkRole(ADMIN_ROLES)` in `adminRoutes.js` blockt sie.
+
+### Zwei Bilder je Beitrag
+
+Ein Beitrag darf bis zu **zwei** Bilder tragen (`image_path`, `image_path_2`;
+Migration 007). Die Middleware nimmt sie in den Feldern `image` und `image2`
+entgegen (`.fields()`, `files: 2`); ein drittes wird mit `400` abgelehnt.
+
+- Die Antwort liefert `imageUrls: string[]` (0–2 Einträge, ohne Lücken).
+  `imageUrl` bleibt als **erstes** Bild erhalten, damit bestehende Ansichten
+  unverändert weiterlaufen.
+- Wird nur `image2` geschickt, rutscht es auf Platz 1: die Oberfläche füllt die
+  Plätze der Reihe nach, und ein Beitrag soll kein Loch an Platz 1 haben.
+- **Jede** Datei wird einzeln auf ihre Signatur geprüft, nicht nur die erste.
+  Schlägt eine fehl, werden beide wieder weggeräumt.
+- `DELETE` löscht beide Dateien; `npm run uploads:sweep` liest beide Spalten
+  (sonst hielte der Lauf jedes zweite Bild für verwaist).
+
+Warum zwei Spalten und keine Tabelle `news_images`: Die Obergrenze ist bewusst
+zwei. Eine 1:n-Tabelle verlangte JOIN, Sortierspalte und eigene Aufräum-Logik
+für einen festen, kleinen Fall. Wird daraus je eine echte Bilderstrecke, ist
+der Umbau eine Migration, die beide Spalten in Zeilen überführt.
 
 ### Archivieren statt löschen
 

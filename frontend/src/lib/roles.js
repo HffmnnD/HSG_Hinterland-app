@@ -10,13 +10,6 @@ export const ROLE_LABELS = {
   zuschauer: 'Zuschauer',
 };
 
-// Kurzform für Badges.
-export const ROLE_BADGES = {
-  admin: 'ADMIN',
-  sub_admin: 'SUB-ADMIN',
-  trainer: 'TRAINER',
-};
-
 // Rollen mit Zugriff auf die Mitgliederverwaltung.
 export const MANAGEMENT_ROLES = ['admin', 'sub_admin', 'trainer'];
 
@@ -25,8 +18,4 @@ export const ADMIN_ROLES = ['admin', 'sub_admin'];
 
 export function roleLabel(role) {
   return ROLE_LABELS[role] ?? role ?? '—';
-}
-
-export function roleBadge(role) {
-  return ROLE_BADGES[role] ?? null;
 }

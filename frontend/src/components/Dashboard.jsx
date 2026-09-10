@@ -3,13 +3,12 @@ import { Link } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
 import { useNews } from '../hooks/useNews';
-import { MANAGEMENT_ROLES, roleLabel } from '../lib/roles';
+import { MANAGEMENT_ROLES } from '../lib/roles';
 import { serviceLabel } from '../lib/participation';
 import { formatDate } from '../lib/format';
 import AppLayout from './AppLayout';
 import MyTeams from './MyTeams';
 import NewsCard from './NewsCard';
-import { RoleBadge } from './Badge';
 
 // So viele Beiträge zeigt der Feed zunächst; der Rest kommt per Klick nach.
 const NEWS_PREVIEW_COUNT = 5;
@@ -45,16 +44,8 @@ export default function Dashboard() {
       <section className="flex items-center gap-4">
         <div className="avatar h-14 w-14 text-lg">{initials || '?'}</div>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="page-title">Willkommen, {user.firstName}!</h1>
-            <RoleBadge role={role} />
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
-            <span className="truncate">{user.email}</span>
-            <span className="tag" title="Deine Rolle">
-              {roleLabel(role)}
-            </span>
-          </div>
+          <h1 className="page-title">Willkommen, {user.firstName}!</h1>
+          <p className="mt-1 truncate text-sm text-ink-muted">{user.email}</p>
         </div>
       </section>
 
@@ -143,12 +134,9 @@ export default function Dashboard() {
       {/* Verwaltung: Admins, Sub-Admins und Trainer:innen */}
       {canManageMembers && (
         <div className="card-accent mt-8">
-          <div className="flex items-center gap-2">
-            <RoleBadge role={role} />
-            <h2 className="section-title text-base">
-              {isAdmin || isSubAdmin ? 'Administration' : 'Mannschaftsverwaltung'}
-            </h2>
-          </div>
+          <h2 className="section-title text-base">
+            {isAdmin || isSubAdmin ? 'Administration' : 'Mannschaftsverwaltung'}
+          </h2>
           <p className="mt-2 text-sm text-ink-soft">
             {isAdmin &&
               'Verwalte Mitglieder, Rollen, Mannschaftszuordnungen und die Vereins-News.'}

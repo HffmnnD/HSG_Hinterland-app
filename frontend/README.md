@@ -77,7 +77,8 @@ frontend/src/
     BottomNav.jsx              mobile Bottom-Navigation (fixiert, unter `md`)
     NavIcons.jsx               Inline-SVG-Icons der Navigation
     ScrollToTop.jsx            setzt den Scroll-Stand bei Seitenwechsel zurück
-    Badge.jsx                  Badge / RoleBadge (Rollen- und Status-Chips)
+    Badge.jsx                  Badge (Status-Chips; die Rolle einer Person
+                               steht bewusst nirgends im Kopfbereich)
     FullScreenLoader.jsx
     ErrorBoundary.jsx          fängt Render-Fehler ab (keine weisse Seite)
     ProtectedRoute.jsx         Routen-Schutz nach Login-Status + Rolle
@@ -88,15 +89,17 @@ frontend/src/
     Dashboard.jsx              /: News-Feed, „Meine Mannschaften“, Konto
     TeamsPage.jsx              /teams: eigene + alle Mannschaften
     SchedulePage.jsx           /termine: Vorschau auf das Termin-Modul
-    AdminPage.jsx              /admin: Gerüst der Verwaltung – Seitenleiste
-                               (Reiterleiste am Handy) + genau EIN Bereich
+    AdminPage.jsx              /admin: Gerüst der Verwaltung – Reiterleiste
+                               (wie TeamPage) + genau EIN Bereich
     admin/
       MembersSection.jsx       Mitglieder: Kennzahlen, Suche, Rollen-/Status-
                                Filter, Tabelle, Seitenschaltung
       NewsSection.jsx          News: Umschalter „Aktiv“/„Archiv“, Dialog zum
-                               Veröffentlichen, Archivieren & Zurückholen
-      TeamsSection.jsx         Mannschaften: Stammdaten-Tabelle + Dialog
-                               „Neue Mannschaft anlegen“ (inkl. nuLiga-Nummer)
+                               Veröffentlichen (bis zu zwei Bilder),
+                               Archivieren, Zurückholen, Löschen mit Rückfrage
+      TeamsSection.jsx         Mannschaften: Stammdaten-Tabelle mit klickbaren
+                               Zellen (nuLiga -> bearbeiten, Kader -> Kader-
+                               verwaltung) + Dialoge zum Anlegen und Ändern
       SystemSection.jsx        System-Status: Hardware-Messer, API-Kennzahlen,
                                Diagramme, Herkunft, Wartungsaktionen
       ui/                      StatCard, Modal, Pagination, SearchField,
@@ -234,8 +237,14 @@ Touch-Ziele sind 56 px hoch.
 
 Die Seite ist ein Gerüst mit vier Bereichen, von denen immer nur **einer**
 gerendert wird. Alle vier stehen als Daten in einer Liste in `AdminPage.jsx` –
-Seitenleiste, mobile Reiterleiste und Inhaltsauswahl speisen sich daraus, ein
-Bereich kann also nicht in der Navigation auftauchen, den es nicht gibt.
+Reiterleiste und Inhaltsauswahl speisen sich daraus, ein Bereich kann also
+nicht in der Navigation auftauchen, den es nicht gibt.
+
+Die Reiterleiste benutzt **dieselben Klassen wie die Mannschaftsseite**
+(`.tabs` / `.tab` / `.tab--active` aus `index.css`), dieselben ARIA-Rollen und
+dasselbe `replace`-Verhalten beim Umschalten. Es gibt bewusst kein eigenes
+Navigationsmuster für die Verwaltung: Reiter sehen in der ganzen App gleich
+aus.
 
 | Bereich | Wer | Inhalt |
 | ------- | --- | ------ |
@@ -296,8 +305,17 @@ und die **Mitgliedsnummer** (= die Konto-ID, erste Tabellenspalte).
 - **Lesen:** `useNews()` → `GET /api/news`. Das Dashboard zeigt die neuesten
   fünf Beiträge, „Ältere Beiträge anzeigen“ lädt den Rest nach.
 - **Verwalten:** `admin/NewsSection.jsx` (nur `admin`/`sub_admin`) sendet
-  `multipart/form-data` an `POST /api/admin/news`. Bilder werden vor dem
-  Upload im Browser auf 5 MB geprüft und als Vorschau angezeigt.
+  `multipart/form-data` an `POST /api/admin/news`. Je Beitrag sind **zwei
+  Bilder** möglich (Felder `image` und `image2`); sie werden vor dem Upload im
+  Browser auf 5 MB geprüft und als Vorschau angezeigt. In der Liste zeigt ein
+  zweites Blatt hinter dem Vorschaubild an, dass ein Beitrag zwei Bilder
+  trägt; `NewsCard` stellt sie ab `sm` nebeneinander.
+- **Eingabefelder in Dialogen:** Der Dialog (`admin/ui/Modal.jsx`) hält
+  `onClose` in einem Ref und hängt seinen Effekt **nur** an `open`. Stünde
+  `onClose` in der Abhängigkeitsliste, liefe der Effekt bei jedem Rendern neu
+  und setzte den Fokus zurück ins erste Feld – das Textfeld verlöre nach jedem
+  Buchstaben den Fokus. Die Formulare sind aus demselben Grund auf Modulebene
+  definiert, nicht im Rumpf ihrer Elternkomponente.
 - **Archivieren statt löschen:** Der Knopf an einem aktiven Beitrag heißt
   „Archivieren“ (`PATCH /api/admin/news/:id`, `{ isArchived: true }`). Der
   Beitrag verschwindet aus dem Feed, bleibt unter „Archiv“ erhalten und lässt

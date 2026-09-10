@@ -183,7 +183,7 @@ async function listTeams(req, res, next) {
 }
 
 // POST /api/admin/teams
-//   Body: { name, code, ageGroup?, gender?, sortOrder?, handballTeamId? }
+//   Body: { name, code, ageGroup?, gender?, handballTeamId? }
 //
 // Legt eine neue Mannschaft an. `handballTeamId` ist die nuLiga-Nummer
 // (`teamtable`) – ist sie gesetzt, holen sich Tabelle, Spielplan und
@@ -195,11 +195,10 @@ async function createTeam(req, res, next) {
       return res.status(check.status).json({ message: check.message });
     }
 
-    const fields = { ...check.fields };
-    // Ohne ausdrückliche Sortierung hinten anhängen.
-    if (fields.sort_order === undefined) {
-      fields.sort_order = await teamRepository.nextSortOrder();
-    }
+    // Die Anzeigereihenfolge vergibt der Server: neue Mannschaften hängen
+    // hinten an. `sort_order` ist ein interner Sortierschlüssel und taucht in
+    // keinem Formular auf.
+    const fields = { ...check.fields, sort_order: await teamRepository.nextSortOrder() };
 
     let teamId;
     try {

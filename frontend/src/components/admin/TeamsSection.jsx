@@ -1,6 +1,14 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ExternalLink, Link2Off, Plus, Shield, Users } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ChevronRight,
+  ExternalLink,
+  Link2Off,
+  Pencil,
+  Plus,
+  Shield,
+  Users,
+} from 'lucide-react';
 
 import { apiFetch } from '../../lib/api';
 import { useAdminTeams } from '../../hooks/useAdminTeams';
@@ -38,18 +46,36 @@ const AGE_GROUP_SUGGESTIONS = [
 ];
 
 /**
- * Mannschaftsverwaltung: Übersicht aller Mannschaften mit ihren Stammdaten
- * und ein Formular zum Anlegen neuer.
+ * Mannschaftsverwaltung: Übersicht aller Mannschaften mit ihren Stammdaten,
+ * ein Formular zum Anlegen neuer und ein Dialog zum Nachbearbeiten.
  *
- * Die Kaderpflege (wer spielt mit, Rückennummern, Fotos, Sponsoren) bleibt
- * bewusst auf der jeweiligen Mannschaftsseite – dort arbeiten die
- * Trainer:innen, und dort steht der Zusammenhang. Hier geht es nur um die
- * Stammdaten, die eine Mannschaft überhaupt erst entstehen lassen.
+ * Die Tabelle ist zugleich Navigation: die Spalte „nuLiga" öffnet die
+ * Stammdaten dieser Mannschaft, die Spalte „Kader" springt in ihre
+ * Kaderverwaltung. Beides sind die zwei Wege, die man von hier aus überhaupt
+ * gehen will – sie als Klickziele dort anzubieten, wo der Wert steht, spart
+ * eine Spalte voller Knöpfe.
+ *
+ * Die Kaderpflege selbst (wer spielt mit, Rückennummern, Fotos, Sponsoren)
+ * bleibt bewusst auf der Mannschaftsseite – dort arbeiten die Trainer:innen,
+ * und dort steht der Zusammenhang.
  */
 export default function TeamsSection() {
   const { teams, loading, error, setError, reload } = useAdminTeams();
+  const navigate = useNavigate();
+
   const [createOpen, setCreateOpen] = useState(false);
+  // Mannschaft, deren Stammdaten gerade bearbeitet werden (null = keine).
+  const [editing, setEditing] = useState(null);
   const [notice, setNotice] = useState(null);
+
+  const openEditor = (team) => {
+    setNotice(null);
+    setError(null);
+    setEditing(team);
+  };
+
+  /** In die Kaderverwaltung der Mannschaft springen. */
+  const openRoster = (team) => navigate(`/teams/${team.code}?tab=verwaltung`);
 
   return (
     <div className="space-y-4">
@@ -61,8 +87,8 @@ export default function TeamsSection() {
           <div className="min-w-0">
             <h2 className="section-title text-base">Mannschaften</h2>
             <p className="mt-0.5 text-xs text-ink-muted">
-              Stammdaten und Ligaanbindung. Kader und Fotos pflegt die
-              Mannschaftsseite.
+              nuLiga anklicken öffnet die Stammdaten, Kader anklicken die
+              Kaderverwaltung.
             </p>
           </div>
 
@@ -98,14 +124,13 @@ export default function TeamsSection() {
           </EmptyState>
         ) : (
           <div className="w-full overflow-x-auto">
-            <table className="data-table min-w-[820px]">
+            <table className="data-table min-w-[760px]">
               <thead>
                 <tr>
                   <th>Kürzel</th>
                   <th>Name</th>
                   <th>Altersklasse</th>
                   <th>Geschlecht</th>
-                  <th>Sortierung</th>
                   <th>nuLiga</th>
                   <th>Kader</th>
                 </tr>
@@ -117,7 +142,11 @@ export default function TeamsSection() {
                       <span className="badge badge-trainer">{team.code}</span>
                     </td>
                     <td>
-                      <Link to={`/teams/${team.code}`} className="link" title="Mannschaftsseite öffnen">
+                      <Link
+                        to={`/teams/${team.code}`}
+                        className="link"
+                        title="Mannschaftsseite öffnen"
+                      >
                         {team.name}
                       </Link>
                     </td>
@@ -125,36 +154,67 @@ export default function TeamsSection() {
                     <td className="text-ink-soft">
                       {team.gender ? GENDER_LABELS[team.gender] : '—'}
                     </td>
-                    <td className="tabular-nums text-ink-muted">{team.sortOrder}</td>
-                    <td>
-                      {team.handballTeamId ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs">
-                          <span className="status-dot bg-hsg-green" aria-hidden="true" />
-                          <span className="tabular-nums text-ink-soft">
-                            {team.handballTeamId}
-                          </span>
-                        </span>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-1.5 text-xs text-ink-muted"
-                          title="Ohne nuLiga-Nummer zeigt die Mannschaftsseite weder Tabelle noch Spielplan."
-                        >
-                          <Link2Off size={13} aria-hidden="true" />
-                          nicht verknüpft
-                        </span>
-                      )}
+
+                    {/* nuLiga -> Stammdaten bearbeiten */}
+                    <td className="p-0">
+                      <CellButton
+                        onClick={() => openEditor(team)}
+                        title={`Stammdaten von ${team.name} bearbeiten`}
+                      >
+                        {team.handballTeamId ? (
+                          <>
+                            <span
+                              className="status-dot bg-hsg-green"
+                              aria-hidden="true"
+                            />
+                            <span className="tabular-nums">
+                              {team.handballTeamId}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Link2Off
+                              size={13}
+                              aria-hidden="true"
+                              className="text-ink-muted"
+                            />
+                            <span className="text-ink-muted">nicht verknüpft</span>
+                          </>
+                        )}
+                        <Pencil
+                          size={12}
+                          aria-hidden="true"
+                          className="ml-auto shrink-0 text-ink-muted"
+                        />
+                      </CellButton>
                     </td>
-                    <td>
-                      <span className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
-                        <Users size={13} aria-hidden="true" className="text-ink-muted" />
-                        {formatNumber(team.counts.player)} Spieler:innen
-                        {team.counts.coach > 0 && ` · ${team.counts.coach} Trainer:in`}
+
+                    {/* Kader -> Kaderverwaltung dieser Mannschaft */}
+                    <td className="p-0">
+                      <CellButton
+                        onClick={() => openRoster(team)}
+                        title={`Kader von ${team.name} verwalten`}
+                      >
+                        <Users
+                          size={13}
+                          aria-hidden="true"
+                          className="shrink-0 text-ink-muted"
+                        />
+                        <span>
+                          {formatNumber(team.counts.player)}
+                          {team.counts.coach > 0 && ` · ${team.counts.coach} Tr.`}
+                        </span>
                         {team.counts.pending > 0 && (
-                          <span className="badge badge-pending ml-1">
+                          <span className="badge badge-pending">
                             {team.counts.pending} offen
                           </span>
                         )}
-                      </span>
+                        <ChevronRight
+                          size={13}
+                          aria-hidden="true"
+                          className="ml-auto shrink-0 text-ink-muted"
+                        />
+                      </CellButton>
                     </td>
                   </tr>
                 ))}
@@ -175,7 +235,40 @@ export default function TeamsSection() {
           setNotice(message);
         }}
       />
+
+      <TeamEditor
+        team={editing}
+        onClose={() => setEditing(null)}
+        onSaved={async (message) => {
+          setEditing(null);
+          setError(null);
+          await reload();
+          setNotice(message);
+        }}
+      />
     </div>
+  );
+}
+
+/**
+ * Eine Tabellenzelle, die sich anklicken lässt.
+ *
+ * Füllt die Zelle vollständig aus (`p-0` an der `td`), damit die ganze Fläche
+ * das Ziel ist und nicht nur der Text. Ein echtes `<button>` statt eines
+ * `onClick` an der Zelle: nur so ist es per Tastatur erreichbar und wird als
+ * Bedienelement angesagt.
+ */
+function CellButton({ onClick, title, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="flex min-h-11 w-full items-center gap-1.5 px-4 py-3 text-left text-xs
+        text-ink-soft transition-colors hover:bg-hsg-green-soft hover:text-ink"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -225,8 +318,6 @@ function TeamComposer({ open, existingTeams, onClose, onCreated }) {
           code,
           ageGroup: form.ageGroup.trim(),
           gender: form.gender,
-          // Leer lassen -> das Backend hängt die Mannschaft hinten an.
-          sortOrder: form.sortOrder === '' ? undefined : Number(form.sortOrder),
           handballTeamId: form.handballTeamId.trim(),
         }),
       });
@@ -282,103 +373,11 @@ function TeamComposer({ open, existingTeams, onClose, onCreated }) {
           <p className={`field-hint ${codeTaken ? 'text-danger' : ''}`}>
             {codeTaken
               ? `„${code}“ ist bereits vergeben – bitte ein anderes Kürzel wählen.`
-              : 'Steht in der Adresse der Mannschaftsseite und auf den Chips. Buchstaben, Ziffern und Bindestriche.'}
+              : 'Steht in der Adresse der Mannschaftsseite und auf den Chips. Später nicht mehr änderbar.'}
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="team-age" className="field-label">
-              Jugend / Altersklasse
-            </label>
-            <input
-              id="team-age"
-              className="field-control"
-              list="team-age-suggestions"
-              value={form.ageGroup}
-              onChange={update('ageGroup')}
-              maxLength={40}
-              placeholder="z. B. C-Jugend"
-              disabled={submitting}
-            />
-            <datalist id="team-age-suggestions">
-              {AGE_GROUP_SUGGESTIONS.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
-          </div>
-
-          <div>
-            <label htmlFor="team-gender" className="field-label">
-              Geschlecht
-            </label>
-            <select
-              id="team-gender"
-              className="field-control"
-              value={form.gender}
-              onChange={update('gender')}
-              disabled={submitting}
-            >
-              {GENDER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="team-sort" className="field-label">
-            Sortierung
-          </label>
-          <input
-            id="team-sort"
-            type="number"
-            min={0}
-            max={65535}
-            className="field-control"
-            value={form.sortOrder}
-            onChange={update('sortOrder')}
-            placeholder="leer = ans Ende"
-            disabled={submitting}
-          />
-          <p className="field-hint">
-            Kleinste Zahl zuerst – überall dort, wo Mannschaften aufgelistet
-            werden. Die bestehenden Mannschaften stehen in Zehnerschritten,
-            damit sich etwas dazwischen schieben lässt.
-          </p>
-        </div>
-
-        <div>
-          <label htmlFor="team-nuliga" className="field-label">
-            nuLiga-Mannschaftsnummer
-          </label>
-          <input
-            id="team-nuliga"
-            className="field-control"
-            inputMode="numeric"
-            value={form.handballTeamId}
-            onChange={update('handballTeamId')}
-            placeholder="z. B. 2086554"
-            disabled={submitting}
-          />
-          <p className="field-hint">
-            Die Zahl hinter <code>teamtable=</code> in der Adresse der
-            Mannschaftsseite auf hhv-handball.liga.nu. Sobald sie hinterlegt
-            ist, holen sich Tabelle, Spielplan und Live-Ticker ihre Daten von
-            selbst.{' '}
-            <a
-              href="https://hhv-handball.liga.nu"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="link inline-flex items-center gap-1"
-            >
-              nuLiga öffnen
-              <ExternalLink size={11} aria-hidden="true" />
-            </a>
-          </p>
-        </div>
+        <StammdatenFelder form={form} update={update} disabled={submitting} />
 
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           <button
@@ -402,13 +401,215 @@ function TeamComposer({ open, existingTeams, onClose, onCreated }) {
   );
 }
 
+/**
+ * Stammdaten einer bestehenden Mannschaft ändern.
+ *
+ * `key={team.code}` beim Aufruf sorgt dafür, dass der Formularzustand für jede
+ * Mannschaft frisch aus deren Daten entsteht – ohne setState im Effekt.
+ */
+function TeamEditor({ team, onClose, onSaved }) {
+  return (
+    <Modal
+      open={Boolean(team)}
+      onClose={onClose}
+      title={team ? `${team.name} bearbeiten` : 'Mannschaft bearbeiten'}
+      description="Kader, Foto und Sponsoren pflegt die Mannschaftsseite."
+    >
+      {team && <TeamEditorForm key={team.code} team={team} onSaved={onSaved} onClose={onClose} />}
+    </Modal>
+  );
+}
+
+function TeamEditorForm({ team, onSaved, onClose }) {
+  const [form, setForm] = useState(() => ({
+    name: team.name ?? '',
+    code: team.code,
+    ageGroup: team.ageGroup ?? '',
+    gender: team.gender ?? '',
+    handballTeamId: team.handballTeamId ?? '',
+  }));
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const update = (field) => (event) => {
+    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+    setFormError(null);
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (submitting) return;
+
+    if (!form.name.trim()) {
+      setFormError('Der Name darf nicht leer sein.');
+      return;
+    }
+
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      // Immer alle Felder senden: das Backend nimmt jedes einzeln entgegen,
+      // und ein geleertes Feld (Altersklasse gelöscht) muss auch als
+      // „geleert" ankommen – nicht als „nicht angefasst".
+      const result = await apiFetch(`/api/teams/${encodeURIComponent(team.code)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: form.name.trim(),
+          ageGroup: form.ageGroup.trim(),
+          gender: form.gender,
+          handballTeamId: form.handballTeamId.trim(),
+        }),
+      });
+      await onSaved(result?.message ?? 'Stammdaten gespeichert.');
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {formError && <ErrorNote>{formError}</ErrorNote>}
+
+      <div>
+        <label htmlFor="edit-team-name" className="field-label">
+          Teamname
+        </label>
+        <input
+          id="edit-team-name"
+          className="field-control"
+          value={form.name}
+          onChange={update('name')}
+          maxLength={100}
+          disabled={submitting}
+          required
+        />
+      </div>
+
+      <div>
+        <span className="field-label">Kürzel</span>
+        <p className="flex min-h-11 items-center gap-2 rounded-sm border border-line bg-surface px-3.5 text-sm">
+          <span className="badge badge-trainer">{team.code}</span>
+          <span className="text-xs text-ink-muted">
+            Nicht änderbar – steht in Links und Lesezeichen.
+          </span>
+        </p>
+      </div>
+
+      <StammdatenFelder form={form} update={update} disabled={submitting} idPrefix="edit-" />
+
+      <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="btn btn-outline"
+        >
+          Abbrechen
+        </button>
+        <button type="submit" disabled={submitting} className="btn btn-primary">
+          {submitting ? 'Wird gespeichert …' : 'Speichern'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Die Felder, die beim Anlegen UND beim Bearbeiten gleich sind: Altersklasse,
+ * Geschlecht, nuLiga-Nummer. Einmal beschrieben, damit die beiden Dialoge
+ * nicht auseinanderlaufen.
+ */
+function StammdatenFelder({ form, update, disabled, idPrefix = '' }) {
+  const ageId = `${idPrefix}team-age`;
+  const genderId = `${idPrefix}team-gender`;
+  const nuligaId = `${idPrefix}team-nuliga`;
+  const listId = `${idPrefix}team-age-suggestions`;
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor={ageId} className="field-label">
+            Jugend / Altersklasse
+          </label>
+          <input
+            id={ageId}
+            className="field-control"
+            list={listId}
+            value={form.ageGroup}
+            onChange={update('ageGroup')}
+            maxLength={40}
+            placeholder="z. B. C-Jugend"
+            disabled={disabled}
+          />
+          <datalist id={listId}>
+            {AGE_GROUP_SUGGESTIONS.map((value) => (
+              <option key={value} value={value} />
+            ))}
+          </datalist>
+        </div>
+
+        <div>
+          <label htmlFor={genderId} className="field-label">
+            Geschlecht
+          </label>
+          <select
+            id={genderId}
+            className="field-control"
+            value={form.gender}
+            onChange={update('gender')}
+            disabled={disabled}
+          >
+            {GENDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label htmlFor={nuligaId} className="field-label">
+          nuLiga-Mannschaftsnummer
+        </label>
+        <input
+          id={nuligaId}
+          className="field-control"
+          inputMode="numeric"
+          value={form.handballTeamId}
+          onChange={update('handballTeamId')}
+          placeholder="z. B. 2086554"
+          disabled={disabled}
+        />
+        <p className="field-hint">
+          Die Zahl hinter <code>teamtable=</code> in der Adresse der
+          Mannschaftsseite auf hhv-handball.liga.nu. Sobald sie hinterlegt ist,
+          holen sich Tabelle, Spielplan und Live-Ticker ihre Daten von selbst;
+          leer lassen hebt die Verknüpfung wieder auf.{' '}
+          <a
+            href="https://hhv-handball.liga.nu"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="link inline-flex items-center gap-1"
+          >
+            nuLiga öffnen
+            <ExternalLink size={11} aria-hidden="true" />
+          </a>
+        </p>
+      </div>
+    </>
+  );
+}
+
 function emptyForm() {
   return {
     name: '',
     code: '',
     ageGroup: '',
     gender: '',
-    sortOrder: '',
     handballTeamId: '',
   };
 }

@@ -12,6 +12,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/004_news_table.sql` | Tabelle `news` für Vereins-Ankündigungen. |
 | `migrations/005_team_page.sql` | Mannschaftsseite: Ligaverknüpfung, Foto, Sponsoren, Kaderangaben. |
 | `migrations/006_admin_console.sql` | News-Archiv (`is_archived`) und Mannschafts-Stammdaten (`age_group`, `gender`, `sort_order`). |
+| `migrations/007_news_second_image.sql` | Zweites Beitragsbild (`image_path_2`). |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
@@ -71,7 +72,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `code` | Kürzel für URL/Chips, z. B. `MJC`, **eindeutig**, immer GROSS |
 | `age_group` | Altersklasse / Jugend als freier Text, z. B. „C-Jugend" oder „Erwachsene". Bewusst kein ENUM: die Verbände benennen Altersklassen regelmäßig um |
 | `gender` | `male` / `female` / `mixed`, `NULL` = nicht angegeben |
-| `sort_order` | Anzeigereihenfolge im ganzen Frontend, kleinste Zahl zuerst; bei Gleichstand entscheidet der Name |
+| `sort_order` | Anzeigereihenfolge im ganzen Frontend, kleinste Zahl zuerst; bei Gleichstand entscheidet der Name. **Interner Sortierschlüssel** – vom Server vergeben (`nextSortOrder`), kein Eingabefeld und nicht Teil der API-Antwort |
 | `handball_team_id` | nuLiga-Nummer (`teamtable`) für Tabelle/Spielplan/Ticker. `NULL` = keine Ligaanbindung |
 | `photo_path` | Mannschaftsfoto in `backend/uploads/`, z. B. `teams/ab12.jpg` |
 
@@ -79,8 +80,10 @@ Seed: `MJC`, `MJB`, `MJA`, `H1` (1. Herren), `H2` (2. Herren), `D1` (Damen) –
 mit `sort_order` in Zehnerschritten (10, 20, …), damit sich eine neue
 Mannschaft ohne Umnummerieren dazwischen schieben lässt.
 
-Neue Mannschaften legt die Verwaltung über `POST /api/admin/teams` an; ohne
-ausdrückliche `sort_order` hängt der Controller sie hinten an.
+Neue Mannschaften legt die Verwaltung über `POST /api/admin/teams` an, der
+Controller hängt sie hinten an. Name, Altersklasse, Geschlecht und
+nuLiga-Nummer lassen sich danach über `PATCH /api/teams/:code` ändern – `code`
+bewusst nicht, es steht in Links und Lesezeichen.
 
 ### `user_teams` – wer gehört wie zu welcher Mannschaft
 
@@ -123,7 +126,8 @@ angemeldeten Mitglieder, absteigend nach `created_at`.
 | `id` | Primärschlüssel |
 | `title` | Überschrift (max. 150 Zeichen) |
 | `content` | Fließtext (max. 5000 Zeichen, per Validierung). **Reiner Text** – das Frontend rendert ihn nie als HTML |
-| `image_path` | Relativer Pfad des Bilds in `backend/uploads/`, z. B. `news/ab12cd34.jpg`. `NULL` = ohne Bild |
+| `image_path` | Relativer Pfad des ersten Bilds in `backend/uploads/`, z. B. `news/ab12cd34.jpg`. `NULL` = ohne Bild |
+| `image_path_2` | Zweites Bild, gleiches Format. `NULL` = kein zweites. Höchstens zwei Bilder je Beitrag; die Plätze werden der Reihe nach gefüllt |
 | `is_archived` | `0` = aktiv (im Feed), `1` = archiviert. Archivierte Beiträge verschwinden aus dem Dashboard, bleiben in der Verwaltung erhalten und lassen sich zurückholen |
 | `author_id` | FK → `users.id`, `ON DELETE SET NULL` (Beitrag überlebt das Löschen des Kontos) |
 | `created_at` / `updated_at` | Veröffentlichung / letzte Änderung |

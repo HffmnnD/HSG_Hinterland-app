@@ -10,11 +10,20 @@ const pool = require('../config/db');
 const { publicUrlFor } = require('../config/uploads');
 
 function mapNews(row) {
+  // Bis zu zwei Bilder, Lücken herausgefiltert. `imageUrls` ist die
+  // maßgebliche Form; `imageUrl` bleibt als erstes Bild erhalten, damit
+  // bestehende Ansichten (Dashboard-Karte, Vorschaubild der Verwaltung)
+  // unverändert weiterlaufen.
+  const imageUrls = [row.image_path, row.image_path_2]
+    .map(publicUrlFor)
+    .filter(Boolean);
+
   return {
     id: row.id,
     title: row.title,
     content: row.content,
-    imageUrl: publicUrlFor(row.image_path),
+    imageUrl: imageUrls[0] ?? null,
+    imageUrls,
     isArchived: Boolean(row.is_archived),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -31,7 +40,7 @@ function mapNews(row) {
 }
 
 const SELECT_NEWS = `
-  SELECT n.id, n.title, n.content, n.image_path, n.is_archived,
+  SELECT n.id, n.title, n.content, n.image_path, n.image_path_2, n.is_archived,
          n.created_at, n.updated_at,
          n.author_id, u.first_name AS author_first_name, u.last_name AS author_last_name
     FROM news n
@@ -91,23 +100,30 @@ async function findById(id, runner = pool) {
 }
 
 /**
- * Roher Bildpfad eines Beitrags (zum Aufräumen der Datei beim Löschen).
- * @returns {Promise<string|null|undefined>} undefined = Beitrag existiert nicht.
+ * Rohe Bildpfade eines Beitrags (zum Aufräumen der Dateien beim Löschen).
+ * @returns {Promise<string[]|undefined>} undefined = Beitrag existiert nicht,
+ *   sonst 0–2 Pfade ohne Lücken.
  */
-async function findImagePath(id, runner = pool) {
-  const [rows] = await runner.query('SELECT image_path FROM news WHERE id = ?', [id]);
-  return rows[0] ? rows[0].image_path : undefined;
+async function findImagePaths(id, runner = pool) {
+  const [rows] = await runner.query(
+    'SELECT image_path, image_path_2 FROM news WHERE id = ?',
+    [id]
+  );
+  if (!rows[0]) return undefined;
+  return [rows[0].image_path, rows[0].image_path_2].filter(Boolean);
 }
 
 /**
  * Legt einen Beitrag an.
- * @param {{ title:string, content:string, imagePath:string|null, authorId:number }} data
+ * @param {{ title:string, content:string, imagePaths:string[], authorId:number }} data
+ *   `imagePaths` enthält 0–2 Pfade in Anzeigereihenfolge.
  * @returns {Promise<number>} ID des neuen Beitrags
  */
-async function create({ title, content, imagePath, authorId }, runner = pool) {
+async function create({ title, content, imagePaths = [], authorId }, runner = pool) {
   const [result] = await runner.query(
-    'INSERT INTO news (title, content, image_path, author_id) VALUES (?, ?, ?, ?)',
-    [title, content, imagePath, authorId]
+    `INSERT INTO news (title, content, image_path, image_path_2, author_id)
+     VALUES (?, ?, ?, ?, ?)`,
+    [title, content, imagePaths[0] ?? null, imagePaths[1] ?? null, authorId]
   );
   return result.insertId;
 }
@@ -143,7 +159,7 @@ module.exports = {
   listAll,
   countByStatus,
   findById,
-  findImagePath,
+  findImagePaths,
   create,
   setArchived,
   remove,

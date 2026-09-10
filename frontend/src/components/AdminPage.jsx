@@ -1,11 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Activity, Newspaper, Shield, Users } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
 import { ADMIN_ROLES } from '../lib/roles';
 import AppLayout from './AppLayout';
-import { RoleBadge } from './Badge';
 import { Loading } from './admin/ui/Feedback';
 
 // Die Bereiche werden erst geladen, wenn sie geöffnet werden.
@@ -21,10 +19,9 @@ const TeamsSection = lazy(() => import('./admin/TeamsSection'));
 const SystemSection = lazy(() => import('./admin/SystemSection'));
 
 /**
- * Alle Bereiche der Verwaltung an EINER Stelle definiert – die Seitenleiste,
- * die mobile Reiterleiste und die Inhaltsauswahl speisen sich daraus. So kann
- * kein Bereich in der Navigation auftauchen, den es gar nicht gibt (oder
- * umgekehrt).
+ * Alle Bereiche der Verwaltung an EINER Stelle definiert – Reiterleiste und
+ * Inhaltsauswahl speisen sich daraus. So kann kein Reiter auftauchen, zu dem
+ * es keinen Bereich gibt (oder umgekehrt).
  *
  * `adminOnly` blendet einen Bereich für Trainer:innen aus. Das Backend lehnt
  * die zugehörigen Endpunkte ohnehin ab (siehe routes/adminRoutes.js) – hier
@@ -34,7 +31,6 @@ const SECTIONS = [
   {
     key: 'mitglieder',
     label: 'Mitglieder',
-    icon: Users,
     title: 'Mitgliederverwaltung',
     description: 'Rollen, Sperren und Mannschaftszuordnungen der Vereinsmitglieder.',
     Component: MembersSection,
@@ -42,7 +38,6 @@ const SECTIONS = [
   {
     key: 'news',
     label: 'News',
-    icon: Newspaper,
     title: 'News & Beiträge',
     description: 'Beiträge veröffentlichen, archivieren und aus dem Archiv zurückholen.',
     adminOnly: true,
@@ -51,7 +46,6 @@ const SECTIONS = [
   {
     key: 'mannschaften',
     label: 'Mannschaften',
-    icon: Shield,
     title: 'Mannschaftsverwaltung',
     description: 'Mannschaften anlegen und ihre Stammdaten samt nuLiga-Anbindung pflegen.',
     adminOnly: true,
@@ -60,7 +54,6 @@ const SECTIONS = [
   {
     key: 'system',
     label: 'System-Status',
-    icon: Activity,
     title: 'System-Status',
     description: 'Auslastung, Verkehr und Zustand des Servers.',
     adminOnly: true,
@@ -68,13 +61,20 @@ const SECTIONS = [
   },
 ];
 
+const DEFAULT_SECTION = SECTIONS[0].key;
+
 /**
  * Verwaltungsbereich (/admin).
  *
- * Aufbau: links eine Bereichsnavigation (am Handy eine Reiterleiste oben),
- * rechts genau EIN Bereich. Jeder Bereich lädt seine Daten selbst, sobald er
- * sichtbar wird – die Seite holt also nie Mitglieder, System-Kennzahlen und
- * News auf einmal, sondern nur das, was gerade angezeigt wird.
+ * Die Reiterleiste ist dieselbe wie auf der Mannschaftsseite – gleiche Klassen
+ * (`.tabs` / `.tab` / `.tab--active`), gleiche ARIA-Rollen, gleiches Verhalten
+ * (`replace`, damit das Blättern nicht die Historie füllt). Reiter sollen
+ * überall in der App gleich aussehen und sich gleich anfühlen; zwei eigene
+ * Navigationsmuster für dieselbe Aufgabe wären reine Willkür.
+ *
+ * Jeder Bereich lädt seine Daten selbst, sobald er sichtbar wird – die Seite
+ * holt also nie Mitglieder, System-Kennzahlen und News auf einmal, sondern nur
+ * das, was gerade angezeigt wird.
  *
  * Der gewählte Bereich steht in der Adresse (`/admin?bereich=news`). Damit
  * lässt sich ein Bereich verlinken, und der Zurück-Knopf des Browsers tut das
@@ -85,7 +85,6 @@ export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const canManageAccounts = ADMIN_ROLES.includes(user?.role);
-  const isSubAdmin = user?.role === 'sub_admin';
 
   const sections = useMemo(
     () => SECTIONS.filter((section) => !section.adminOnly || canManageAccounts),
@@ -104,79 +103,49 @@ export default function AdminPage() {
     }
   }, [requested, active.key, setSearchParams]);
 
-  const select = (key) => setSearchParams(key === sections[0].key ? {} : { bereich: key });
+  const selectSection = (key) => {
+    setSearchParams(key === DEFAULT_SECTION ? {} : { bereich: key }, {
+      replace: true,
+    });
+  };
 
   const ActiveSection = active.Component;
 
   return (
     <AppLayout width="max-w-7xl">
       <header>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="page-title">Verwaltung</h1>
-          <RoleBadge role={user?.role} />
-        </div>
+        <h1 className="page-title">Verwaltung</h1>
         <p className="mt-1 text-sm text-ink-muted">{active.description}</p>
       </header>
 
-      {isSubAdmin && active.key === 'mitglieder' && (
-        <div className="alert alert-info mt-3">
-          Als Sub-Admin kannst du Admin-Konten nicht bearbeiten und die Rolle
-          „Admin“ nicht vergeben.
-        </div>
-      )}
-
-      {/* Mobile Reiterleiste – ersetzt die Seitenleiste unterhalb von `lg`. */}
-      <nav className="admin-tabs mt-4" aria-label="Bereiche der Verwaltung">
+      <div className="tabs mt-6" role="tablist" aria-label="Bereiche der Verwaltung">
         {sections.map((section) => (
           <button
             key={section.key}
             type="button"
-            onClick={() => select(section.key)}
-            aria-current={section.key === active.key ? 'page' : undefined}
-            className={`admin-tabs__item ${
-              section.key === active.key ? 'admin-tabs__item--active' : ''
-            }`}
+            role="tab"
+            id={`tab-${section.key}`}
+            aria-selected={active.key === section.key}
+            aria-controls={`panel-${section.key}`}
+            onClick={() => selectSection(section.key)}
+            className={`tab ${active.key === section.key ? 'tab--active' : ''}`}
           >
-            <section.icon size={14} aria-hidden="true" />
             {section.label}
           </button>
         ))}
-      </nav>
+      </div>
 
-      <div className="admin-layout">
-        {/* Seitenleiste am Desktop */}
-        <nav className="admin-rail" aria-label="Bereiche der Verwaltung">
-          <div className="admin-rail__list">
-            {sections.map((section) => (
-              <button
-                key={section.key}
-                type="button"
-                onClick={() => select(section.key)}
-                aria-current={section.key === active.key ? 'page' : undefined}
-                className={`admin-rail__item ${
-                  section.key === active.key ? 'admin-rail__item--active' : ''
-                }`}
-              >
-                <section.icon size={16} aria-hidden="true" className="shrink-0" />
-                {section.label}
-              </button>
-            ))}
-          </div>
-
-          <p className="mt-3 px-2 text-xs leading-relaxed text-ink-muted">
-            {canManageAccounts
-              ? 'Änderungen greifen sofort für alle Mitglieder.'
-              : 'Als Trainer:in verwaltest du die Mannschaftszuordnung der Mitglieder.'}
-          </p>
-        </nav>
-
-        {/* Inhalt. `key` erzwingt einen frischen Zustand beim Bereichswechsel –
-            sonst würde z. B. eine offene Suche im nächsten Bereich nachwirken. */}
-        <div className="mt-4 min-w-0 lg:mt-0">
-          <Suspense fallback={<Loading>{active.title} wird geladen …</Loading>}>
-            <ActiveSection key={active.key} />
-          </Suspense>
-        </div>
+      {/* `key` erzwingt einen frischen Zustand beim Bereichswechsel – sonst
+          würde z. B. eine offene Suche im nächsten Bereich nachwirken. */}
+      <div
+        id={`panel-${active.key}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${active.key}`}
+        className="mt-6"
+      >
+        <Suspense fallback={<Loading>{active.title} wird geladen …</Loading>}>
+          <ActiveSection key={active.key} />
+        </Suspense>
       </div>
     </AppLayout>
   );

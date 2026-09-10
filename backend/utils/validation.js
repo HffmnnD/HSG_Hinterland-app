@@ -47,8 +47,6 @@ const MAX_STAFF_TITLE_LENGTH = 60;
 const MAX_TEAM_NAME_LENGTH = 100;
 const MAX_TEAM_CODE_LENGTH = 20;
 const MAX_AGE_GROUP_LENGTH = 40;
-// sort_order ist SMALLINT UNSIGNED.
-const MAX_SORT_ORDER = 65535;
 // Kuerzel landen in der URL (/teams/:code) und in Chips: Buchstaben, Ziffern
 // und Bindestrich reichen dafuer und ersparen jedes Escaping.
 const TEAM_CODE_PATTERN = /^[A-Z0-9-]{2,20}$/;
@@ -98,17 +96,6 @@ function checkGender(value) {
   return { ok: true, value };
 }
 
-/** Sortiernummer: ganze Zahl im Bereich von SMALLINT UNSIGNED. */
-function checkSortOrder(value) {
-  const number = Number(value);
-  if (!Number.isInteger(number) || number < 0 || number > MAX_SORT_ORDER) {
-    return fail(
-      `Die Sortierung muss eine ganze Zahl zwischen 0 und ${MAX_SORT_ORDER} sein.`
-    );
-  }
-  return { ok: true, value: number };
-}
-
 /**
  * Prüft den POST-Body für /api/admin/teams (neue Mannschaft).
  *
@@ -119,7 +106,7 @@ function checkSortOrder(value) {
  * @returns {{ ok:true, fields: object } | { ok:false, status, message }}
  */
 function validateTeamCreate(body) {
-  const { name, code, ageGroup, gender, sortOrder, handballTeamId } = body || {};
+  const { name, code, ageGroup, gender, handballTeamId } = body || {};
 
   if (typeof name !== 'string' || name.trim().length === 0) {
     return fail('Bitte einen Namen für die Mannschaft angeben.');
@@ -149,12 +136,9 @@ function validateTeamCreate(body) {
   if (!genderCheck.ok) return genderCheck;
   fields.gender = genderCheck.value;
 
-  // Ohne Angabe hängt der Controller die Mannschaft hinten an (nextSortOrder).
-  if (sortOrder !== undefined && sortOrder !== null && sortOrder !== '') {
-    const sortCheck = checkSortOrder(sortOrder);
-    if (!sortCheck.ok) return sortCheck;
-    fields.sort_order = sortCheck.value;
-  }
+  // `sort_order` ist bewusst KEIN Eingabefeld: die Anzeigereihenfolge vergibt
+  // der Controller selbst (nextSortOrder, Zehnerschritte). Sie ist ein
+  // interner Sortierschlüssel, keine Angabe, die jemand pflegen müsste.
 
   const handballCheck = checkHandballTeamId(handballTeamId);
   if (!handballCheck.ok) return handballCheck;
@@ -172,7 +156,7 @@ function validateTeamCreate(body) {
  * @returns {{ ok:true, fields: object } | { ok:false, status, message }}
  */
 function validateTeamPatch(body) {
-  const { name, ageGroup, gender, sortOrder, handballTeamId } = body || {};
+  const { name, ageGroup, gender, handballTeamId } = body || {};
   const fields = {};
 
   if (handballTeamId !== undefined) {
@@ -203,15 +187,9 @@ function validateTeamPatch(body) {
     fields.gender = check.value;
   }
 
-  if (sortOrder !== undefined) {
-    const check = checkSortOrder(sortOrder);
-    if (!check.ok) return check;
-    fields.sort_order = check.value;
-  }
-
   if (Object.keys(fields).length === 0) {
     return fail(
-      'Keine Änderungen übergeben (name, ageGroup, gender, sortOrder oder handballTeamId).'
+      'Keine Änderungen übergeben (name, ageGroup, gender oder handballTeamId).'
     );
   }
   return { ok: true, fields };

@@ -15,10 +15,15 @@ import { formatDateTime } from '../../lib/format';
 import Modal from './ui/Modal';
 import { EmptyState, ErrorNote, Loading, SuccessNote } from './ui/Feedback';
 
-// Müssen zu utils/validation.js im Backend passen.
+// Müssen zu utils/validation.js und config/uploads.js im Backend passen.
 const MAX_TITLE_LENGTH = 150;
 const MAX_CONTENT_LENGTH = 5000;
 const MAX_IMAGE_MB = 5;
+// Zwei Bilder je Beitrag – das Schwarze Brett ist keine Galerie.
+const IMAGE_SLOTS = [
+  { field: 'image', label: 'Erstes Bild' },
+  { field: 'image2', label: 'Zweites Bild' },
+];
 
 /**
  * News-Verwaltung mit Archiv.
@@ -28,7 +33,11 @@ const MAX_IMAGE_MB = 5;
  * Klick zurückholen. Ein versehentliches Wegräumen kostet damit nichts mehr.
  *
  * Endgültiges Löschen gibt es weiterhin – aber nur aus dem Archiv heraus und
- * mit Rückfrage. Nur dabei wird auch das hochgeladene Bild frei.
+ * mit Rückfrage im Dialog. Nur dabei werden auch die Bilder frei.
+ *
+ * Zum Aufbau: eine Karte, ein Umschalter, eine Liste. Die Zeilen tragen nur
+ * Bild, Titel und Datumszeile – die Aktionen sind Symbolknöpfe fester Breite
+ * am rechten Rand, die die Zeile nicht umbrechen lassen.
  */
 export default function NewsSection() {
   const [view, setView] = useState('active');
@@ -37,7 +46,8 @@ export default function NewsSection() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [notice, setNotice] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // Beitrag, für den die Löschabfrage offen ist (null = keine).
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const isArchive = view === 'archived';
 
@@ -49,7 +59,7 @@ export default function NewsSection() {
   const showView = (next) => {
     setView(next);
     setNotice(null);
-    setConfirmDeleteId(null);
+    setPendingDelete(null);
   };
 
   /** Archivieren oder zurückholen. */
@@ -72,16 +82,19 @@ export default function NewsSection() {
   };
 
   /** Endgültig löschen (nur aus dem Archiv). */
-  const remove = async (id) => {
-    setBusyId(id);
+  const remove = async (item) => {
+    setBusyId(item.id);
     setError(null);
     setNotice(null);
     try {
-      const result = await apiFetch(`/api/admin/news/${id}`, { method: 'DELETE' });
-      setConfirmDeleteId(null);
+      const result = await apiFetch(`/api/admin/news/${item.id}`, {
+        method: 'DELETE',
+      });
+      setPendingDelete(null);
       await reload();
       setNotice(result?.message ?? 'Beitrag gelöscht.');
     } catch (err) {
+      setPendingDelete(null);
       setError(err.message);
     } finally {
       setBusyId(null);
@@ -115,17 +128,18 @@ export default function NewsSection() {
           </button>
         </div>
 
-        {/* Umschalter zwischen Feed und Archiv */}
+        {/* Umschalter zwischen Feed und Archiv. Die Zählerstände stehen an den
+            Knöpfen – ein erklärender Fließtext daneben wäre nur Rauschen. */}
         <div className="admin-toolbar">
           <div className="switcher">
             <button
               type="button"
               onClick={() => showView('active')}
-              aria-pressed={view === 'active'}
-              className={`switcher__btn ${view === 'active' ? 'switcher__btn--active' : ''}`}
+              aria-pressed={!isArchive}
+              className={`switcher__btn ${!isArchive ? 'switcher__btn--active' : ''}`}
             >
               <Newspaper size={14} aria-hidden="true" />
-              Aktive News ({counts.active})
+              Aktiv ({counts.active})
             </button>
             <button
               type="button"
@@ -137,12 +151,6 @@ export default function NewsSection() {
               Archiv ({counts.archived})
             </button>
           </div>
-
-          <p className="text-xs text-ink-muted sm:ml-auto">
-            {isArchive
-              ? 'Archivierte Beiträge sind im Feed unsichtbar, bleiben aber erhalten.'
-              : 'Archivieren nimmt einen Beitrag aus dem Feed – ohne ihn zu verlieren.'}
-          </p>
         </div>
 
         {loading ? (
@@ -175,15 +183,12 @@ export default function NewsSection() {
                 key={item.id}
                 item={item}
                 busy={busyId === item.id}
-                confirmingDelete={confirmDeleteId === item.id}
                 onArchive={() => setArchived(item.id, true)}
                 onRestore={() => setArchived(item.id, false)}
                 onAskDelete={() => {
                   setNotice(null);
-                  setConfirmDeleteId(item.id);
+                  setPendingDelete(item);
                 }}
-                onCancelDelete={() => setConfirmDeleteId(null)}
-                onDelete={() => remove(item.id)}
               />
             ))}
           </ul>
@@ -204,107 +209,67 @@ export default function NewsSection() {
           setNotice(message);
         }}
       />
+
+      <ConfirmDelete
+        item={pendingDelete}
+        busy={pendingDelete ? busyId === pendingDelete.id : false}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => remove(pendingDelete)}
+      />
     </div>
   );
 }
 
-/** Eine Zeile der Beitragsliste. */
-function NewsRow({
-  item,
-  busy,
-  confirmingDelete,
-  onArchive,
-  onRestore,
-  onAskDelete,
-  onCancelDelete,
-  onDelete,
-}) {
-  return (
-    <li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-      <div className="flex min-w-0 items-center gap-3">
-        {item.imageUrl ? (
-          <img
-            src={item.imageUrl}
-            alt=""
-            loading="lazy"
-            className="h-12 w-16 shrink-0 rounded-sm border border-line bg-surface object-cover"
-          />
-        ) : (
-          <span
-            aria-hidden="true"
-            className="flex h-12 w-16 shrink-0 items-center justify-center rounded-sm
-              border border-dashed border-line-strong bg-surface text-ink-muted"
-          >
-            <Newspaper size={16} />
-          </span>
-        )}
+/**
+ * Eine Zeile der Beitragsliste.
+ *
+ * Die Aktionen sind Symbolknöpfe fester Breite. Beschriftete Knöpfe ließen die
+ * Zeile je nach Zustand („Archivieren" vs. „Zurückholen" + „Löschen")
+ * unterschiedlich breit werden und auf dem Handy umbrechen – die Liste wirkte
+ * dadurch unruhig. Der Zweck steht in `title` und `aria-label`.
+ */
+function NewsRow({ item, busy, onArchive, onRestore, onAskDelete }) {
+  const images = item.imageUrls ?? (item.imageUrl ? [item.imageUrl] : []);
 
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-ink">{item.title}</p>
-          <p className="truncate text-xs text-ink-muted">
-            {formatDateTime(item.createdAt)}
-            {item.author && ` · ${item.author.firstName} ${item.author.lastName}`}
-          </p>
-        </div>
+  return (
+    <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
+      <NewsThumb images={images} />
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold text-ink">{item.title}</p>
+        <p className="truncate text-xs text-ink-muted">
+          {formatDateTime(item.createdAt)}
+          {item.author && ` · ${item.author.firstName} ${item.author.lastName}`}
+        </p>
       </div>
 
-      <div className="flex shrink-0 flex-wrap gap-2">
-        {confirmingDelete ? (
+      <div className="flex shrink-0 items-center gap-1">
+        {item.isArchived ? (
           <>
-            <span className="self-center text-xs font-semibold text-danger">
-              Endgültig löschen?
-            </span>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onDelete}
-              className="btn btn-danger btn-sm"
-            >
-              {busy ? 'Löschen …' : 'Ja, löschen'}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onCancelDelete}
-              className="btn btn-outline btn-sm"
-            >
-              Abbrechen
-            </button>
-          </>
-        ) : item.isArchived ? (
-          <>
-            <button
-              type="button"
-              disabled={busy}
+            <IconButton
               onClick={onRestore}
-              className="btn btn-outline btn-sm"
-              title="Beitrag wieder im Feed anzeigen"
-            >
-              <ArchiveRestore size={14} aria-hidden="true" />
-              {busy ? '…' : 'Zurückholen'}
-            </button>
-            <button
-              type="button"
               disabled={busy}
+              label="Beitrag zurückholen"
+              title="Wieder im Feed anzeigen"
+              icon={ArchiveRestore}
+            />
+            <IconButton
               onClick={onAskDelete}
-              className="btn btn-danger btn-sm"
-              title="Beitrag und Bild unwiderruflich entfernen"
-            >
-              <Trash2 size={14} aria-hidden="true" />
-              Löschen
-            </button>
+              disabled={busy}
+              label="Beitrag endgültig löschen"
+              title="Beitrag und Bilder unwiderruflich entfernen"
+              icon={Trash2}
+              tone="danger"
+            />
           </>
         ) : (
-          <button
-            type="button"
-            disabled={busy}
+          <IconButton
             onClick={onArchive}
-            className="btn btn-outline btn-sm"
-            title="Beitrag aus dem Feed nehmen – er bleibt im Archiv erhalten"
-          >
-            <Archive size={14} aria-hidden="true" />
-            {busy ? '…' : 'Archivieren'}
-          </button>
+            disabled={busy}
+            label="Beitrag archivieren"
+            title="Aus dem Feed nehmen – bleibt im Archiv erhalten"
+            icon={Archive}
+          />
         )}
       </div>
     </li>
@@ -312,53 +277,175 @@ function NewsRow({
 }
 
 /**
- * Formular für einen neuen Beitrag – im Dialog, damit die Liste die Seite
- * beherrscht und nicht ein Formular, das man meistens gar nicht braucht.
+ * Vorschaubild einer Zeile. Bei zwei Bildern liegt ein zweites Blatt leicht
+ * versetzt dahinter – so ist auf einen Blick zu sehen, dass der Beitrag zwei
+ * Bilder trägt, ohne dass die Zeile breiter wird.
+ */
+function NewsThumb({ images }) {
+  if (images.length === 0) {
+    return (
+      <span
+        aria-hidden="true"
+        className="flex h-11 w-14 shrink-0 items-center justify-center rounded-sm
+          border border-dashed border-line-strong bg-surface text-ink-muted"
+      >
+        <Newspaper size={15} />
+      </span>
+    );
+  }
+
+  return (
+    <span className="relative block h-11 w-14 shrink-0">
+      {images.length > 1 && (
+        <span
+          aria-hidden="true"
+          className="absolute right-0 top-0 h-11 w-14 -translate-y-1 translate-x-1
+            rounded-sm border border-line bg-surface-strong"
+        />
+      )}
+      <img
+        src={images[0]}
+        alt=""
+        loading="lazy"
+        className="relative h-11 w-14 rounded-sm border border-line bg-surface object-cover"
+      />
+      {images.length > 1 && <span className="sr-only">{images.length} Bilder</span>}
+    </span>
+  );
+}
+
+/** Quadratischer Symbolknopf für Zeilenaktionen. */
+function IconButton({ onClick, disabled, label, title, icon: Icon, tone }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={title}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-sm border
+        border-line-strong bg-paper transition-colors disabled:cursor-not-allowed
+        disabled:opacity-45 ${
+          tone === 'danger'
+            ? 'text-ink-muted hover:border-danger hover:text-danger'
+            : 'text-ink-soft hover:border-hsg-green hover:text-hsg-green-dark'
+        }`}
+    >
+      <Icon size={15} aria-hidden="true" />
+    </button>
+  );
+}
+
+/**
+ * Rückfrage vor dem endgültigen Löschen.
+ *
+ * Als Dialog und nicht als aufklappende Zeile: die Zeile wechselte dabei ihre
+ * Höhe und schob die halbe Liste weg. Der Dialog nennt außerdem den Titel des
+ * Beitrags – bei „Wirklich löschen?" in einer langen Liste ist sonst nicht
+ * sicher, welcher Beitrag gemeint ist.
+ */
+function ConfirmDelete({ item, busy, onCancel, onConfirm }) {
+  return (
+    <Modal
+      open={Boolean(item)}
+      onClose={() => {
+        if (!busy) onCancel();
+      }}
+      title="Beitrag endgültig löschen?"
+      size="sm"
+    >
+      <p className="text-sm text-ink-soft">
+        <span className="font-bold text-ink">{item?.title}</span> wird samt
+        Bildern unwiderruflich entfernt. Zum Aufheben genügt sonst das Archiv.
+      </p>
+
+      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="btn btn-outline"
+        >
+          Abbrechen
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className="btn btn-danger"
+        >
+          <Trash2 size={15} aria-hidden="true" />
+          {busy ? 'Wird gelöscht …' : 'Endgültig löschen'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Formular für einen neuen Beitrag.
+ *
+ * Zum Fokus-Problem: Die Komponente steht auf MODULEBENE, nicht im Rumpf von
+ * NewsSection. Eine im Rumpf definierte Komponente ist bei jedem Rendern ein
+ * neuer Typ – React verwirft den Teilbaum und baut ihn neu auf, wodurch das
+ * Eingabefeld nach jedem Buchstaben den Fokus verliert. Die zweite Ursache
+ * desselben Fehlers lag im Dialog selbst (siehe Kommentar in ui/Modal.jsx).
  */
 function NewsComposer({ open, onClose, onPublished }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [image, setImage] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
+  // Ein Eintrag je Bildplatz: { file, previewUrl } oder null.
+  const [images, setImages] = useState([null, null]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const fileInputRef = useRef(null);
+  const fileInputs = useRef([]);
 
-  // Die Vorschau-URL entsteht direkt bei der Auswahl (siehe selectImage).
-  // Dieser Effekt gibt sie nur wieder frei – beim Bildwechsel und beim
-  // Schließen –, damit der Browser die Datei nicht festhält.
+  // Die Vorschau-URLs entstehen direkt bei der Auswahl. Dieser Effekt gibt sie
+  // nur wieder frei – beim Bildwechsel und beim Schließen –, damit der Browser
+  // die Dateien nicht festhält.
   useEffect(() => {
-    if (!previewUrl) return undefined;
-    return () => URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
+    const urls = images.map((entry) => entry?.previewUrl).filter(Boolean);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [images]);
 
-  /** Setzt Datei und Vorschau gemeinsam (null = kein Bild). */
-  const selectImage = (file) => {
-    setImage(file);
-    setPreviewUrl(file ? URL.createObjectURL(file) : null);
+  /** Bild an Platz `index` setzen oder entfernen (`file = null`). */
+  const setImage = (index, file) => {
+    setImages((prev) => {
+      const next = [...prev];
+      next[index] = file ? { file, previewUrl: URL.createObjectURL(file) } : null;
+      return next;
+    });
   };
 
-  const resetForm = () => {
-    setTitle('');
-    setContent('');
-    selectImage(null);
-    setFormError(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleImageChange = (event) => {
+  const handleImageChange = (index) => (event) => {
     const file = event.target.files?.[0] ?? null;
     setFormError(null);
 
     // Größe schon im Browser prüfen – spart einen sinnlosen Upload.
     if (file && file.size > MAX_IMAGE_MB * 1024 * 1024) {
-      setFormError(`Das Bild darf höchstens ${MAX_IMAGE_MB} MB groß sein.`);
+      setFormError(`Jedes Bild darf höchstens ${MAX_IMAGE_MB} MB groß sein.`);
       event.target.value = '';
-      selectImage(null);
+      setImage(index, null);
       return;
     }
-    selectImage(file);
+    setImage(index, file);
+  };
+
+  const removeImage = (index) => {
+    setImage(index, null);
+    const input = fileInputs.current[index];
+    if (input) input.value = '';
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setContent('');
+    setImages([null, null]);
+    setFormError(null);
+    fileInputs.current.forEach((input) => {
+      if (input) input.value = '';
+    });
   };
 
   const handleSubmit = async (event) => {
@@ -376,7 +463,9 @@ function NewsComposer({ open, onClose, onPublished }) {
     const body = new FormData();
     body.append('title', title.trim());
     body.append('content', content.trim());
-    if (image) body.append('image', image);
+    images.forEach((entry, index) => {
+      if (entry) body.append(IMAGE_SLOTS[index].field, entry.file);
+    });
 
     setSubmitting(true);
     try {
@@ -414,10 +503,7 @@ function NewsComposer({ open, onClose, onPublished }) {
             id="news-title"
             className="field-control"
             value={title}
-            onChange={(event) => {
-              setTitle(event.target.value);
-              setFormError(null);
-            }}
+            onChange={(event) => setTitle(event.target.value)}
             maxLength={MAX_TITLE_LENGTH}
             placeholder="z. B. Heimspiel-Wochenende in der Hinterlandhalle"
             disabled={submitting}
@@ -434,67 +520,39 @@ function NewsComposer({ open, onClose, onPublished }) {
             className="field-control resize-y"
             rows={6}
             value={content}
-            onChange={(event) => {
-              setContent(event.target.value);
-              setFormError(null);
-            }}
+            onChange={(event) => setContent(event.target.value)}
             maxLength={MAX_CONTENT_LENGTH}
             placeholder="Was gibt es zu berichten?"
             disabled={submitting}
             required
           />
           <p className="field-hint">
-            {content.length} / {MAX_CONTENT_LENGTH} Zeichen · Zeilenumbrüche bleiben
-            erhalten.
+            {content.length} / {MAX_CONTENT_LENGTH} Zeichen · Zeilenumbrüche
+            bleiben erhalten.
           </p>
         </div>
 
         <div>
-          <span className="field-label">Bild (optional)</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="btn btn-outline btn-sm cursor-pointer focus-within:ring-2 focus-within:ring-hsg-green/40">
-              <ImagePlus size={14} aria-hidden="true" />
-              {image ? 'Anderes Bild' : 'Bild wählen'}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                className="sr-only"
-                onChange={handleImageChange}
+          <span className="field-label">Bilder (optional)</span>
+          <div className="grid grid-cols-2 gap-3">
+            {IMAGE_SLOTS.map((slot, index) => (
+              <ImageSlot
+                key={slot.field}
+                label={slot.label}
+                entry={images[index]}
                 disabled={submitting}
+                inputRef={(element) => {
+                  fileInputs.current[index] = element;
+                }}
+                onChange={handleImageChange(index)}
+                onRemove={() => removeImage(index)}
               />
-            </label>
-
-            {image ? (
-              <>
-                <span className="min-w-0 truncate text-xs text-ink-muted">{image.name}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    selectImage(null);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                  }}
-                  disabled={submitting}
-                  className="btn btn-danger btn-sm"
-                >
-                  <X size={14} aria-hidden="true" />
-                  Entfernen
-                </button>
-              </>
-            ) : (
-              <span className="text-xs text-ink-muted">
-                JPG, PNG, WEBP oder GIF · max. {MAX_IMAGE_MB} MB
-              </span>
-            )}
+            ))}
           </div>
-
-          {previewUrl && (
-            <img
-              src={previewUrl}
-              alt="Vorschau des gewählten Beitragsbilds"
-              className="news-image mt-3"
-            />
-          )}
+          <p className="field-hint">
+            Bis zu zwei Bilder · JPG, PNG, WEBP oder GIF · je max. {MAX_IMAGE_MB}{' '}
+            MB
+          </p>
         </div>
 
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
@@ -512,5 +570,62 @@ function NewsComposer({ open, onClose, onPublished }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+/**
+ * Ein Bildplatz: leer eine gestrichelte Auswahlfläche, belegt die Vorschau mit
+ * Entfernen-Knopf. Beide sind gleich groß (16:9), damit das Formular beim
+ * Auswählen eines Bildes nicht springt.
+ */
+function ImageSlot({ label, entry, disabled, inputRef, onChange, onRemove }) {
+  if (entry) {
+    return (
+      <div className="relative">
+        <img
+          src={entry.previewUrl}
+          alt={`Vorschau: ${label}`}
+          className="w-full rounded-sm border border-line bg-surface object-cover"
+          style={{ aspectRatio: '16 / 9' }}
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={disabled}
+          aria-label={`${label} entfernen`}
+          title="Bild entfernen"
+          className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center
+            rounded-sm border border-line-strong bg-paper/90 text-ink-muted backdrop-blur
+            transition-colors hover:border-danger hover:text-danger"
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+        <p className="mt-1 truncate text-xs text-ink-muted" title={entry.file.name}>
+          {entry.file.name}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <label
+      className={`flex cursor-pointer flex-col items-center justify-center gap-1.5
+        rounded-sm border border-dashed border-line-strong bg-surface text-ink-muted
+        transition-colors hover:border-hsg-green hover:text-hsg-green-dark
+        focus-within:ring-2 focus-within:ring-hsg-green/40
+        ${disabled ? 'pointer-events-none opacity-55' : ''}`}
+      style={{ aspectRatio: '16 / 9' }}
+    >
+      <ImagePlus size={18} aria-hidden="true" />
+      <span className="text-xs font-semibold">{label}</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="sr-only"
+        onChange={onChange}
+        disabled={disabled}
+      />
+    </label>
   );
 }

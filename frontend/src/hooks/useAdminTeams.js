@@ -5,7 +5,7 @@ import { apiFetch } from '../lib/api';
 /**
  * Mannschaften der Verwaltung (`GET /api/admin/teams`) – wie die öffentliche
  * Liste, zusätzlich mit den Mitgliederzahlen je Mannschaft und den
- * Stammdaten (Altersklasse, Geschlecht, Sortierung, nuLiga-Nummer).
+ * Stammdaten (Altersklasse, Geschlecht, nuLiga-Nummer).
  */
 export function useAdminTeams() {
   const [teams, setTeams] = useState([]);

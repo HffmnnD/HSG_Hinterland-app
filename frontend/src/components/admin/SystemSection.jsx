@@ -7,7 +7,6 @@ import {
   Database,
   Globe2,
   HardDrive,
-  Info,
   MemoryStick,
   RefreshCw,
   Server,
@@ -240,7 +239,9 @@ export default function SystemSection() {
               <Globe2 size={16} aria-hidden="true" className="text-ink-muted" />
               Herkunft der Anfragen
             </h3>
-            <span className="eyebrow">{api.countries.length} Herkünfte</span>
+            <span className="eyebrow">
+              {formatCount(api.countries.length, 'Herkunft', 'Herkünfte')}
+            </span>
           </div>
           <div className="admin-card__body">
             {api.countries.length === 0 ? (
@@ -250,8 +251,6 @@ export default function SystemSection() {
             ) : (
               <CountryChart countries={api.countries} />
             )}
-
-            <GeoHint headers={status.geoHeaders} countries={api.countries} />
           </div>
         </div>
 
@@ -393,33 +392,3 @@ function Detail({ icon: Icon, label, value }) {
   );
 }
 
-/**
- * Erklärt, warum die Länderstatistik ggf. nur „Unbekannt" oder „Lokales Netz"
- * kennt: Node kann aus einer IP allein kein Land ableiten, das muss der
- * vorgelagerte Proxy als Header mitliefern.
- *
- * Der Hinweis erscheint nur, wenn tatsächlich kein echtes Land dabei ist –
- * läuft alles richtig, steht da nichts.
- */
-function GeoHint({ headers, countries }) {
-  const hasRealCountry = countries.some(
-    (row) => row.code !== 'XX' && row.code !== 'LOCAL'
-  );
-  if (hasRealCountry || countries.length === 0) return null;
-
-  return (
-    <div className="card-note mt-4 flex gap-2">
-      <Info size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-      <div className="min-w-0">
-        <p className="font-semibold text-ink-soft">Noch keine Länder erkennbar</p>
-        <p className="mt-1">
-          Das Herkunftsland liefert der vorgelagerte Reverse-Proxy bzw. das CDN
-          per Header – z. B. <code>{headers?.[0] ?? 'cf-ipcountry'}</code> bei
-          Cloudflare. Ohne einen solchen Header zählt die App ehrlich
-          „Unbekannt“, statt ein Land zu raten. Zugriffe aus dem eigenen Netz
-          erscheinen als <span className="font-semibold">Lokales Netz</span>.
-        </p>
-      </div>
-    </div>
-  );
-}

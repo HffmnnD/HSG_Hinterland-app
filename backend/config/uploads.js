@@ -119,8 +119,21 @@ function imageFileFilter(req, file, cb) {
   return cb(null, true);
 }
 
+// Höchstzahl der Bilder je Beitrag. Bewusst klein: das Schwarze Brett ist
+// keine Galerie. Die Zahl steht hier, damit Middleware, Fehlermeldung und
+// Controller nicht auseinanderlaufen können.
+const MAX_NEWS_IMAGES = 2;
+
+// Feldnamen der Bild-Uploads, in Anzeigereihenfolge.
+const NEWS_IMAGE_FIELDS = ['image', 'image2'];
+
 /**
- * Middleware für ein einzelnes, optionales Bild im Feld `image`.
+ * Middleware für bis zu zwei optionale Bilder (Felder `image` und `image2`).
+ *
+ * `.fields()` statt `.array()`: so ist am Feldnamen ablesbar, welches Bild an
+ * welcher Stelle steht. Schickt jemand nur `image2`, rutscht es im Controller
+ * auf den ersten Platz – die Oberfläche füllt die Plätze der Reihe nach, und
+ * ein Beitrag soll kein Loch an Platz 1 haben.
  *
  * Die Feld-Limits sind wichtig: `express.json({ limit })` greift bei
  * multipart/form-data NICHT. Ohne sie könnte ein (angemeldeter) Angreifer
@@ -132,15 +145,27 @@ const uploadNewsImage = multer({
   fileFilter: imageFileFilter,
   limits: {
     fileSize: MAX_IMAGE_BYTES,
-    files: 1,
+    files: MAX_NEWS_IMAGES,
     // title + content + etwas Reserve
     fields: 8,
-    parts: 12,
+    parts: 14,
     fieldNameSize: 100,
     // 64 KB decken 5000 Zeichen auch in UTF-8 mit 4-Byte-Zeichen ab.
     fieldSize: 64 * 1024,
   },
-}).single('image');
+}).fields(NEWS_IMAGE_FIELDS.map((name) => ({ name, maxCount: 1 })));
+
+/**
+ * Sammelt die hochgeladenen Beitragsbilder aus `req.files` in
+ * Anzeigereihenfolge ein (multer legt sie bei `.fields()` als
+ * `{ image: [file], image2: [file] }` ab).
+ *
+ * @returns {Express.Multer.File[]} 0–2 Dateien, Lücken herausgefiltert
+ */
+function newsImageFiles(files) {
+  if (!files) return [];
+  return NEWS_IMAGE_FIELDS.flatMap((field) => files[field] ?? []);
+}
 
 /**
  * Mannschaftsfoto für den Kopfbereich der Mannschaftsseite.
@@ -240,7 +265,8 @@ async function removeUpload(storedPath) {
 const MULTER_MESSAGES = {
   LIMIT_FILE_SIZE: () =>
     `Das Bild darf höchstens ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))} MB groß sein.`,
-  LIMIT_FILE_COUNT: () => 'Es ist nur ein Bild pro Beitrag erlaubt.',
+  LIMIT_FILE_COUNT: () =>
+    `Es sind höchstens ${MAX_NEWS_IMAGES} Bilder pro Beitrag erlaubt.`,
   LIMIT_UNEXPECTED_FILE: () => 'Unerwartetes Datei-Feld.',
   LIMIT_FIELD_COUNT: () => 'Zu viele Formularfelder.',
   LIMIT_PART_COUNT: () => 'Zu viele Teile im Formular.',
@@ -288,9 +314,12 @@ module.exports = {
   UPLOAD_ROOT,
   PUBLIC_PREFIX,
   MAX_IMAGE_BYTES,
+  MAX_NEWS_IMAGES,
+  NEWS_IMAGE_FIELDS,
   NEWS_SUBDIR,
   TEAMS_SUBDIR,
   uploadNewsImage,
+  newsImageFiles,
   uploadTeamPhoto,
   relativePathFor,
   teamPhotoPathFor,

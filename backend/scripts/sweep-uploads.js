@@ -25,7 +25,15 @@ const APPLY = process.argv.includes('--apply');
 
 // Alle Stellen, an denen ein Upload-Pfad in der Datenbank steht.
 const REFERENCE_QUERIES = [
-  { label: 'News-Bilder', sql: 'SELECT image_path AS path FROM news WHERE image_path IS NOT NULL' },
+  {
+    label: 'News-Bilder',
+    // UNION ALL über beide Bildspalten: ein Beitrag darf zwei Bilder haben
+    // (Migration 007). Fehlte die zweite Spalte hier, hielte der Lauf jedes
+    // zweite Bild für verwaist und würde es löschen.
+    sql: `SELECT image_path   AS path FROM news WHERE image_path   IS NOT NULL
+          UNION ALL
+          SELECT image_path_2 AS path FROM news WHERE image_path_2 IS NOT NULL`,
+  },
   { label: 'Mannschaftsfotos', sql: 'SELECT photo_path AS path FROM teams WHERE photo_path IS NOT NULL' },
 ];
 
