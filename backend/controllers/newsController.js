@@ -4,10 +4,21 @@
 // über utils/validation, Datei-Handling über config/uploads.
 //
 // Berechtigungen (durchgesetzt in den Routen):
-//   - Lesen:              alle angemeldeten Mitglieder
-//   - Anlegen & Löschen:  nur admin und sub_admin
+//   - Lesen:                       alle angemeldeten Mitglieder
+//   - Anlegen, Archivieren, Löschen: nur admin und sub_admin
+//
+// Zum Archiv: Beiträge werden nicht mehr gelöscht, sondern archiviert
+// (`news.is_archived`). Sie verschwinden damit aus dem Feed, bleiben in der
+// Verwaltung aber vollständig erhalten und lassen sich zurückholen – ein
+// versehentliches „Löschen" kostet so nichts mehr. Das endgültige Löschen
+// existiert weiterhin, ist aber eine getrennte Aktion aus dem Archiv heraus
+// (nur so wird auch das hochgeladene Bild wieder frei).
 const newsRepository = require('../repositories/newsRepository');
-const { parseId, validateNewsPost } = require('../utils/validation');
+const {
+  parseId,
+  validateNewsPost,
+  validateNewsArchivePatch,
+} = require('../utils/validation');
 const {
   relativePathFor,
   removeUpload,
@@ -29,7 +40,9 @@ async function listNews(req, res, next) {
       limit = Math.min(limit, MAX_LIMIT);
     }
 
-    const news = await newsRepository.listAll({ limit });
+    // Der Feed zeigt ausschliesslich aktive Beiträge – das Archiv ist der
+    // Verwaltung vorbehalten.
+    const news = await newsRepository.listAll({ limit, status: 'active' });
     return res.json({ news });
   } catch (err) {
     return next(err);
@@ -81,7 +94,78 @@ async function createNews(req, res, next) {
   }
 }
 
+// GET /api/admin/news?status=active|archived|all
+//
+// Verwaltungssicht auf die Beiträge. Anders als der Feed liefert sie auf
+// Wunsch das Archiv und immer die Zählerstände beider Stapel – die stehen an
+// den Umschaltern, auch wenn gerade der andere Stapel angezeigt wird.
+async function listNewsForAdmin(req, res, next) {
+  try {
+    const status = req.query.status ?? 'active';
+    if (!['active', 'archived', 'all'].includes(status)) {
+      return res.status(400).json({
+        message: 'Ungültiger Status. Erlaubt: active, archived, all.',
+      });
+    }
+
+    const [news, counts] = await Promise.all([
+      newsRepository.listAll({ status }),
+      newsRepository.countByStatus(),
+    ]);
+    return res.json({ news, counts });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// PATCH /api/admin/news/:id   Body: { isArchived: boolean }
+//
+// Archiviert einen Beitrag oder holt ihn zurück. Das Bild bleibt liegen –
+// der Beitrag kann jederzeit wieder aktiv werden.
+async function archiveNews(req, res, next) {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ message: 'Ungültige Beitrags-ID.' });
+    }
+
+    const check = validateNewsArchivePatch(req.body);
+    if (!check.ok) {
+      return res.status(check.status).json({ message: check.message });
+    }
+
+    const changed = await newsRepository.setArchived(id, check.isArchived);
+    if (changed === 0) {
+      // Entweder unbekannt oder schon im gewünschten Zustand – beides
+      // unterscheidet ein Blick auf den Beitrag.
+      const existing = await newsRepository.findById(id);
+      if (!existing) {
+        return res.status(404).json({ message: 'Beitrag nicht gefunden.' });
+      }
+      return res.json({
+        message: check.isArchived
+          ? 'Beitrag war bereits archiviert.'
+          : 'Beitrag ist bereits aktiv.',
+        news: existing,
+      });
+    }
+
+    const updated = await newsRepository.findById(id);
+    return res.json({
+      message: check.isArchived
+        ? 'Beitrag archiviert. Er ist nicht mehr im Feed sichtbar.'
+        : 'Beitrag zurückgeholt und wieder im Feed sichtbar.',
+      news: updated,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 // DELETE /api/admin/news/:id
+//
+// Endgültiges Löschen samt Bild. Die Oberfläche bietet es nur im Archiv an –
+// der reguläre Weg ist das Archivieren (siehe archiveNews).
 async function deleteNews(req, res, next) {
   try {
     const id = parseId(req.params.id);
@@ -109,4 +193,10 @@ async function deleteNews(req, res, next) {
   }
 }
 
-module.exports = { listNews, createNews, deleteNews };
+module.exports = {
+  listNews,
+  listNewsForAdmin,
+  createNews,
+  archiveNews,
+  deleteNews,
+};

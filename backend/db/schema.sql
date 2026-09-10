@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS teams (
                    COMMENT 'Primärschlüssel, wird als team_id referenziert',
   name             VARCHAR(100) NOT NULL
                    COMMENT 'Ausgeschriebener Name, z. B. "Männliche Jugend C"',
+  age_group        VARCHAR(40) DEFAULT NULL
+                   COMMENT 'Altersklasse / Jugend, z. B. "A-Jugend" oder "Erwachsene". Frei formulierbar. NULL = nicht angegeben.',
+  gender           ENUM('male','female','mixed') DEFAULT NULL
+                   COMMENT 'Geschlecht der Mannschaft: male | female | mixed. NULL = nicht angegeben.',
+  sort_order       SMALLINT UNSIGNED NOT NULL DEFAULT 0
+                   COMMENT 'Anzeigereihenfolge im Frontend, kleinste Zahl zuerst; bei Gleichstand entscheidet der Name.',
   handball_team_id VARCHAR(20) DEFAULT NULL
                    COMMENT 'nuLiga-Mannschaftsnummer (`teamtable`, rein numerisch). Speist Tabelle, Spielplan und Live-Ticker der Mannschaftsseite. NULL = keine Ligaanbindung.',
   photo_path       VARCHAR(255) DEFAULT NULL
@@ -77,18 +83,19 @@ CREATE TABLE IF NOT EXISTS teams (
                    COMMENT 'Kurzkürzel für URLs und Chips, z. B. "MJC". Eindeutig, immer GROSS.',
 
   PRIMARY KEY (id),
-  UNIQUE KEY uq_teams_code (code)
+  UNIQUE KEY uq_teams_code (code),
+  KEY idx_teams_sort (sort_order, name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Stammdaten der Mannschaften. Wird per Seed unten befüllt.';
 
 -- Standard-Mannschaften. `code` ist eindeutig -> Re-Run aktualisiert nur den Namen.
-INSERT INTO teams (code, name) VALUES
-  ('MJC', 'Männliche Jugend C'),
-  ('MJB', 'Männliche Jugend B'),
-  ('MJA', 'Männliche Jugend A'),
-  ('H1',  '1. Herren'),
-  ('H2',  '2. Herren'),
-  ('D1',  'Damen')
+INSERT INTO teams (code, name, age_group, gender, sort_order) VALUES
+  ('MJC', 'Männliche Jugend C', 'C-Jugend',   'male',   10),
+  ('MJB', 'Männliche Jugend B', 'B-Jugend',   'male',   20),
+  ('MJA', 'Männliche Jugend A', 'A-Jugend',   'male',   30),
+  ('H1',  '1. Herren',          'Erwachsene', 'male',   40),
+  ('H2',  '2. Herren',          'Erwachsene', 'male',   50),
+  ('D1',  'Damen',              'Erwachsene', 'female', 60)
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 
@@ -190,6 +197,9 @@ CREATE TABLE IF NOT EXISTS news (
   image_path  VARCHAR(255) DEFAULT NULL
               COMMENT 'Relativer Pfad des Beitragsbilds in backend/uploads/, z. B. "news/ab12cd34.jpg". NULL = ohne Bild.',
 
+  is_archived TINYINT(1) NOT NULL DEFAULT 0
+              COMMENT 'Archiviert (1) oder aktiv (0). Archivierte Beiträge verschwinden aus dem Feed, bleiben in der Verwaltung unter "Archiv" erhalten und lassen sich zurückholen.',
+
   author_id   INT UNSIGNED DEFAULT NULL
               COMMENT 'FK -> users.id. NULL, wenn das Konto gelöscht wurde – der Beitrag bleibt erhalten.',
 
@@ -200,6 +210,7 @@ CREATE TABLE IF NOT EXISTS news (
 
   PRIMARY KEY (id),
   KEY idx_news_created (created_at),
+  KEY idx_news_archived_created (is_archived, created_at),
   KEY idx_news_author (author_id),
 
   CONSTRAINT fk_news_author FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL
@@ -224,5 +235,6 @@ INSERT INTO schema_migrations (filename) VALUES
   ('002_team_confirmation.sql'),
   ('003_activate_existing_accounts.sql'),
   ('004_news_table.sql'),
-  ('005_team_page.sql')
+  ('005_team_page.sql'),
+  ('006_admin_console.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

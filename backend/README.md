@@ -29,32 +29,39 @@ backend/
 
   routes/                nur URL -> Controller-Funktion + Middleware
     authRoutes.js
-    adminRoutes.js       Mitglieder + News (News zusätzlich admin/sub_admin)
+    adminRoutes.js       Mitglieder + News + Mannschaften + System-Status
+                         (alles ausser der Mitgliederliste: admin/sub_admin)
     teamsRoutes.js
     newsRoutes.js        GET /api/news (alle angemeldeten Mitglieder)
     handballRoutes.js    Tabelle/Spielplan/Ticker (+ Rate-Limit)
 
   middleware/
     authMiddleware.js    authenticate (JWT-Cookie) + checkRole (RBAC)
+    metricsMiddleware.js zählt jeden Request für den System-Status
 
   controllers/           HTTP + Geschäftsregeln, KEIN SQL
     authController.js    register / login / logout / me
-    adminController.js    listUsers / updateUser (inkl. Sub-Admin-Sperren)
+    adminController.js    listUsers (seitenweise) / getUserStats / updateUser
+                          (inkl. Sub-Admin-Sperren) / listTeams / createTeam
     teamsController.js    listTeams / getTeam / Stammdaten / Foto /
                           candidates / add / remove / callup / Kaderangaben
-    newsController.js     listNews / createNews / deleteNews (inkl. Bild-Aufräumen)
+    newsController.js     listNews / listNewsForAdmin / createNews /
+                          archiveNews / deleteNews (inkl. Bild-Aufräumen)
     handballController.js getTable / getSchedule / getTicker
+    systemController.js   getSystemStatus / resetMetrics / clearHandballCache
 
   services/              Anbindung fremder Systeme (kein SQL, kein HTTP-Request/Response)
     handballClient.js    HTML-Abruf von nuLiga (axios + cheerio + Timeout)
     handballMapper.js    nuLiga-HTML -> stabile App-DTOs (Scraping)
     handballService.js   Cache, Anfrage-Bündelung, Notreserve
+    metricsService.js    Requests/Antwortzeiten/Fehler/Herkunft (nur im RAM)
+    systemService.js     CPU, RAM, Plattenplatz, Uptime (Node-Bordmittel)
 
   repositories/          gesamter Datenbankzugriff (alle SELECT/INSERT/JOINs)
     userRepository.js    users + zusammengesetztes Profil, Transaktionen
     teamRepository.js    teams + user_teams (Kader, Kandidaten, Zuordnungen)
     serviceRepository.js user_services
-    newsRepository.js    news (Feed, Anlegen, Löschen)
+    newsRepository.js    news (Feed, Anlegen, Archivieren, Löschen)
 
   scripts/
     sweep-uploads.js     npm run uploads:sweep – verwaiste Bilder finden/löschen
@@ -64,6 +71,7 @@ backend/
 
   utils/
     roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Dienste)
+    geo.js               Herkunftsland aus Proxy-Headern (siehe System-Status)
     validation.js        Eingabe-Prüfung -> { ok, ... } | { ok:false, status, message }
 
   db/
@@ -76,6 +84,9 @@ backend/
       004_news_table.sql                 Tabelle news (Vereins-Ankündigungen)
       005_team_page.sql                  Mannschaftsseite: Ligaverknüpfung,
                                          Foto, Sponsoren, Kaderangaben
+      006_admin_console.sql              News-Archiv (`is_archived`),
+                                         Mannschafts-Stammdaten
+                                         (Altersklasse, Geschlecht, Sortierung)
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -189,9 +200,10 @@ Trainer:in der eigenen Mannschaft entfernen (sonst verlieren sie den Zugriff).
 
 ## Verwaltungs-Endpunkte (`checkRole(['admin', 'sub_admin', 'trainer'])`)
 
-| Methode | Pfad                     | Body                                                  | Beschreibung |
+| Methode | Pfad                     | Body / Query                                          | Beschreibung |
 | ------- | ------------------------ | ----------------------------------------------------- | ------------ |
-| GET     | `/api/admin/users`       | – (Cookie)                                            | Alle Nutzer inkl. `teams` (mit `relationType`) und `services`. |
+| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=`              | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. |
+| GET     | `/api/admin/users/stats` | – (Cookie)                                            | Kennzahlen des **gesamten** Vereins: `{ total, active, inactive, recent, byRole }`. Bewusst getrennt von der Liste, damit die Zahlen im Kopf sich nicht mit den Filtern ändern. |
 | PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (bestätigt; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) nur `admin`+`sub_admin`. Alles transaktional. |
 
 Sperren für `sub_admin` (jeweils `403`):
@@ -199,17 +211,154 @@ Sperren für `sub_admin` (jeweils `403`):
 - Bearbeiten eines Kontos mit `role = 'admin'` – auch reine Team-Änderungen
 - Setzen von `role = 'admin'` bei irgendeinem Konto
 
+### Warum die Liste seitenweise kommt
+
+Bis Migration 006 lieferte `GET /api/admin/users` **alle** Konten am Stück und
+das Frontend filterte im Browser. Bei einem Verein mit vierstelliger
+Mitgliederzahl sind das je Aufruf rund ein Megabyte JSON und tausend
+Tabellenzeilen im DOM – jeder Tastendruck in der Suche hätte alles neu
+durchgerechnet.
+
+Gefiltert wird deshalb in SQL (`userRepository.listPageWithProfiles`):
+
+- `search` trifft Vorname, Nachname, `"Vorname Nachname"`, E-Mail und die
+  **Mitgliedsnummer** (= `users.id`, siehe unten),
+- `role` genau eine Rolle, `status` = `active` / `inactive`,
+- `pageSize` ist auf 100 gedeckelt (sonst wäre die Paginierung umgehbar),
+- eine Seite ausserhalb des Bereichs liefert die **letzte** vorhandene, statt
+  einer leeren Tabelle.
+
+Die Relationen (Mannschaften, Dienste) werden mit zwei Sammelabfragen nur für
+die IDs **dieser Seite** nachgeladen – kein N+1, unabhängig von der
+Vereinsgröße.
+
+> **Mitgliedsnummer** = `users.id`. Es gibt keine separate Spalte dafür: die
+> ID ist eindeutig, ändert sich nie und steht dem Verein ohne zusätzliche
+> Pflege zur Verfügung. Wird später eine echte Vereins-Mitgliedsnummer
+> eingeführt, kommt sie als eigene Spalte dazu und wird in die `WHERE`-Klausel
+> der Suche aufgenommen.
+
+## Mannschaften anlegen (`admin` / `sub_admin`)
+
+| Methode | Pfad | Body | Beschreibung |
+| ------- | ---- | ---- | ------------ |
+| GET | `/api/admin/teams` | – | Wie `/api/teams`, zusätzlich `counts` je Mannschaft (`player`, `coach`, `fan`, `pending`). |
+| POST | `/api/admin/teams` | `name`, `code`, `ageGroup?`, `gender?`, `sortOrder?`, `handballTeamId?` | Legt eine Mannschaft an. `409`, wenn das Kürzel vergeben ist. |
+
+- `code` wird auf Großbuchstaben normalisiert und muss `[A-Z0-9-]{2,20}`
+  entsprechen – es steht in der URL (`/teams/:code`) und auf den Chips.
+- `gender` ist das ENUM `male` / `female` / `mixed`, `ageGroup` freier Text
+  (die Verbände benennen Altersklassen regelmäßig um).
+- Ohne `sortOrder` hängt der Controller die Mannschaft hinten an
+  (`nextSortOrder`, Zehnerschritte – so lässt sich später etwas dazwischen
+  schieben).
+- `handballTeamId` ist die nuLiga-Nummer (`teamtable`). Ist sie gesetzt,
+  bedienen Tabelle, Spielplan und Live-Ticker der Mannschaftsseite sich
+  **sofort** aus dem bestehenden nuLiga-Modul – es ist kein weiterer Schritt
+  nötig.
+- Auf die Eindeutigkeit prüft der UNIQUE-Index, nicht ein vorheriges SELECT:
+  nur so können zwei gleichzeitige Anlagen nicht dasselbe Kürzel erzeugen.
+
 ## Vereins-News
 
 | Methode | Pfad | Auth | Beschreibung |
 | ------- | ---- | ---- | ------------ |
-| GET | `/api/news` | angemeldet | Alle Beiträge, **neueste zuerst**. `?limit=` optional (max. 100). Antwort: `{ news: [{ id, title, content, imageUrl, createdAt, updatedAt, author }] }`. |
+| GET | `/api/news` | angemeldet | **Aktive** Beiträge, neueste zuerst. `?limit=` optional (max. 100). Antwort: `{ news: [{ id, title, content, imageUrl, isArchived, createdAt, updatedAt, author }] }`. |
+| GET | `/api/admin/news` | `admin`, `sub_admin` | Verwaltungssicht. `?status=active` (Standard) / `archived` / `all`. Antwort zusätzlich `counts: { active, archived }`. |
 | POST | `/api/admin/news` | `admin`, `sub_admin` | **`multipart/form-data`**: `title` (≤150), `content` (≤5000), `image` optional. Antwort `201` mit dem angelegten Beitrag. |
-| DELETE | `/api/admin/news/:id` | `admin`, `sub_admin` | Löscht Beitrag **und** zugehöriges Bild. |
+| PATCH | `/api/admin/news/:id` | `admin`, `sub_admin` | `{ isArchived: boolean }` – archiviert einen Beitrag oder holt ihn zurück. |
+| DELETE | `/api/admin/news/:id` | `admin`, `sub_admin` | Löscht Beitrag **und** zugehöriges Bild – endgültig. |
 | GET | `/api/uploads/<pfad>` | angemeldet | Ausliefern der Beitragsbilder (statisch). |
 
-Trainer:innen dürfen News **lesen, aber nicht anlegen oder löschen** – der
-zweite `checkRole(ADMIN_ROLES)` in `adminRoutes.js` blockt sie.
+Trainer:innen dürfen News **lesen, aber nicht anlegen, archivieren oder
+löschen** – der zweite `checkRole(ADMIN_ROLES)` in `adminRoutes.js` blockt sie.
+
+### Archivieren statt löschen
+
+Der Regelweg aus der Oberfläche ist **Archivieren** (`is_archived = 1`,
+Migration 006), nicht Löschen:
+
+- Der Feed (`GET /api/news`) liest ausschliesslich `is_archived = 0`, der
+  Beitrag verschwindet also sofort vom Dashboard.
+- Der Beitrag selbst bleibt vollständig erhalten – samt Bild – und lässt sich
+  mit `{ isArchived: false }` zurückholen. Ein versehentliches Wegräumen
+  kostet damit nichts mehr.
+- `DELETE` gibt es weiterhin, die Oberfläche bietet es aber **nur im Archiv**
+  und mit Rückfrage an. Nur dabei wird auch die Bilddatei frei; ein
+  archivierter Beitrag behält sein Bild, weil er jederzeit wieder aktiv werden
+  kann.
+
+Ein `PATCH`, der nichts ändert (zweimal archivieren), liefert `200` mit einer
+ehrlichen Meldung („Beitrag war bereits archiviert.") statt eines stillen
+„gespeichert" – die Unterscheidung macht `setArchived` über
+`WHERE is_archived <> ?`.
+
+## System-Status (`admin` / `sub_admin`)
+
+| Methode | Pfad | Beschreibung |
+| ------- | ---- | ------------ |
+| GET | `/api/admin/system` | Hardware, API-Kennzahlen, Datenbank und nuLiga-Cache in **einer** Antwort. |
+| POST | `/api/admin/system/metrics/reset` | Setzt das Beobachtungsfenster der API-Statistik zurück. |
+| POST | `/api/admin/system/handball-cache/clear` | Leert den nuLiga-Cache (Tabelle/Spielplan/Ticker werden neu geholt). |
+
+Betriebsdaten verraten Hostname, Pfade und Auslastung – deshalb sind diese
+Endpunkte `admin`/`sub_admin` vorbehalten, obwohl Trainer:innen `/api/admin`
+sonst erreichen.
+
+**Hardware** (`services/systemService.js`) kommt vollständig aus
+Node-Bordmitteln, ohne Zusatzabhängigkeit und ohne Shell-Aufruf:
+
+| Wert | Quelle | Anmerkung |
+| ---- | ------ | --------- |
+| CPU-Last | Differenz zweier `os.cpus()`-Messungen | `os.loadavg()` gibt es unter Windows nicht (immer `[0,0,0]`) – die Tick-Differenz funktioniert plattformübergreifend. Zwei Abrufe innerhalb von 500 ms liefern den letzten belastbaren Wert weiter, statt 0 % zu behaupten. |
+| RAM | `os.totalmem()` / `os.freemem()` + `process.memoryUsage()` | System **und** was der Node-Prozess selbst belegt. |
+| Plattenplatz | `fs.statfs()` (Node ≥ 18.15) | Fehlt die Funktion oder scheitert der Aufruf, kommt `available: false` mit Begründung – keine erfundene Zahl. |
+| Uptime | `os.uptime()` / `process.uptime()` | System- und App-Laufzeit getrennt. |
+
+**API-Kennzahlen** (`services/metricsService.js` + `middleware/metricsMiddleware.js`)
+werden vollständig **im Arbeitsspeicher** gehalten:
+
+- Kein INSERT im Hot Path. Jeder Request in die Datenbank zu schreiben wäre
+  für eine Vereins-App reine Verschwendung – und ein hängender DB-Server
+  würde die API mitreissen.
+- Der Speicherverbrauch ist hart begrenzt: 60 Minuten-Eimer, höchstens 250
+  Ländercodes, 50 Routengruppen und eine Stichprobe von 500 Antwortzeiten
+  (für das 95-%-Perzentil).
+- Es werden **keine** IP-Adressen, Konten oder vollständigen Pfade
+  gespeichert. Pfade werden auf zwei Ebenen gekürzt (`/api/teams/MJC/members/42`
+  → `/api/teams`).
+- Nach einem Neustart sind die Zahlen weg; die Antwort weist mit
+  `collectedSince` aus, seit wann gemessen wird.
+
+Die Middleware hängt **ganz vorne** in `server.js` – so werden auch abgelehnte
+Anfragen (CORS, 404, Rate-Limit) gezählt; gerade die sind für ein Monitoring
+interessant.
+
+### Herkunftsland der Anfragen
+
+Node kann aus einer IP-Adresse allein **kein** Land ableiten. Dafür bräuchte es
+eine GeoIP-Datenbank (MaxMind o. ä.) – eine mehrere Megabyte große Datei, die
+monatlich aktualisiert werden muss. Für eine Vereins-App wäre das ein
+unverhältnismäßiger Klotz.
+
+`utils/geo.js` nimmt deshalb den Wert, den ein vorgelagerter Reverse-Proxy oder
+ein CDN ohnehin kennt und als Header mitschickt – in dieser Reihenfolge:
+`CF-IPCountry` (Cloudflare), `x-vercel-ip-country`, `X-AppEngine-Country`,
+`Fastly-Geo-Country`, `X-Geo-Country`, `X-Country-Code`.
+
+nginx mit `ngx_http_geoip2_module`:
+
+```nginx
+geoip2 /etc/nginx/GeoLite2-Country.mmdb {
+  $geoip2_country_code country iso_code;
+}
+proxy_set_header X-Geo-Country $geoip2_country_code;
+```
+
+Ohne einen solchen Header wird **nicht geraten**: Anfragen aus dem lokalen Netz
+(Entwicklung, LAN-Test vom Handy) zählen als „Lokales Netz", alles andere als
+„Unbekannt". Die Oberfläche blendet dann einen Hinweis mit genau dieser
+Erklärung ein.
 
 **Bild-Uploads** (`config/uploads.js`, `multer`):
 
@@ -497,9 +646,21 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   Falls das enger gefasst werden soll, müsste die Antwort für `trainer`
   reduziert werden.
 - **News haben keine Eigentümerschaft**: Jede:r `admin`/`sub_admin` darf jeden
-  Beitrag löschen – auch den einer anderen Person. Für ein Schwarzes Brett ist
-  das gewollt; soll nur der/die Verfasser:in (plus `admin`) löschen dürfen,
-  müsste `deleteNews` zusätzlich `author_id` gegen `req.userId` prüfen.
+  Beitrag archivieren und löschen – auch den einer anderen Person. Für ein
+  Schwarzes Brett ist das gewollt; soll nur der/die Verfasser:in (plus
+  `admin`) löschen dürfen, müssten `archiveNews`/`deleteNews` zusätzlich
+  `author_id` gegen `req.userId` prüfen.
+- **Archivierte Beiträge behalten ihr Bild**: Das ist Absicht – der Beitrag
+  kann jederzeit zurückgeholt werden. Wer viel archiviert und nie endgültig
+  löscht, sammelt entsprechend Dateien an; `npm run uploads:sweep` findet nur
+  Bilder ohne Datensatz, nicht die von archivierten Beiträgen.
+- **Betriebs-Kennzahlen überleben keinen Neustart**: `metricsService` hält
+  alles im Arbeitsspeicher (bewusst, siehe System-Status). Für eine Historie
+  über Wochen wäre ein echtes Monitoring (Prometheus o. ä.) das richtige
+  Werkzeug, nicht diese API.
+- **Kennzahlen sind pro Prozess**: Bei mehreren Server-Instanzen zeigt der
+  System-Status nur die Instanz, die den Request beantwortet hat – dasselbe
+  Thema wie beim Rate-Limit.
 - **Kein Rate-Limit auf `POST /api/admin/news`**: Das Anlegen ist auf
   `admin`/`sub_admin` beschränkt, ein Missbrauch setzt also ein übernommenes
   Verwaltungskonto voraus. Die Feld- und Dateigrößen-Limits begrenzen den

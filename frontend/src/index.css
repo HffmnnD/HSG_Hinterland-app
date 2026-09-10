@@ -560,6 +560,171 @@
     animation: skeleton-pulse 1.4s ease-in-out infinite;
   }
 
+  /* ================================================== Verwaltung (/admin) */
+  /* Zweispaltiges Gerüst: links die Bereichsnavigation, rechts der Inhalt.
+     Unter `lg` fällt die Navigation über den Inhalt (siehe .admin-rail). */
+  .admin-layout {
+    @apply mt-6 gap-6 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start;
+  }
+
+  /* Seitenleiste am Desktop: klebt beim Scrollen unter der Kopfzeile. */
+  .admin-rail {
+    @apply hidden lg:block lg:sticky lg:top-20;
+  }
+
+  .admin-rail__list {
+    @apply space-y-1 rounded-md border border-line bg-paper p-2 shadow-card;
+  }
+
+  .admin-rail__item {
+    @apply flex w-full items-center gap-3 rounded px-3 py-2.5 text-left
+      font-display text-xs font-semibold uppercase tracking-[0.05em]
+      text-ink-soft transition-colors hover:bg-surface hover:text-ink;
+  }
+
+  .admin-rail__item--active {
+    @apply bg-hsg-dark text-white hover:bg-hsg-dark hover:text-white;
+  }
+
+  /* Zähler rechts im Menüpunkt (Mitglieder, Beiträge, Mannschaften). */
+  .admin-rail__count {
+    @apply ml-auto rounded-sm bg-surface px-1.5 py-0.5 font-display text-[0.625rem]
+      font-semibold leading-none tracking-normal text-ink-muted;
+  }
+
+  .admin-rail__item--active .admin-rail__count {
+    @apply bg-white/15 text-white;
+  }
+
+  /* Mobiler Ersatz der Seitenleiste: waagerecht scrollbare Reiterleiste,
+     die beim Scrollen oben stehen bleibt. Der halbtransparente Grund mit
+     Weichzeichner hält die Leiste lesbar, ohne den Inhalt darunter zu
+     verstecken. */
+  .admin-tabs {
+    @apply sticky top-14 z-20 -mx-4 flex gap-1 overflow-x-auto border-b border-line
+      bg-paper/85 px-4 py-2 backdrop-blur lg:hidden;
+    scrollbar-width: none;
+  }
+
+  .admin-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .admin-tabs__item {
+    @apply inline-flex min-h-10 shrink-0 items-center gap-2 rounded px-3
+      font-display text-xs font-semibold uppercase tracking-[0.05em]
+      text-ink-muted transition-colors hover:text-ink;
+  }
+
+  .admin-tabs__item--active {
+    @apply bg-hsg-dark text-white hover:text-white;
+  }
+
+  /* Karte eines Verwaltungsabschnitts. */
+  .admin-card {
+    @apply rounded-md border border-line bg-paper shadow-card;
+  }
+
+  .admin-card__header {
+    @apply flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5;
+  }
+
+  .admin-card__body {
+    @apply px-4 py-4 sm:px-5;
+  }
+
+  /* Werkzeugleiste über einer Tabelle (Suche, Filter, Umschalter). Bleibt
+     beim Scrollen langer Listen sichtbar. */
+  .admin-toolbar {
+    @apply flex flex-col gap-2 border-b border-line bg-surface/70 px-4 py-3 sm:flex-row sm:items-center sm:px-5;
+  }
+
+  /* Suchfeld mit Platz für das Lupen-Icon links. */
+  .admin-search {
+    @apply block min-h-11 w-full rounded-sm border border-line-strong bg-paper py-2.5 pl-9 pr-9
+      text-sm text-ink placeholder:text-ink-muted transition-colors
+      focus:border-hsg-green focus:outline-none focus:ring-2 focus:ring-hsg-green/25;
+  }
+
+  /* ------------------------------------------------- Kennzahlen & Messer */
+  .stat-card {
+    @apply rounded-md border border-line bg-paper p-4 shadow-card;
+  }
+
+  .stat-card__label {
+    @apply flex items-center gap-2 font-display text-[0.6875rem] font-semibold
+      uppercase tracking-[0.1em] text-ink-muted;
+  }
+
+  /* Balken, der einen Anteil an einem Maximum zeigt (RAM, CPU, Platte).
+     Die Spur ist eine hellere Stufe derselben Farbfamilie – so lässt sich der
+     Zustand über die ganze Breite ablesen, nicht nur am gefüllten Teil. */
+  .meter {
+    @apply mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-strong;
+  }
+
+  .meter__fill {
+    @apply block h-full rounded-full transition-[width] duration-500;
+  }
+
+  /* --------------------------------------------------------- Diagramme */
+  .chart-frame {
+    @apply mt-1 w-full;
+    /* feste Höhe: sonst kollabiert der ResponsiveContainer beim ersten Rendern */
+    height: 260px;
+  }
+
+  .chart-frame--short {
+    height: 180px;
+  }
+
+  /* Karte im Recharts-Tooltip – bewusst dieselbe Sprache wie .card. */
+  .chart-tooltip {
+    @apply rounded border border-line-strong bg-paper px-3 py-2 text-xs shadow-pop;
+  }
+
+  /* --------------------------------------------------------------- Modal */
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-end justify-center bg-hsg-dark/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4;
+  }
+
+  .modal-panel {
+    @apply max-h-[92dvh] w-full overflow-y-auto rounded-t-lg border border-line bg-paper
+      shadow-pop sm:max-w-lg sm:rounded-lg;
+    padding-bottom: var(--safe-b);
+  }
+
+  .modal-header {
+    @apply sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-paper px-5 py-4;
+  }
+
+  /* ---------------------------------------------------------- Paginierung */
+  .pagination {
+    @apply flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 sm:px-5;
+  }
+
+  .pagination__btn {
+    @apply inline-flex min-h-9 items-center gap-1 rounded-sm border border-line-strong bg-paper px-2.5
+      font-display text-xs font-semibold uppercase tracking-[0.05em] text-ink-soft
+      transition-colors hover:border-hsg-green hover:text-hsg-green-dark
+      disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-line-strong
+      disabled:hover:text-ink-soft;
+  }
+
+  /* Umschalter „Aktive News" / „Archiv" – zwei bis drei feste Stellungen. */
+  .switcher {
+    @apply inline-flex rounded-md border border-line bg-surface p-1;
+  }
+
+  .switcher__btn {
+    @apply inline-flex min-h-9 items-center gap-1.5 rounded px-3 font-display text-xs
+      font-semibold uppercase tracking-[0.05em] text-ink-muted transition-colors hover:text-ink;
+  }
+
+  .switcher__btn--active {
+    @apply bg-paper text-ink shadow-card;
+  }
+
   /* Umschalter (Tabs) Login / Registrierung */
   .segment {
     @apply grid grid-cols-2 gap-1 rounded-md bg-surface p-1;

@@ -13,7 +13,16 @@ const RELATION_GROUPS = ['player', 'coach', 'fan'];
 const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
 
 // Spalten der Mannschaft, die überall gleich ausgelesen werden.
-const TEAM_COLUMNS = 'id, code, name, handball_team_id, photo_path';
+const TEAM_COLUMNS =
+  'id, code, name, age_group, gender, sort_order, handball_team_id, photo_path';
+
+// Reihenfolge im gesamten Frontend: gepflegte Sortierung zuerst, bei
+// Gleichstand alphabetisch. Steht hier einmal, damit jede Abfrage dieselbe
+// Reihenfolge liefert.
+const TEAM_ORDER = 'sort_order, name, id';
+
+// Geschlecht einer Mannschaft (muss zum ENUM in `teams.gender` passen).
+const GENDERS = ['male', 'female', 'mixed'];
 
 // Nur diese Spalten dürfen über updateTeam bzw. updateRelationDetails
 // geschrieben werden. Defense-in-depth wie WRITABLE_USER_COLUMNS in
@@ -21,7 +30,15 @@ const TEAM_COLUMNS = 'id, code, name, handball_team_id, photo_path';
 // (Werte laufen über ?), deshalb dürfen sie NIE aus einer Anfrage stammen.
 // Heute liefert utils/validation.js ausschließlich feste Schlüssel – diese
 // Prüfung stellt sicher, dass das auch nach künftigen Erweiterungen gilt.
-const WRITABLE_TEAM_COLUMNS = new Set(['handball_team_id', 'photo_path']);
+const WRITABLE_TEAM_COLUMNS = new Set([
+  'name',
+  'code',
+  'age_group',
+  'gender',
+  'sort_order',
+  'handball_team_id',
+  'photo_path',
+]);
 const WRITABLE_RELATION_COLUMNS = new Set([
   'jersey_number',
   'position',
@@ -47,6 +64,10 @@ function mapTeam(row) {
     id: row.id,
     code: row.code,
     name: row.name,
+    // Stammdaten aus der Verwaltung (Migration 006).
+    ageGroup: row.age_group ?? null,
+    gender: row.gender ?? null,
+    sortOrder: row.sort_order ?? 0,
     // nuLiga-Nummer für Tabelle/Spielplan/Ticker. null = keine Ligaanbindung.
     handballTeamId: row.handball_team_id ?? null,
     photoPath: row.photo_path ?? null,
@@ -63,12 +84,74 @@ function initialConfirmation(relationType) {
 
 // --- teams -----------------------------------------------------------------
 
-/** Alle Mannschaften, aufsteigend nach id. */
+/** Alle Mannschaften in Anzeigereihenfolge. */
 async function listAll(runner = pool) {
   const [rows] = await runner.query(
-    `SELECT ${TEAM_COLUMNS} FROM teams ORDER BY id`
+    `SELECT ${TEAM_COLUMNS} FROM teams ORDER BY ${TEAM_ORDER}`
   );
   return rows.map(mapTeam);
+}
+
+/**
+ * Alle Mannschaften mit ihren Mitgliederzahlen – für die Mannschaftsliste
+ * der Verwaltung. LEFT JOIN, damit eine gerade angelegte Mannschaft ohne
+ * Kader nicht aus der Liste fällt.
+ */
+async function listAllWithCounts(runner = pool) {
+  const [rows] = await runner.query(
+    `SELECT ${TEAM_COLUMNS.split(', ').map((c) => `t.${c}`).join(', ')},
+            SUM(ut.relation_type = 'player' AND ut.is_confirmed = 1) AS player_count,
+            SUM(ut.relation_type = 'coach'  AND ut.is_confirmed = 1) AS coach_count,
+            SUM(ut.relation_type = 'fan'    AND ut.is_confirmed = 1) AS fan_count,
+            SUM(ut.is_confirmed = 0)                                 AS pending_count
+       FROM teams t
+       LEFT JOIN user_teams ut ON ut.team_id = t.id
+      GROUP BY t.id
+      ORDER BY ${TEAM_ORDER.split(', ').map((c) => `t.${c}`).join(', ')}`
+  );
+
+  return rows.map((row) => ({
+    ...mapTeam(row),
+    counts: {
+      player: Number(row.player_count ?? 0),
+      coach: Number(row.coach_count ?? 0),
+      fan: Number(row.fan_count ?? 0),
+      pending: Number(row.pending_count ?? 0),
+    },
+  }));
+}
+
+/**
+ * Legt eine Mannschaft an. `fields` enthält bereits geprüfte Spaltennamen
+ * (siehe validateTeamCreate).
+ *
+ * Wirft `ER_DUP_ENTRY`, wenn das Kürzel schon vergeben ist – der Controller
+ * macht daraus ein 409. Die Prüfung dem UNIQUE-Index zu überlassen statt
+ * vorher zu suchen, schliesst das Rennen zwischen zwei gleichzeitigen
+ * Anlagen aus.
+ *
+ * @returns {Promise<number>} ID der neuen Mannschaft
+ */
+async function createTeam(fields, runner = pool) {
+  const keys = Object.keys(fields);
+  assertWritableColumns(keys, WRITABLE_TEAM_COLUMNS);
+
+  const [result] = await runner.query(
+    `INSERT INTO teams (${keys.join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`,
+    keys.map((key) => fields[key])
+  );
+  return result.insertId;
+}
+
+/**
+ * Nächste freie Sortiernummer (in Zehnerschritten). Eine neu angelegte
+ * Mannschaft landet damit hinten, ohne dass jemand eine Zahl eintippen muss.
+ */
+async function nextSortOrder(runner = pool) {
+  const [[row]] = await runner.query('SELECT MAX(sort_order) AS max FROM teams');
+  // SMALLINT UNSIGNED endet bei 65535 – davor deckeln, sonst schlägt das
+  // INSERT irgendwann mit einem Bereichsfehler fehl.
+  return Math.min(Number(row?.max ?? 0) + 10, 65535);
 }
 
 /** Eine Mannschaft anhand ihres Codes (case-insensitiv). null wenn unbekannt. */
@@ -408,8 +491,12 @@ async function replaceRelationTeams(conn, userId, teamIds, relationType) {
 module.exports = {
   RELATION_GROUPS,
   POSITIONS,
+  GENDERS,
   listAll,
+  listAllWithCounts,
   findByCode,
+  createTeam,
+  nextSortOrder,
   updateTeam,
   getSponsors,
   updateRelationDetails,

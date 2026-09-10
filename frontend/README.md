@@ -3,6 +3,17 @@
 React (Vite) + Tailwind CSS v4 + React Router + PWA. Authentifizierungs-UI mit
 React Context und rollenbasiertem Routen-Schutz (RBAC).
 
+Zwei Laufzeit-Abhängigkeiten über React hinaus:
+
+| Paket | Wofür | Wo |
+| ----- | ----- | -- |
+| `lucide-react` | Icons der Verwaltung (Baumstruktur-Import, es landet nur im Bündel, was benutzt wird) | `components/admin/**` |
+| `recharts` | Diagramme des System-Status | nur im nachgeladenen Teilstück `SystemSection` – siehe [Verwaltung](#verwaltung-admin) |
+
+Die Navigations-Icons der App selbst bleiben handgeschriebenes Inline-SVG
+(`NavIcons.jsx`) – sie sind Teil des Erscheinungsbilds und sollen nicht von
+einer Bibliothek abhängen.
+
 ## Setup
 
 ```bash
@@ -39,6 +50,12 @@ frontend/src/
   hooks/
     useTeams.js                lädt GET /api/teams (öffentlich)
     useNews.js                 lädt GET /api/news (+ reload nach Anlegen/Löschen)
+    useAdminUsers.js           seitenweise Mitgliederliste (entprellte Suche,
+                               verwirft überholte Antworten) + useMemberStats
+    useAdminNews.js            Verwaltungssicht der News inkl. Archiv
+    useAdminTeams.js           Mannschaften mit Mitgliederzahlen
+    useSystemStatus.js         System-Status, frischt alle 15 s auf
+                               (pausiert im Hintergrund-Tab)
     useHandball.js             useHandballTable / useHandballSchedule /
                                useLiveTicker (Polling im 10-Sekunden-Takt)
                                Quelle: nuLiga (HHV), siehe backend/README.md
@@ -48,7 +65,8 @@ frontend/src/
     roles.js                   Rollen-Konstanten, Labels und Badges
     participation.js           Beteiligungsarten, Beziehungstypen, Helferdienste
     navigation.js              EINZIGE Quelle der Hauptnavigation (rollengefiltert)
-    format.js                  deutsche Datumsformate
+    format.js                  deutsche Datums-, Zahlen- und Größenformate
+                               (formatBytes / formatDuration / formatMs / …)
     handball.js                Beschriftungen, Ergebnis-/Zeitformate und
                                Ereignis-Symbole des Handball-Moduls
   components/
@@ -67,11 +85,24 @@ frontend/src/
     MyTeams.jsx                eigene Mannschaften, nach Beziehung gruppiert
                                (Dashboard + Mannschafts-Übersicht)
     NewsCard.jsx               eine Ankündigung (Datum, Titel, Bild, Text)
-    NewsManager.jsx            Verwaltung der News: Formular + Liste + Löschen
     Dashboard.jsx              /: News-Feed, „Meine Mannschaften“, Konto
     TeamsPage.jsx              /teams: eigene + alle Mannschaften
     SchedulePage.jsx           /termine: Vorschau auf das Termin-Modul
-    AdminPage.jsx              /admin: Mitgliederliste + News-Verwaltung
+    AdminPage.jsx              /admin: Gerüst der Verwaltung – Seitenleiste
+                               (Reiterleiste am Handy) + genau EIN Bereich
+    admin/
+      MembersSection.jsx       Mitglieder: Kennzahlen, Suche, Rollen-/Status-
+                               Filter, Tabelle, Seitenschaltung
+      NewsSection.jsx          News: Umschalter „Aktiv“/„Archiv“, Dialog zum
+                               Veröffentlichen, Archivieren & Zurückholen
+      TeamsSection.jsx         Mannschaften: Stammdaten-Tabelle + Dialog
+                               „Neue Mannschaft anlegen“ (inkl. nuLiga-Nummer)
+      SystemSection.jsx        System-Status: Hardware-Messer, API-Kennzahlen,
+                               Diagramme, Herkunft, Wartungsaktionen
+      ui/                      StatCard, Modal, Pagination, SearchField,
+                               Feedback (Loading/Error/Success/EmptyState)
+      charts/                  chartTheme.js (Farben & Achsen) + TrafficChart,
+                               LatencyChart, CountryChart, StatusBreakdown
     TeamPage.jsx               /teams/:code: Fan-Mannschaftsseite mit Reitern
                                (Übersicht / Spielplan & Tabelle / Kader /
                                Verwaltung), Live-Banner und nuLiga-Widgets
@@ -193,26 +224,92 @@ Touch-Ziele sind 56 px hoch.
 | `*`            | Redirect auf `/`                              |
 
 > `/admin` ist für `trainer` zugänglich, damit sie die Mannschaftszuordnung
-> pflegen können. Rollen-Steuerelemente rendert `AdminPage` nur für
+> pflegen können. Rollen-Steuerelemente rendert `MembersSection` nur für
 > admin/sub_admin; das Backend lehnt entsprechende Felder ohnehin ab.
-> Dasselbe gilt für die News-Verwaltung: `AdminPage` blendet sie für
-> Trainer:innen aus, `POST/DELETE /api/admin/news` antwortet ihnen mit `403`.
+> Die Bereiche **News**, **Mannschaften** und **System-Status** blendet
+> `AdminPage` für Trainer:innen komplett aus (`adminOnly`); die zugehörigen
+> Endpunkte antworten ihnen ohnehin mit `403`.
+
+## Verwaltung (`/admin`)
+
+Die Seite ist ein Gerüst mit vier Bereichen, von denen immer nur **einer**
+gerendert wird. Alle vier stehen als Daten in einer Liste in `AdminPage.jsx` –
+Seitenleiste, mobile Reiterleiste und Inhaltsauswahl speisen sich daraus, ein
+Bereich kann also nicht in der Navigation auftauchen, den es nicht gibt.
+
+| Bereich | Wer | Inhalt |
+| ------- | --- | ------ |
+| Mitglieder | admin, sub_admin, trainer | Kennzahlen, Suche, Filter, Tabelle, Seitenschaltung |
+| News | admin, sub_admin | Aktive Beiträge und Archiv |
+| Mannschaften | admin, sub_admin | Stammdaten + „Neue Mannschaft anlegen“ |
+| System-Status | admin, sub_admin | Auslastung, Verkehr, Wartung |
+
+Der gewählte Bereich steht in der Adresse (`/admin?bereich=news`): so lässt
+sich ein Bereich verlinken und der Zurück-Knopf tut das Erwartbare. Ein
+unbekannter oder für die Rolle unerlaubter Wert fällt still auf den ersten
+Bereich zurück.
+
+**Nachgeladen statt mitgeliefert.** Die vier Bereiche hängen an `React.lazy`.
+Das ist hier kein vorsorgliches Feintuning: der System-Status bringt `recharts`
+mit, rund 130 kB gepackt. Läge die Bibliothek im Hauptbündel, müsste jedes
+Mitglied sie beim Öffnen der App herunterladen – für eine Seite, die nur
+Admins je sehen. So bleibt das Hauptbündel bei ~95 kB (gzip), und jeder
+Bereich lädt seine Daten erst, wenn er geöffnet wird.
+
+### Mitglieder bei vierstelliger Mitgliederzahl
+
+Suche, Filter und Paginierung laufen **serverseitig**
+(`GET /api/admin/users?search=&role=&status=&page=&pageSize=`). Der Browser
+bekommt immer nur die 20 Zeilen, die er anzeigt. `useAdminUsers` entprellt die
+Suche um 300 ms und verwirft überholte Antworten – tippt jemand schnell „mül“,
+darf die Antwort auf „mü“ die Tabelle nicht mehr überschreiben.
+
+Gesucht wird über Vor- und Nachname, die Kombination aus beiden, die E-Mail
+und die **Mitgliedsnummer** (= die Konto-ID, erste Tabellenspalte).
+
+### System-Status: was die Diagramme zeigen
+
+- **Anfragen und Fehler je Minute** – eine Fläche (Anfragen) plus eine Linie
+  (Fehler) auf **einer** Achse; beide zählen dasselbe.
+- **Antwortzeit je Minute** – bewusst ein eigenes Diagramm: Millisekunden und
+  Anzahlen sind verschiedene Einheiten, und eine zweite Achse im selben Bild
+  lädt dazu ein, einen Zusammenhang herauszulesen, den die Daten nicht
+  hergeben.
+- **HTTP-Statusklassen** – Zeilen mit Punkt, Klartext, Zahl und Anteil statt
+  Torte oder Stapel: Bernstein (4xx) und Rot (5xx) liegen im Farbabstand zu
+  dicht beieinander, um sie aneinandergrenzen zu lassen, und der interessante
+  Wert ist fast immer der kleinste (Serverfehler) – in einer Torte genau der
+  unleserliche Splitter.
+- **Herkunft der Anfragen** – waagerechte Balken in **einer** Farbe: Länder
+  sind keine Reihen, die man auseinanderhalten muss, ihre Größe steht schon in
+  der Balkenlänge. Woher das Land kommt (und warum es „Unbekannt“ sein kann),
+  steht in [backend/README.md](../backend/README.md#herkunftsland-der-anfragen);
+  die Oberfläche blendet den Hinweis selbst ein, wenn kein echtes Land dabei
+  ist.
+- **CPU, RAM, Plattenplatz** sind keine Diagramme, sondern **Messer**: ein
+  einzelner Anteil an einem Maximum ist keine Datenreihe. Der Prozentwert
+  steht immer als Text daneben – die Farbe (grün / bernstein ab 75 % / rot ab
+  90 %) ist Zusatz, nie die einzige Information.
 
 ## Vereins-News
 
 - **Lesen:** `useNews()` → `GET /api/news`. Das Dashboard zeigt die neuesten
   fünf Beiträge, „Ältere Beiträge anzeigen“ lädt den Rest nach.
-- **Verwalten:** `NewsManager` (nur `admin`/`sub_admin`) sendet
+- **Verwalten:** `admin/NewsSection.jsx` (nur `admin`/`sub_admin`) sendet
   `multipart/form-data` an `POST /api/admin/news`. Bilder werden vor dem
-  Upload im Browser auf 5 MB geprüft und als Vorschau angezeigt; gelöscht wird
-  zweistufig („Löschen“ → „Wirklich löschen“).
+  Upload im Browser auf 5 MB geprüft und als Vorschau angezeigt.
+- **Archivieren statt löschen:** Der Knopf an einem aktiven Beitrag heißt
+  „Archivieren“ (`PATCH /api/admin/news/:id`, `{ isArchived: true }`). Der
+  Beitrag verschwindet aus dem Feed, bleibt unter „Archiv“ erhalten und lässt
+  sich mit „Zurückholen“ wieder aktiv schalten. Endgültiges Löschen gibt es
+  nur im Archiv und mit Rückfrage – erst dabei wird auch das Bild frei.
 - Beitragstext wird als **Text** gerendert (`white-space: pre-line`), niemals
   als HTML – Zeilenumbrüche bleiben erhalten, HTML-Injektion ist ausgeschlossen.
 
 ### Sub-Admin in der Oberfläche
 
 - Dashboard zeigt das Badge **SUB-ADMIN**.
-- In der `AdminPage` sind Zeilen von Konten mit der Rolle `admin` als
+- In der Mitgliedertabelle sind Zeilen von Konten mit der Rolle `admin` als
   „gesperrt“ markiert: Rollen-Select und Team-Chips sind deaktiviert.
 - Die Rolle „Admin“ fehlt in der Auswahlliste (die aktuelle Rolle einer Zeile
   wird trotzdem korrekt angezeigt).

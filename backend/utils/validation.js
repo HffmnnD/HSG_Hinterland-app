@@ -43,36 +43,176 @@ const MIN_JERSEY = 1;
 const MAX_JERSEY = 99;
 const MAX_STAFF_TITLE_LENGTH = 60;
 
+// Mannschafts-Stammdaten (Spaltenbreiten in `teams`).
+const MAX_TEAM_NAME_LENGTH = 100;
+const MAX_TEAM_CODE_LENGTH = 20;
+const MAX_AGE_GROUP_LENGTH = 40;
+// sort_order ist SMALLINT UNSIGNED.
+const MAX_SORT_ORDER = 65535;
+// Kuerzel landen in der URL (/teams/:code) und in Chips: Buchstaben, Ziffern
+// und Bindestrich reichen dafuer und ersparen jedes Escaping.
+const TEAM_CODE_PATTERN = /^[A-Z0-9-]{2,20}$/;
+
+/**
+ * nuLiga-Nummer prüfen. Leerstring/null hebt die Ligaverknüpfung auf – die
+ * Mannschaftsseite zeigt dann den Hinweis, dass keine Ligaspiele terminiert
+ * sind.
+ * @returns {{ ok:true, value:string|null } | { ok:false, ... }}
+ */
+function checkHandballTeamId(value) {
+  // undefined = Feld nicht mitgeschickt, '' / null = bewusst geleert. Beides
+  // landet als NULL in der Spalte.
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, value: null };
+  }
+  if (typeof value !== 'string' || !HANDBALL_TEAM_ID_PATTERN.test(value.trim())) {
+    return fail(
+      'Ungültige nuLiga-Nummer. Erwartet wird die Zahl aus der Adresse der Mannschaftsseite, z. B. 2086554.'
+    );
+  }
+  return { ok: true, value: value.trim() };
+}
+
+/** Optionales Textfeld: getrimmt, längenbegrenzt, leer -> null. */
+function checkOptionalText(value, maxLength, label) {
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, value: null };
+  }
+  if (typeof value !== 'string') return fail(`${label} muss eine Zeichenkette sein.`);
+
+  const clean = value.trim();
+  if (clean.length > maxLength) {
+    return fail(`${label} darf höchstens ${maxLength} Zeichen lang sein.`);
+  }
+  return { ok: true, value: clean.length > 0 ? clean : null };
+}
+
+/** Geschlecht der Mannschaft (ENUM `teams.gender`). Leer -> null. */
+function checkGender(value) {
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, value: null };
+  }
+  if (!teamRepository.GENDERS.includes(value)) {
+    return fail(`Ungültiges Geschlecht. Erlaubt: ${teamRepository.GENDERS.join(', ')}.`);
+  }
+  return { ok: true, value };
+}
+
+/** Sortiernummer: ganze Zahl im Bereich von SMALLINT UNSIGNED. */
+function checkSortOrder(value) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > MAX_SORT_ORDER) {
+    return fail(
+      `Die Sortierung muss eine ganze Zahl zwischen 0 und ${MAX_SORT_ORDER} sein.`
+    );
+  }
+  return { ok: true, value: number };
+}
+
+/**
+ * Prüft den POST-Body für /api/admin/teams (neue Mannschaft).
+ *
+ * Pflicht sind Name und Kürzel – alles andere lässt sich später nachtragen.
+ * Das Kürzel wird auf Großbuchstaben normalisiert, weil es in der URL steht
+ * und `findByCode` ebenfalls gross vergleicht.
+ *
+ * @returns {{ ok:true, fields: object } | { ok:false, status, message }}
+ */
+function validateTeamCreate(body) {
+  const { name, code, ageGroup, gender, sortOrder, handballTeamId } = body || {};
+
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return fail('Bitte einen Namen für die Mannschaft angeben.');
+  }
+  const cleanName = name.trim();
+  if (cleanName.length > MAX_TEAM_NAME_LENGTH) {
+    return fail(`Der Name darf höchstens ${MAX_TEAM_NAME_LENGTH} Zeichen lang sein.`);
+  }
+
+  if (typeof code !== 'string' || code.trim().length === 0) {
+    return fail('Bitte ein Kürzel angeben, z. B. „MJC“.');
+  }
+  const cleanCode = code.trim().toUpperCase();
+  if (!TEAM_CODE_PATTERN.test(cleanCode)) {
+    return fail(
+      `Das Kürzel darf nur Buchstaben, Ziffern und Bindestriche enthalten (2–${MAX_TEAM_CODE_LENGTH} Zeichen), z. B. „MJC“.`
+    );
+  }
+
+  const fields = { name: cleanName, code: cleanCode };
+
+  const ageCheck = checkOptionalText(ageGroup, MAX_AGE_GROUP_LENGTH, 'Die Altersklasse');
+  if (!ageCheck.ok) return ageCheck;
+  fields.age_group = ageCheck.value;
+
+  const genderCheck = checkGender(gender);
+  if (!genderCheck.ok) return genderCheck;
+  fields.gender = genderCheck.value;
+
+  // Ohne Angabe hängt der Controller die Mannschaft hinten an (nextSortOrder).
+  if (sortOrder !== undefined && sortOrder !== null && sortOrder !== '') {
+    const sortCheck = checkSortOrder(sortOrder);
+    if (!sortCheck.ok) return sortCheck;
+    fields.sort_order = sortCheck.value;
+  }
+
+  const handballCheck = checkHandballTeamId(handballTeamId);
+  if (!handballCheck.ok) return handballCheck;
+  fields.handball_team_id = handballCheck.value;
+
+  return { ok: true, fields };
+}
+
 /**
  * Prüft den PATCH-Body für /api/teams/:code (Stammdaten der Mannschaft).
  *
- * Aktuell nur `handballTeamId`. Leerstring oder null hebt die Ligaverknüpfung
- * wieder auf – die Mannschaftsseite zeigt dann den Hinweis, dass keine
- * Ligaspiele terminiert sind.
+ * Jedes Feld ist einzeln optional; `code` bleibt bewusst unveränderlich – es
+ * steht in Links, Lesezeichen und in der Startseiten-Verknüpfung der PWA.
  *
  * @returns {{ ok:true, fields: object } | { ok:false, status, message }}
  */
 function validateTeamPatch(body) {
-  const { handballTeamId } = body || {};
+  const { name, ageGroup, gender, sortOrder, handballTeamId } = body || {};
   const fields = {};
 
   if (handballTeamId !== undefined) {
-    if (handballTeamId === null || handballTeamId === '') {
-      fields.handball_team_id = null;
-    } else if (
-      typeof handballTeamId !== 'string' ||
-      !HANDBALL_TEAM_ID_PATTERN.test(handballTeamId.trim())
-    ) {
-      return fail(
-        'Ungültige nuLiga-Nummer. Erwartet wird die Zahl aus der Adresse der Mannschaftsseite, z. B. 2086554.'
-      );
-    } else {
-      fields.handball_team_id = handballTeamId.trim();
+    const check = checkHandballTeamId(handballTeamId);
+    if (!check.ok) return check;
+    fields.handball_team_id = check.value;
+  }
+
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return fail('Der Name darf nicht leer sein.');
     }
+    if (name.trim().length > MAX_TEAM_NAME_LENGTH) {
+      return fail(`Der Name darf höchstens ${MAX_TEAM_NAME_LENGTH} Zeichen lang sein.`);
+    }
+    fields.name = name.trim();
+  }
+
+  if (ageGroup !== undefined) {
+    const check = checkOptionalText(ageGroup, MAX_AGE_GROUP_LENGTH, 'Die Altersklasse');
+    if (!check.ok) return check;
+    fields.age_group = check.value;
+  }
+
+  if (gender !== undefined) {
+    const check = checkGender(gender);
+    if (!check.ok) return check;
+    fields.gender = check.value;
+  }
+
+  if (sortOrder !== undefined) {
+    const check = checkSortOrder(sortOrder);
+    if (!check.ok) return check;
+    fields.sort_order = check.value;
   }
 
   if (Object.keys(fields).length === 0) {
-    return fail('Keine Änderungen übergeben (handballTeamId).');
+    return fail(
+      'Keine Änderungen übergeben (name, ageGroup, gender, sortOrder oder handballTeamId).'
+    );
   }
   return { ok: true, fields };
 }
@@ -400,13 +540,29 @@ function validateNewsPost(body) {
   return { ok: true, title: cleanTitle, content: cleanContent };
 }
 
+/**
+ * Prüft den PATCH-Body für /api/admin/news/:id (Archivieren/Zurückholen).
+ * @returns {{ ok:true, isArchived:boolean } | { ok:false, ... }}
+ */
+function validateNewsArchivePatch(body) {
+  const { isArchived } = body || {};
+  if (typeof isArchived !== 'boolean') {
+    return fail('isArchived muss true oder false sein.');
+  }
+  return { ok: true, isArchived };
+}
+
 module.exports = {
   MAX_NEWS_TITLE_LENGTH,
   MAX_NEWS_CONTENT_LENGTH,
   MIN_JERSEY,
   MAX_JERSEY,
+  MAX_TEAM_NAME_LENGTH,
+  MAX_TEAM_CODE_LENGTH,
+  MAX_AGE_GROUP_LENGTH,
   parseId,
   isRelationType,
+  validateTeamCreate,
   validateTeamPatch,
   validateRosterPatch,
   validateServiceList,
@@ -415,4 +571,5 @@ module.exports = {
   validateRegistration,
   validateUserPatch,
   validateNewsPost,
+  validateNewsArchivePatch,
 };

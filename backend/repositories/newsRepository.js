@@ -1,6 +1,11 @@
 // Datenzugriff für Vereins-News (`news`). Enthält AUSSCHLIESSLICH SQL – keine
 // Validierung, keine HTTP-Logik. Rückgaben sind bereits camelCase für das
 // Frontend aufbereitet; das Bild wird als fertige URL geliefert.
+//
+// Beiträge werden ARCHIVIERT statt gelöscht (`is_archived`, Migration 006):
+// der Feed liest nur aktive Beiträge, die Verwaltung sieht beide Stapel und
+// kann jederzeit zurückholen. Endgültiges Löschen bleibt als getrennte,
+// bewusste Aktion bestehen (`remove`) – nur so wird auch das Bild frei.
 const pool = require('../config/db');
 const { publicUrlFor } = require('../config/uploads');
 
@@ -10,6 +15,7 @@ function mapNews(row) {
     title: row.title,
     content: row.content,
     imageUrl: publicUrlFor(row.image_path),
+    isArchived: Boolean(row.is_archived),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     // Verfasser:in – null, wenn das Konto zwischenzeitlich gelöscht wurde.
@@ -25,20 +31,32 @@ function mapNews(row) {
 }
 
 const SELECT_NEWS = `
-  SELECT n.id, n.title, n.content, n.image_path, n.created_at, n.updated_at,
+  SELECT n.id, n.title, n.content, n.image_path, n.is_archived,
+         n.created_at, n.updated_at,
          n.author_id, u.first_name AS author_first_name, u.last_name AS author_last_name
     FROM news n
     LEFT JOIN users u ON u.id = n.author_id`;
 
 /**
- * Alle Beiträge, neueste zuerst.
- * @param {{ limit?: number }} [opts] Optionale Obergrenze (z. B. Dashboard-Feed).
+ * Beiträge, neueste zuerst.
+ *
+ * @param {object} [opts]
+ * @param {number}  [opts.limit]    Obergrenze (z. B. Dashboard-Feed).
+ * @param {'active'|'archived'|'all'} [opts.status='active']
+ *   `active` = Feed-Ansicht (Standard), `archived` = Papierkorb der
+ *   Verwaltung, `all` = beides.
  */
-async function listAll({ limit } = {}, runner = pool) {
+async function listAll({ limit, status = 'active' } = {}, runner = pool) {
+  const where = [];
+  const params = [];
+
+  if (status === 'active') where.push('n.is_archived = 0');
+  else if (status === 'archived') where.push('n.is_archived = 1');
+
   // ORDER BY id als zweites Kriterium: mehrere Beiträge in derselben Sekunde
   // bekommen sonst keine stabile Reihenfolge.
-  let sql = `${SELECT_NEWS} ORDER BY n.created_at DESC, n.id DESC`;
-  const params = [];
+  let sql = `${SELECT_NEWS}${where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY n.created_at DESC, n.id DESC`;
 
   if (limit !== undefined) {
     sql += ' LIMIT ?';
@@ -47,6 +65,23 @@ async function listAll({ limit } = {}, runner = pool) {
 
   const [rows] = await runner.query(sql, params);
   return rows.map(mapNews);
+}
+
+/**
+ * Anzahl aktiver und archivierter Beiträge – für die Reiter der Verwaltung,
+ * damit dort auch dann eine Zahl steht, wenn gerade der andere Stapel
+ * angezeigt wird.
+ * @returns {Promise<{ active:number, archived:number }>}
+ */
+async function countByStatus(runner = pool) {
+  const [[row]] = await runner.query(
+    `SELECT SUM(is_archived = 0) AS active, SUM(is_archived = 1) AS archived
+       FROM news`
+  );
+  return {
+    active: Number(row?.active ?? 0),
+    archived: Number(row?.archived ?? 0),
+  };
 }
 
 /** Ein Beitrag anhand seiner ID. null wenn unbekannt. */
@@ -78,7 +113,25 @@ async function create({ title, content, imagePath, authorId }, runner = pool) {
 }
 
 /**
- * Löscht einen Beitrag.
+ * Archiviert einen Beitrag oder holt ihn zurück.
+ *
+ * `is_archived <> ?` im WHERE: eine Änderung, die nichts ändert (zweimal
+ * archivieren), liefert 0 – der Controller macht daraus eine ehrliche
+ * Rückmeldung statt eines stillen "gespeichert".
+ *
+ * @returns {Promise<number>} Anzahl geänderter Zeilen
+ */
+async function setArchived(id, isArchived, runner = pool) {
+  const flag = isArchived ? 1 : 0;
+  const [result] = await runner.query(
+    'UPDATE news SET is_archived = ? WHERE id = ? AND is_archived <> ?',
+    [flag, id, flag]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Löscht einen Beitrag endgültig.
  * @returns {Promise<number>} Anzahl gelöschter Zeilen (0 = nicht vorhanden)
  */
 async function remove(id, runner = pool) {
@@ -86,4 +139,12 @@ async function remove(id, runner = pool) {
   return result.affectedRows;
 }
 
-module.exports = { listAll, findById, findImagePath, create, remove };
+module.exports = {
+  listAll,
+  countByStatus,
+  findById,
+  findImagePath,
+  create,
+  setArchived,
+  remove,
+};

@@ -10,6 +10,8 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/001_initial_schema.sql` | Eingefrorener Startzustand. |
 | `migrations/002_team_confirmation.sql` | `is_confirmed` ergänzt, globale Admin-Freigabe abgeschafft. |
 | `migrations/004_news_table.sql` | Tabelle `news` für Vereins-Ankündigungen. |
+| `migrations/005_team_page.sql` | Mannschaftsseite: Ligaverknüpfung, Foto, Sponsoren, Kaderangaben. |
+| `migrations/006_admin_console.sql` | News-Archiv (`is_archived`) und Mannschafts-Stammdaten (`age_group`, `gender`, `sort_order`). |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
@@ -67,8 +69,18 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `id` | Primärschlüssel (`team_id`) |
 | `name` | ausgeschrieben, z. B. „Männliche Jugend C" |
 | `code` | Kürzel für URL/Chips, z. B. `MJC`, **eindeutig**, immer GROSS |
+| `age_group` | Altersklasse / Jugend als freier Text, z. B. „C-Jugend" oder „Erwachsene". Bewusst kein ENUM: die Verbände benennen Altersklassen regelmäßig um |
+| `gender` | `male` / `female` / `mixed`, `NULL` = nicht angegeben |
+| `sort_order` | Anzeigereihenfolge im ganzen Frontend, kleinste Zahl zuerst; bei Gleichstand entscheidet der Name |
+| `handball_team_id` | nuLiga-Nummer (`teamtable`) für Tabelle/Spielplan/Ticker. `NULL` = keine Ligaanbindung |
+| `photo_path` | Mannschaftsfoto in `backend/uploads/`, z. B. `teams/ab12.jpg` |
 
-Seed: `MJC`, `MJB`, `MJA`, `H1` (1. Herren), `H2` (2. Herren), `D1` (Damen).
+Seed: `MJC`, `MJB`, `MJA`, `H1` (1. Herren), `H2` (2. Herren), `D1` (Damen) –
+mit `sort_order` in Zehnerschritten (10, 20, …), damit sich eine neue
+Mannschaft ohne Umnummerieren dazwischen schieben lässt.
+
+Neue Mannschaften legt die Verwaltung über `POST /api/admin/teams` an; ohne
+ausdrückliche `sort_order` hängt der Controller sie hinten an.
 
 ### `user_teams` – wer gehört wie zu welcher Mannschaft
 
@@ -112,11 +124,19 @@ angemeldeten Mitglieder, absteigend nach `created_at`.
 | `title` | Überschrift (max. 150 Zeichen) |
 | `content` | Fließtext (max. 5000 Zeichen, per Validierung). **Reiner Text** – das Frontend rendert ihn nie als HTML |
 | `image_path` | Relativer Pfad des Bilds in `backend/uploads/`, z. B. `news/ab12cd34.jpg`. `NULL` = ohne Bild |
+| `is_archived` | `0` = aktiv (im Feed), `1` = archiviert. Archivierte Beiträge verschwinden aus dem Dashboard, bleiben in der Verwaltung erhalten und lassen sich zurückholen |
 | `author_id` | FK → `users.id`, `ON DELETE SET NULL` (Beitrag überlebt das Löschen des Kontos) |
 | `created_at` / `updated_at` | Veröffentlichung / letzte Änderung |
 
-Rechte: Lesen alle angemeldeten Mitglieder, Anlegen und Löschen nur `admin`
-und `sub_admin` (Trainer:innen **nicht**).
+Rechte: Lesen alle angemeldeten Mitglieder, Anlegen, Archivieren und Löschen
+nur `admin` und `sub_admin` (Trainer:innen **nicht**).
+
+**Archivieren statt löschen:** Der Regelweg der Oberfläche setzt
+`is_archived = 1`. Der Feed (`GET /api/news`) liest nur `is_archived = 0` –
+dafür gibt es den zusammengesetzten Index `idx_news_archived_created`, der
+Filter und Sortierung in einem Zugriff bedient. Endgültiges Löschen bleibt
+möglich (nur so wird auch die Bilddatei frei), ist in der Oberfläche aber auf
+das Archiv beschränkt und fragt nach.
 
 > Bilder liegen **nicht** in der Datenbank. `backend/config/uploads.js`
 > speichert sie unter zufälligem Namen im Dateisystem; beim Löschen eines
@@ -135,10 +155,10 @@ Kein Controller enthält rohes SQL. Alle Abfragen liegen in
 
 | Repository | Zuständig für |
 | ---------- | ------------- |
-| `userRepository.js` | `users` + zusammengesetztes Profil (`getFullProfile`, `listAllWithProfiles`), Transaktionen für Registrierung und Admin-Änderungen |
+| `userRepository.js` | `users` + zusammengesetztes Profil (`getFullProfile`, `listAllWithProfiles`, seitenweise `listPageWithProfiles`, `getMemberStats`), Transaktionen für Registrierung und Admin-Änderungen |
 | `teamRepository.js` | `teams` + `user_teams` (Kader, Kandidaten, Zuordnungen) |
 | `serviceRepository.js` | `user_services` |
-| `newsRepository.js` | `news` (Feed, Anlegen, Löschen) |
+| `newsRepository.js` | `news` (Feed, Anlegen, Archivieren, Löschen) |
 
 Eingabe-Prüfung (Typen, erlaubte Werte, Existenz von Team-IDs) liegt in
 `backend/utils/validation.js`, die erlaubten Enum-Werte in

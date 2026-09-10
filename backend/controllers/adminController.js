@@ -7,14 +7,75 @@
 //   - sub_admin darf admin-Konten NICHT bearbeiten und NICHT zum admin machen
 //   - niemand sperrt sich selbst aus; der letzte aktive admin bleibt erhalten
 const userRepository = require('../repositories/userRepository');
-const { validateUserPatch, parseId } = require('../utils/validation');
-const { ADMIN_ROLES } = require('../utils/roles');
+const teamRepository = require('../repositories/teamRepository');
+const {
+  validateUserPatch,
+  validateTeamCreate,
+  parseId,
+} = require('../utils/validation');
+const { ADMIN_ROLES, ROLES } = require('../utils/roles');
 
-// GET /api/admin/users
+// Seitengröße der Mitgliedertabelle. Der Client darf sie wählen, aber nur
+// innerhalb dieser Grenzen – sonst holt ein `?pageSize=100000` doch wieder
+// alle Konten auf einmal und die Paginierung wäre wirkungslos.
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+// Freitextsuche: lang genug für jeden Namen, kurz genug, dass daraus kein
+// teures LIKE über ein Megabyte wird.
+const MAX_SEARCH_LENGTH = 100;
+
+/** Ganzzahliger Query-Parameter mit Standardwert und Grenzen. */
+function readNumber(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const number = Number.parseInt(value, 10);
+  if (!Number.isInteger(number)) return fallback;
+  return Math.min(Math.max(number, min), max);
+}
+
+// GET /api/admin/users?search=&role=&status=&page=&pageSize=
+//
+// Seitenweise statt am Stück: die Verwaltung soll auch bei über tausend
+// Konten flüssig bleiben. Gefiltert wird in SQL (siehe
+// userRepository.listPageWithProfiles), nicht im Browser.
 async function listUsers(req, res, next) {
   try {
-    const users = await userRepository.listAllWithProfiles();
-    return res.json({ users });
+    const { search, role, status } = req.query;
+
+    if (role !== undefined && role !== '' && !ROLES.includes(role)) {
+      return res.status(400).json({ message: 'Ungültige Rolle im Filter.' });
+    }
+    if (status !== undefined && status !== '' && !['active', 'inactive'].includes(status)) {
+      return res
+        .status(400)
+        .json({ message: 'Ungültiger Status im Filter. Erlaubt: active, inactive.' });
+    }
+
+    const result = await userRepository.listPageWithProfiles({
+      search: typeof search === 'string' ? search.trim().slice(0, MAX_SEARCH_LENGTH) : undefined,
+      role: role || undefined,
+      status: status || undefined,
+      page: readNumber(req.query.page, 1),
+      pageSize: readNumber(req.query.pageSize, DEFAULT_PAGE_SIZE, {
+        min: 1,
+        max: MAX_PAGE_SIZE,
+      }),
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// GET /api/admin/users/stats
+//
+// Kennzahlen für den Kopf der Mitgliederverwaltung. Bewusst getrennt von der
+// Liste: die Zahlen beziehen sich auf den GESAMTEN Verein und dürfen sich
+// nicht ändern, nur weil gerade ein Filter aktiv ist.
+async function getUserStats(req, res, next) {
+  try {
+    const stats = await userRepository.getMemberStats();
+    return res.json({ stats });
   } catch (err) {
     return next(err);
   }
@@ -106,4 +167,62 @@ async function updateUser(req, res, next) {
   }
 }
 
-module.exports = { listUsers, updateUser };
+// --- Mannschaften -----------------------------------------------------------
+
+// GET /api/admin/teams
+//
+// Wie /api/teams, aber mit Mitgliederzahlen je Mannschaft – die braucht die
+// Verwaltungstabelle, die öffentliche Auswahlliste nicht.
+async function listTeams(req, res, next) {
+  try {
+    const teams = await teamRepository.listAllWithCounts();
+    return res.json({ teams });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// POST /api/admin/teams
+//   Body: { name, code, ageGroup?, gender?, sortOrder?, handballTeamId? }
+//
+// Legt eine neue Mannschaft an. `handballTeamId` ist die nuLiga-Nummer
+// (`teamtable`) – ist sie gesetzt, holen sich Tabelle, Spielplan und
+// Live-Ticker der Mannschaftsseite ihre Daten ab sofort von selbst.
+async function createTeam(req, res, next) {
+  try {
+    const check = validateTeamCreate(req.body);
+    if (!check.ok) {
+      return res.status(check.status).json({ message: check.message });
+    }
+
+    const fields = { ...check.fields };
+    // Ohne ausdrückliche Sortierung hinten anhängen.
+    if (fields.sort_order === undefined) {
+      fields.sort_order = await teamRepository.nextSortOrder();
+    }
+
+    let teamId;
+    try {
+      teamId = await teamRepository.createTeam(fields);
+    } catch (err) {
+      // Der UNIQUE-Index auf `code` ist die verlässliche Prüfung – er greift
+      // auch dann, wenn zwei Admins gleichzeitig dasselbe Kürzel anlegen.
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({
+          message: `Das Kürzel „${fields.code}“ ist bereits vergeben.`,
+        });
+      }
+      throw err;
+    }
+
+    const team = await teamRepository.findByCode(fields.code);
+    return res.status(201).json({
+      message: `Mannschaft „${fields.name}“ angelegt.`,
+      team: { ...team, id: team?.id ?? teamId },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listUsers, getUserStats, updateUser, listTeams, createTeam };
