@@ -12,6 +12,11 @@ const adminRoutes = require('./routes/adminRoutes');
 const teamsRoutes = require('./routes/teamsRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const handballRoutes = require('./routes/handballRoutes');
+const {
+  eventsRouter,
+  attendancesRouter,
+  absencesRouter,
+} = require('./routes/scheduleRoutes');
 const { authenticate } = require('./middleware/authMiddleware');
 const { metricsMiddleware } = require('./middleware/metricsMiddleware');
 const { UPLOAD_ROOT, describeUploadError } = require('./config/uploads');
@@ -112,6 +117,13 @@ app.use('/api/news', newsRoutes);
 // Tabellen, Spielpläne und Live-Ticker von handball.net (serverseitig
 // gecacht, siehe services/handballService.js)
 app.use('/api/handball', handballRoutes);
+
+// Termin-Modul: Trainingsplan, Sondertermine, Zu-/Absagen, Urlaub &
+// Verletzungen (siehe routes/scheduleRoutes.js). Sichtbar ist immer nur,
+// was zur eigenen Mannschaft gehört.
+app.use('/api/events', eventsRouter);
+app.use('/api/attendances', attendancesRouter);
+app.use('/api/absences', absencesRouter);
 
 // Hochgeladene Beitragsbilder.
 //

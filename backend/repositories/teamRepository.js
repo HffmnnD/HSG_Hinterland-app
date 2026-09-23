@@ -12,14 +12,46 @@ const RELATION_GROUPS = ['player', 'coach', 'fan'];
 // Spielpositionen (muss zum ENUM in `user_teams.position` passen).
 const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
 
-// Spalten der Mannschaft, die überall gleich ausgelesen werden.
-const TEAM_COLUMNS =
-  'id, code, name, age_group, gender, sort_order, handball_team_id, photo_path';
+const TEAM_FIELDS = [
+  'id',
+  'code',
+  'name',
+  'age_group',
+  'gender',
+  'sort_order',
+  'handball_team_id',
+  'photo_path',
+  'nuliga_sync_enabled',
+];
 
 // Reihenfolge im gesamten Frontend: interner Sortierschlüssel zuerst, bei
 // Gleichstand alphabetisch. Steht hier einmal, damit jede Abfrage dieselbe
 // Reihenfolge liefert.
-const TEAM_ORDER = 'sort_order, name, id';
+const TEAM_ORDER_FIELDS = ['sort_order', 'name', 'id'];
+
+/**
+ * Auswahl-Liste der Mannschaftsspalten, optional mit Tabellen-Alias.
+ *
+ * Bewusst eine Funktion über einer Feldliste statt einer fertigen
+ * Zeichenkette: `nuliga_synced_at` wird als Text ausgegeben (siehe
+ * Zeitzonen-Hinweis in eventRepository.js) und enthält damit ein Komma. Wer
+ * einer solchen Zeichenkette per `split(', ')` ein Alias voranstellt, zerreißt
+ * den Ausdruck mittendrin – genau daran ist die Mannschaftsliste der
+ * Verwaltung einmal gescheitert.
+ */
+function teamColumns(alias = '') {
+  const prefix = alias ? `${alias}.` : '';
+  return [
+    ...TEAM_FIELDS.map((field) => `${prefix}${field}`),
+    `DATE_FORMAT(${prefix}nuliga_synced_at, '%Y-%m-%dT%H:%i:%s') AS nuliga_synced_at`,
+  ].join(', ');
+}
+
+/** Sortierung, optional mit Tabellen-Alias. */
+function teamOrder(alias = '') {
+  const prefix = alias ? `${alias}.` : '';
+  return TEAM_ORDER_FIELDS.map((field) => `${prefix}${field}`).join(', ');
+}
 
 // Geschlecht einer Mannschaft (muss zum ENUM in `teams.gender` passen).
 const GENDERS = ['male', 'female', 'mixed'];
@@ -40,6 +72,7 @@ const WRITABLE_TEAM_COLUMNS = new Set([
   'sort_order',
   'handball_team_id',
   'photo_path',
+  'nuliga_sync_enabled',
 ]);
 const WRITABLE_RELATION_COLUMNS = new Set([
   'jersey_number',
@@ -76,6 +109,9 @@ function mapTeam(row) {
     // nuLiga-Nummer für Tabelle/Spielplan/Ticker. null = keine Ligaanbindung.
     handballTeamId: row.handball_team_id ?? null,
     photoPath: row.photo_path ?? null,
+    // Werden die Ligaspiele als Termine in den Kalender übernommen?
+    nuligaSyncEnabled: Boolean(row.nuliga_sync_enabled),
+    nuligaSyncedAt: row.nuliga_synced_at ?? null,
   };
 }
 
@@ -92,7 +128,7 @@ function initialConfirmation(relationType) {
 /** Alle Mannschaften in Anzeigereihenfolge. */
 async function listAll(runner = pool) {
   const [rows] = await runner.query(
-    `SELECT ${TEAM_COLUMNS} FROM teams ORDER BY ${TEAM_ORDER}`
+    `SELECT ${teamColumns()} FROM teams ORDER BY ${teamOrder()}`
   );
   return rows.map(mapTeam);
 }
@@ -104,7 +140,7 @@ async function listAll(runner = pool) {
  */
 async function listAllWithCounts(runner = pool) {
   const [rows] = await runner.query(
-    `SELECT ${TEAM_COLUMNS.split(', ').map((c) => `t.${c}`).join(', ')},
+    `SELECT ${teamColumns('t')},
             SUM(ut.relation_type = 'player' AND ut.is_confirmed = 1) AS player_count,
             SUM(ut.relation_type = 'coach'  AND ut.is_confirmed = 1) AS coach_count,
             SUM(ut.relation_type = 'fan'    AND ut.is_confirmed = 1) AS fan_count,
@@ -112,7 +148,7 @@ async function listAllWithCounts(runner = pool) {
        FROM teams t
        LEFT JOIN user_teams ut ON ut.team_id = t.id
       GROUP BY t.id
-      ORDER BY ${TEAM_ORDER.split(', ').map((c) => `t.${c}`).join(', ')}`
+      ORDER BY ${teamOrder('t')}`
   );
 
   return rows.map((row) => ({
@@ -163,8 +199,17 @@ async function nextSortOrder(runner = pool) {
 async function findByCode(code, runner = pool) {
   if (typeof code !== 'string' || code.trim() === '') return null;
   const [rows] = await runner.query(
-    `SELECT ${TEAM_COLUMNS} FROM teams WHERE code = ?`,
+    `SELECT ${teamColumns()} FROM teams WHERE code = ?`,
     [code.trim().toUpperCase()]
+  );
+  return mapTeam(rows[0]);
+}
+
+/** Eine Mannschaft anhand ihrer id. null wenn unbekannt. */
+async function findById(id, runner = pool) {
+  const [rows] = await runner.query(
+    `SELECT ${teamColumns()} FROM teams WHERE id = ?`,
+    [id]
   );
   return mapTeam(rows[0]);
 }
@@ -182,6 +227,20 @@ async function updateTeam(teamId, fields, runner = pool) {
   const [result] = await runner.query(
     `UPDATE teams SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`,
     [...keys.map((k) => fields[k]), teamId]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Zeitpunkt des letzten nuLiga-Abgleichs festhalten.
+ *
+ * Bewusst nicht über updateTeam: `nuliga_synced_at` ist kein Feld, das jemand
+ * von Hand setzt, sondern ein Protokoll des Abgleichs.
+ */
+async function markNuligaSynced(teamId, nowSql, runner = pool) {
+  const [result] = await runner.query(
+    'UPDATE teams SET nuliga_synced_at = ? WHERE id = ?',
+    [nowSql, teamId]
   );
   return result.affectedRows;
 }
@@ -372,6 +431,39 @@ async function listRosterCandidates(teamId, relationType, runner = pool) {
   }));
 }
 
+/**
+ * Bestätigte Spieler:innen einer oder mehrerer Mannschaften – der Kader, der
+ * zu einem Termin Rückmeldung gibt.
+ *
+ * Bewusst NUR `player`: Trainer:innen verwalten die Anwesenheit, sie stehen
+ * nicht selbst in der Anwesenheitsliste. Wer beides ist (trainiert die MJC und
+ * spielt bei den Herren), hat dafür zwei Zuordnungen.
+ *
+ * @param {number[]} teamIds
+ * @returns {Promise<{teamId:number, id:number, firstName:string,
+ *                    lastName:string, jerseyNumber:number|null}[]>}
+ */
+async function listConfirmedPlayers(teamIds, runner = pool) {
+  if (teamIds.length === 0) return [];
+  const [rows] = await runner.query(
+    `SELECT ut.team_id, u.id, u.first_name, u.last_name, ut.jersey_number
+       FROM user_teams ut
+       JOIN users u ON u.id = ut.user_id
+      WHERE ut.team_id IN (?)
+        AND ut.relation_type = 'player'
+        AND ut.is_confirmed = 1
+      ORDER BY u.last_name, u.first_name`,
+    [teamIds]
+  );
+  return rows.map((row) => ({
+    teamId: row.team_id,
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    jerseyNumber: row.jersey_number ?? null,
+  }));
+}
+
 // --- Zuordnungen schreiben ------------------------------------------------
 
 /**
@@ -500,9 +592,11 @@ module.exports = {
   listAll,
   listAllWithCounts,
   findByCode,
+  findById,
   createTeam,
   nextSortOrder,
   updateTeam,
+  markNuligaSynced,
   getSponsors,
   updateRelationDetails,
   isJerseyNumberTaken,
@@ -513,6 +607,7 @@ module.exports = {
   getConfirmedRoster,
   getPendingMembers,
   listRosterCandidates,
+  listConfirmedPlayers,
   addRelation,
   removeRelation,
   confirmRelations,

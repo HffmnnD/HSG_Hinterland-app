@@ -449,6 +449,18 @@
     @apply border border-hsg-green-line bg-hsg-green-soft text-hsg-green-darker;
   }
 
+  /* Abgesagt (Termine). Rot – die Gegenfarbe zu .badge-confirmed. */
+  .badge-declined {
+    @apply border border-danger-line bg-danger-soft text-danger;
+  }
+
+  /* Dabei, aber ohne ausdrückliche Rückmeldung. Grün wie eine Zusage, denn
+     genau so wird die Person gezählt – nur ohne die volle Füllung, damit der
+     Unterschied zur bewussten Zusage sichtbar bleibt. */
+  .badge-default {
+    @apply border border-hsg-green-line bg-paper text-hsg-green-darker;
+  }
+
   /* Laufendes Spiel (Handball-Ticker, Spielplan). Rot, weil es die einzige
      Stelle in der App ist, die „jetzt gerade" bedeutet – bewusst kräftiger
      als die übrigen Status-Chips. */
@@ -648,6 +660,94 @@
 
   .jersey--empty {
     @apply bg-surface text-sm text-ink-muted;
+  }
+
+  /* ----------------------------------------------------------- Termine */
+  /* Datumsblock links auf jeder Terminkarte. Feste Breite, damit die Titel
+     aller Karten untereinander auf einer Linie stehen – eine Terminliste
+     liest man senkrecht, nicht waagerecht. */
+  .event-date {
+    @apply flex w-12 shrink-0 flex-col items-center justify-center rounded-sm
+      border border-line bg-surface py-2 sm:w-14;
+  }
+
+  .event-date__weekday {
+    @apply font-display text-[0.625rem] font-semibold uppercase
+      leading-none tracking-[0.08em] text-ink-muted;
+  }
+
+  .event-date__day {
+    @apply mt-0.5 font-display text-xl font-bold leading-none text-hsg-green-dark;
+  }
+
+  .event-date__month {
+    @apply mt-0.5 font-display text-[0.625rem] font-semibold uppercase
+      leading-none tracking-[0.06em] text-ink-muted;
+  }
+
+  /* Anwesenheits-Balken auf der Terminkarte. Die eine Frage, die vor jedem
+     Training zählt – deshalb als breite Fläche und nicht als kleiner Chip
+     irgendwo zwischen den Angaben. */
+  .attend-bar {
+    @apply mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3;
+  }
+
+  .attend-bar__label {
+    @apply font-display text-base font-bold uppercase tracking-[0.04em];
+  }
+
+  .attend-bar--yes {
+    @apply border-hsg-green-line bg-hsg-green-soft;
+  }
+
+  .attend-bar--yes .attend-bar__label {
+    @apply text-hsg-green-darker;
+  }
+
+  .attend-bar--no {
+    @apply border-danger-line bg-danger-soft;
+  }
+
+  .attend-bar--no .attend-bar__label {
+    @apply text-danger;
+  }
+
+  /* Urlaub/Verletzung: abwesend, aber aus anderem Grund als einer Absage */
+  .attend-bar--absent {
+    @apply border-warn-line bg-warn-soft;
+  }
+
+  .attend-bar--absent .attend-bar__label {
+    @apply text-warn;
+  }
+
+  /* Abgesagter Termin – muss man beim Überfliegen der Liste sehen, ohne zu
+     lesen. Deshalb volle rote Fläche statt eines Badges am Rand. */
+  .event-cancelled {
+    @apply -mx-5 -mt-5 mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1
+      rounded-t-md bg-danger px-5 py-2.5 text-white;
+  }
+
+  .event-cancelled__label {
+    @apply font-display text-base font-bold uppercase tracking-[0.08em];
+  }
+
+  /* ------------------------------------------------------------- Dialog */
+  /* Abdunklung hinter einem Dialog. Fixiert, damit die Rückfrage auch dann
+     mitten im Bild steht, wenn weit unten in einer langen Liste geklickt
+     wurde. */
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-end justify-center overflow-y-auto
+      bg-hsg-dark/60 p-4 sm:items-center;
+    padding-bottom: calc(1rem + var(--safe-b));
+  }
+
+  .modal-card {
+    @apply w-full max-w-md rounded-md border border-line bg-paper p-5 shadow-pop;
+  }
+
+  .modal-title {
+    @apply font-display text-lg font-bold uppercase tracking-[0.03em] text-ink;
   }
 
   /* --------------------------------------------------------- Ladezustand */

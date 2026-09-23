@@ -6,7 +6,7 @@ import Dashboard from './components/Dashboard';
 import AdminPage from './components/AdminPage';
 import TeamPage from './components/TeamPage';
 import TeamsPage from './components/TeamsPage';
-import SchedulePage from './components/SchedulePage';
+import CalendarPage from './components/CalendarPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import FullScreenLoader from './components/FullScreenLoader';
 import ScrollToTop from './components/ScrollToTop';
@@ -79,15 +79,19 @@ export default function App() {
           }
         />
 
-        {/* Spielplan & Termine – aktuell Vorschau auf das nächste Modul */}
+        {/* Kalender: Trainingszeiten, Spiele, Sondertermine und Anwesenheiten */}
         <Route
-          path="/termine"
+          path="/kalender"
           element={
             <ProtectedRoute>
-              <SchedulePage />
+              <CalendarPage />
             </ProtectedRoute>
           }
         />
+
+        {/* Alter Pfad aus der Vorschau-Version – Lesezeichen sollen nicht
+            ins Leere laufen. */}
+        <Route path="/termine" element={<Navigate to="/kalender" replace />} />
 
         {/* Unbekannte Pfade -> Startseite */}
         <Route path="*" element={<Navigate to="/" replace />} />

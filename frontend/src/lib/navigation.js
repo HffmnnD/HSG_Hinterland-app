@@ -19,7 +19,7 @@ import { MANAGEMENT_ROLES } from './roles';
 const NAV_ITEMS = [
   { to: '/', label: 'Start', icon: 'home', end: true },
   { to: '/teams', label: 'Teams', icon: 'teams' },
-  { to: '/termine', label: 'Termine', icon: 'calendar' },
+  { to: '/kalender', label: 'Kalender', icon: 'calendar' },
   {
     to: '/admin',
     label: 'Verwaltung',
