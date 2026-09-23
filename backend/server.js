@@ -13,6 +13,7 @@ const teamsRoutes = require('./routes/teamsRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const handballRoutes = require('./routes/handballRoutes');
 const { authenticate } = require('./middleware/authMiddleware');
+const { metricsMiddleware } = require('./middleware/metricsMiddleware');
 const { UPLOAD_ROOT, describeUploadError } = require('./config/uploads');
 
 const app = express();
@@ -52,6 +53,13 @@ function isOriginAllowed(origin, req) {
     return false;
   }
 }
+
+// Betriebs-Statistik (Requests, Antwortzeiten, Fehlerquote, Herkunft) für
+// /admin -> System-Status. Ganz vorne eingehängt, damit auch abgelehnte
+// Anfragen (CORS, 404, Rate-Limit) mitgezählt werden – gerade die sind für
+// ein Monitoring interessant. Kostet nur zwei Zähler pro Request und läuft
+// vollständig im Arbeitsspeicher (siehe services/metricsService.js).
+app.use(metricsMiddleware);
 
 // Sicherheits-Header (u. a. X-Content-Type-Options, Referrer-Policy, HSTS).
 // contentSecurityPolicy ist für eine reine JSON-API nicht nötig.

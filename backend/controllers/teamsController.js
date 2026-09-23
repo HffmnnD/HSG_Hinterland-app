@@ -361,12 +361,17 @@ async function callUpPlayer(req, res, next) {
   }
 }
 
-// PATCH /api/teams/:code   Body: { handballTeamId }
+// PATCH /api/teams/:code   Body: { name?, ageGroup?, gender?, handballTeamId? }
 //
 // Stammdaten der Mannschaft. Bewusst NUR für admin/sub_admin: die
 // nuLiga-Nummer entscheidet, welche Tabelle und welcher Spielplan auf der
 // Mannschaftsseite stehen – eine falsche Nummer zeigt allen Mitgliedern die
-// Daten einer fremden Mannschaft.
+// Daten einer fremden Mannschaft. Name, Altersklasse und Geschlecht sind
+// ebenfalls Vereins-Stammdaten und keine Kaderdetails.
+//
+// `code` fehlt bewusst: es steht in Links, Lesezeichen und in der
+// Startseiten-Verknüpfung der PWA. Ein Kürzel zu ändern hiesse, all das
+// stillschweigend kaputtzumachen.
 async function updateTeam(req, res, next) {
   try {
     if (!ADMIN_ROLES.includes(req.userRole)) {
@@ -384,10 +389,23 @@ async function updateTeam(req, res, next) {
     }
 
     await teamRepository.updateTeam(team.id, check.fields);
+
+    // Die Meldung soll sagen, was tatsächlich passiert ist. Wird NUR die
+    // Ligaverknüpfung angefasst, ist deren Zustand die Nachricht – sonst
+    // genügt die allgemeine Bestätigung.
+    const onlyLeague =
+      Object.keys(check.fields).length === 1 &&
+      'handball_team_id' in check.fields;
+
     return res.json({
-      message: check.fields.handball_team_id
-        ? 'Ligaverknüpfung gespeichert.'
-        : 'Ligaverknüpfung entfernt.',
+      message: onlyLeague
+        ? check.fields.handball_team_id
+          ? 'Ligaverknüpfung gespeichert.'
+          : 'Ligaverknüpfung entfernt.'
+        : 'Stammdaten gespeichert.',
+      // Über presentTeam, damit der interne Dateipfad des Fotos den Server
+      // nicht verlässt (er wird zur URL).
+      team: presentTeam(await teamRepository.findByCode(req.params.code)),
     });
   } catch (err) {
     return next(err);

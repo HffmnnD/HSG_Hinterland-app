@@ -240,6 +240,103 @@
     @apply whitespace-pre-line text-sm leading-relaxed text-ink-soft;
   }
 
+  /* Abgeschnittener Fließtext. `-webkit-line-clamp` ist trotz des Präfixes in
+     allen aktuellen Browsern der Standardweg; die Zeilenzahl steht als
+     Variable, damit sie an einer Stelle liegt. `white-space: pre-line` bleibt
+     erhalten – Zeilenumbrüche aus dem Formular zählen also mit. */
+  .news-body--collapsed {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--news-clamp, 6);
+    line-clamp: var(--news-clamp, 6);
+    overflow: hidden;
+  }
+
+  /* ------------------------------------------------------ Bilderstrecke */
+  .news-gallery {
+    @apply grid list-none gap-2 p-0;
+  }
+
+  /* Ein einzelnes Bild bekommt die volle Breite – so wie bisher. */
+  .news-gallery--single {
+    @apply grid-cols-1;
+  }
+
+  /* Ab zwei Bildern Kacheln: auf dem Handy zwei nebeneinander, ab `sm` drei.
+     Mehr Spalten würden die Kacheln zu Briefmarken machen. */
+  .news-gallery--grid {
+    @apply grid-cols-2 sm:grid-cols-3;
+  }
+
+  /* Der Knopf IST die Kachel: die ganze Fläche ist das Klickziel, nicht nur
+     das Bild darin. */
+  .news-gallery__item {
+    @apply relative block w-full overflow-hidden rounded-sm border border-line
+      bg-surface transition-colors hover:border-hsg-green;
+  }
+
+  .news-gallery__item > img {
+    @apply h-full w-full object-cover;
+  }
+
+  .news-gallery--single .news-gallery__item > img {
+    aspect-ratio: 16 / 9;
+  }
+
+  .news-gallery--grid .news-gallery__item > img {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* „+N" über der letzten Kachel, wenn mehr Bilder vorhanden sind. */
+  .news-gallery__more {
+    @apply absolute inset-0 flex items-center justify-center bg-hsg-dark/60
+      font-display text-lg font-bold text-white;
+  }
+
+  /* ------------------------------------------------------- Vollbild */
+  .lightbox {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-hsg-dark/95 p-4;
+    padding-top: calc(1rem + var(--safe-t));
+    padding-bottom: calc(1rem + var(--safe-b));
+  }
+
+  .lightbox__image {
+    @apply max-h-full max-w-full rounded-sm object-contain shadow-pop;
+  }
+
+  .lightbox__bar {
+    @apply absolute inset-x-0 top-0 z-10 flex items-center gap-3 px-4;
+    padding-top: calc(0.75rem + var(--safe-t));
+  }
+
+  .lightbox__counter {
+    @apply rounded-sm bg-black/40 px-2.5 py-1 font-display text-xs font-semibold
+      tracking-[0.06em] text-white;
+  }
+
+  /* Knöpfe auf dunklem Grund: eigener Fokusring, der dort sichtbar bleibt. */
+  .lightbox__btn {
+    @apply inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full
+      bg-black/40 text-white transition-colors hover:bg-black/70;
+  }
+
+  .lightbox__btn:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+  }
+
+  .lightbox__nav {
+    @apply absolute top-1/2 z-10 -translate-y-1/2;
+  }
+
+  .lightbox__nav--prev {
+    @apply left-3;
+  }
+
+  .lightbox__nav--next {
+    @apply right-3;
+  }
+
   /* dezenter, aber sichtbarer Hinweiskasten */
   .card-note {
     @apply rounded border border-dashed border-line-strong bg-surface p-5 text-sm text-ink-muted;
@@ -558,6 +655,118 @@
   .skeleton {
     @apply block rounded-sm bg-surface-strong;
     animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* ================================================== Verwaltung (/admin) */
+  /* Die Bereichsnavigation nutzt `.tabs` / `.tab` – dieselben Klassen wie die
+     Mannschaftsseite. Es gibt bewusst KEIN eigenes Navigationsmuster für die
+     Verwaltung: Reiter sollen in der ganzen App gleich aussehen. */
+
+  /* Karte eines Verwaltungsabschnitts. */
+  .admin-card {
+    @apply rounded-md border border-line bg-paper shadow-card;
+  }
+
+  .admin-card__header {
+    @apply flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5;
+  }
+
+  .admin-card__body {
+    @apply px-4 py-4 sm:px-5;
+  }
+
+  /* Werkzeugleiste über einer Tabelle (Suche, Filter, Umschalter). Bleibt
+     beim Scrollen langer Listen sichtbar. */
+  .admin-toolbar {
+    @apply flex flex-col gap-2 border-b border-line bg-surface/70 px-4 py-3 sm:flex-row sm:items-center sm:px-5;
+  }
+
+  /* Suchfeld mit Platz für das Lupen-Icon links. */
+  .admin-search {
+    @apply block min-h-11 w-full rounded-sm border border-line-strong bg-paper py-2.5 pl-9 pr-9
+      text-sm text-ink placeholder:text-ink-muted transition-colors
+      focus:border-hsg-green focus:outline-none focus:ring-2 focus:ring-hsg-green/25;
+  }
+
+  /* ------------------------------------------------- Kennzahlen & Messer */
+  .stat-card {
+    @apply rounded-md border border-line bg-paper p-4 shadow-card;
+  }
+
+  .stat-card__label {
+    @apply flex items-center gap-2 font-display text-[0.6875rem] font-semibold
+      uppercase tracking-[0.1em] text-ink-muted;
+  }
+
+  /* Balken, der einen Anteil an einem Maximum zeigt (RAM, CPU, Platte).
+     Die Spur ist eine hellere Stufe derselben Farbfamilie – so lässt sich der
+     Zustand über die ganze Breite ablesen, nicht nur am gefüllten Teil. */
+  .meter {
+    @apply mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-strong;
+  }
+
+  .meter__fill {
+    @apply block h-full rounded-full transition-[width] duration-500;
+  }
+
+  /* --------------------------------------------------------- Diagramme */
+  .chart-frame {
+    @apply mt-1 w-full;
+    /* feste Höhe: sonst kollabiert der ResponsiveContainer beim ersten Rendern */
+    height: 260px;
+  }
+
+  .chart-frame--short {
+    height: 180px;
+  }
+
+  /* Karte im Recharts-Tooltip – bewusst dieselbe Sprache wie .card. */
+  .chart-tooltip {
+    @apply rounded border border-line-strong bg-paper px-3 py-2 text-xs shadow-pop;
+  }
+
+  /* --------------------------------------------------------------- Modal */
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-end justify-center bg-hsg-dark/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4;
+  }
+
+  /* Die Breite setzt <Modal> je nach `size` als Utility (sm:max-w-…) – hier
+     steht nur, was für jeden Dialog gilt. */
+  .modal-panel {
+    @apply max-h-[92dvh] w-full overflow-y-auto rounded-t-lg border border-line bg-paper
+      shadow-pop sm:rounded-lg;
+    padding-bottom: var(--safe-b);
+  }
+
+  .modal-header {
+    @apply sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-paper px-5 py-4;
+  }
+
+  /* ---------------------------------------------------------- Paginierung */
+  .pagination {
+    @apply flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 sm:px-5;
+  }
+
+  .pagination__btn {
+    @apply inline-flex min-h-9 items-center gap-1 rounded-sm border border-line-strong bg-paper px-2.5
+      font-display text-xs font-semibold uppercase tracking-[0.05em] text-ink-soft
+      transition-colors hover:border-hsg-green hover:text-hsg-green-dark
+      disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-line-strong
+      disabled:hover:text-ink-soft;
+  }
+
+  /* Umschalter „Aktive News" / „Archiv" – zwei bis drei feste Stellungen. */
+  .switcher {
+    @apply inline-flex rounded-md border border-line bg-surface p-1;
+  }
+
+  .switcher__btn {
+    @apply inline-flex min-h-9 items-center gap-1.5 rounded px-3 font-display text-xs
+      font-semibold uppercase tracking-[0.05em] text-ink-muted transition-colors hover:text-ink;
+  }
+
+  .switcher__btn--active {
+    @apply bg-paper text-ink shadow-card;
   }
 
   /* Umschalter (Tabs) Login / Registrierung */

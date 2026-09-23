@@ -119,8 +119,31 @@ function imageFileFilter(req, file, cb) {
   return cb(null, true);
 }
 
+// Wie viele Bilder EIN Upload-Request mitbringen darf.
+//
+// Die Zahl der Bilder je BEITRAG ist seit Migration 008 unbegrenzt (eigene
+// Tabelle `news_images`). Begrenzt wird hier nur der einzelne Request – und
+// zwar aus Lastgründen, nicht aus fachlichen: ohne Obergrenze könnte ein
+// angemeldetes Verwaltungskonto in einer Anfrage beliebig viele 5-MB-Dateien
+// schicken, die multer alle auf die Platte schreibt, bevor irgendein Code sie
+// zu Gesicht bekommt. 20 × 5 MB = 100 MB je Anfrage sind die Obergrenze; für
+// eine Bilderstrecke eines Spieltags ist das reichlich.
+const MAX_NEWS_IMAGES_PER_REQUEST = Number.parseInt(
+  process.env.NEWS_MAX_IMAGES_PER_REQUEST,
+  10
+) || 20;
+
+// Feldname des Bild-Uploads. Alle Bilder kommen unter DEMSELBEN Namen; ihre
+// Reihenfolge ergibt sich aus der Reihenfolge im Formular.
+const NEWS_IMAGE_FIELD = 'images';
+
 /**
- * Middleware für ein einzelnes, optionales Bild im Feld `image`.
+ * Middleware für beliebig viele optionale Bilder im Feld `images`.
+ *
+ * `.array()` statt `.fields()`: Bei einer offenen Zahl von Bildern gibt es
+ * keine festen Plätze mehr, die man einzeln benennen könnte. Die Anzeige-
+ * reihenfolge ist die Übertragungsreihenfolge – multer behält sie in
+ * `req.files` bei.
  *
  * Die Feld-Limits sind wichtig: `express.json({ limit })` greift bei
  * multipart/form-data NICHT. Ohne sie könnte ein (angemeldeter) Angreifer
@@ -132,15 +155,24 @@ const uploadNewsImage = multer({
   fileFilter: imageFileFilter,
   limits: {
     fileSize: MAX_IMAGE_BYTES,
-    files: 1,
+    files: MAX_NEWS_IMAGES_PER_REQUEST,
     // title + content + etwas Reserve
     fields: 8,
-    parts: 12,
+    // Textfelder + Dateien + Puffer
+    parts: MAX_NEWS_IMAGES_PER_REQUEST + 12,
     fieldNameSize: 100,
     // 64 KB decken 5000 Zeichen auch in UTF-8 mit 4-Byte-Zeichen ab.
     fieldSize: 64 * 1024,
   },
-}).single('image');
+}).array(NEWS_IMAGE_FIELD, MAX_NEWS_IMAGES_PER_REQUEST);
+
+/**
+ * Die hochgeladenen Beitragsbilder in Anzeigereihenfolge.
+ * @returns {Express.Multer.File[]} 0–n Dateien
+ */
+function newsImageFiles(files) {
+  return Array.isArray(files) ? files : [];
+}
 
 /**
  * Mannschaftsfoto für den Kopfbereich der Mannschaftsseite.
@@ -240,7 +272,8 @@ async function removeUpload(storedPath) {
 const MULTER_MESSAGES = {
   LIMIT_FILE_SIZE: () =>
     `Das Bild darf höchstens ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))} MB groß sein.`,
-  LIMIT_FILE_COUNT: () => 'Es ist nur ein Bild pro Beitrag erlaubt.',
+  LIMIT_FILE_COUNT: () =>
+    `Es sind höchstens ${MAX_NEWS_IMAGES_PER_REQUEST} Bilder pro Upload erlaubt.`,
   LIMIT_UNEXPECTED_FILE: () => 'Unerwartetes Datei-Feld.',
   LIMIT_FIELD_COUNT: () => 'Zu viele Formularfelder.',
   LIMIT_PART_COUNT: () => 'Zu viele Teile im Formular.',
@@ -288,9 +321,12 @@ module.exports = {
   UPLOAD_ROOT,
   PUBLIC_PREFIX,
   MAX_IMAGE_BYTES,
+  MAX_NEWS_IMAGES_PER_REQUEST,
+  NEWS_IMAGE_FIELD,
   NEWS_SUBDIR,
   TEAMS_SUBDIR,
   uploadNewsImage,
+  newsImageFiles,
   uploadTeamPhoto,
   relativePathFor,
   teamPhotoPathFor,
