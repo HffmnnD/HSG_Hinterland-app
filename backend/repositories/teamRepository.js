@@ -81,6 +81,15 @@ async function findByCode(code, runner = pool) {
   return mapTeam(rows[0]);
 }
 
+/** Eine Mannschaft anhand ihrer id. null wenn unbekannt. */
+async function findById(id, runner = pool) {
+  const [rows] = await runner.query(
+    `SELECT ${TEAM_COLUMNS} FROM teams WHERE id = ?`,
+    [id]
+  );
+  return mapTeam(rows[0]);
+}
+
 /**
  * Stammdaten einer Mannschaft ändern (Ligaverknüpfung, Foto).
  * `fields` enthält bereits geprüfte Spaltennamen.
@@ -284,6 +293,39 @@ async function listRosterCandidates(teamId, relationType, runner = pool) {
   }));
 }
 
+/**
+ * Bestätigte Spieler:innen einer oder mehrerer Mannschaften – der Kader, der
+ * zu einem Termin Rückmeldung gibt.
+ *
+ * Bewusst NUR `player`: Trainer:innen verwalten die Anwesenheit, sie stehen
+ * nicht selbst in der Anwesenheitsliste. Wer beides ist (trainiert die MJC und
+ * spielt bei den Herren), hat dafür zwei Zuordnungen.
+ *
+ * @param {number[]} teamIds
+ * @returns {Promise<{teamId:number, id:number, firstName:string,
+ *                    lastName:string, jerseyNumber:number|null}[]>}
+ */
+async function listConfirmedPlayers(teamIds, runner = pool) {
+  if (teamIds.length === 0) return [];
+  const [rows] = await runner.query(
+    `SELECT ut.team_id, u.id, u.first_name, u.last_name, ut.jersey_number
+       FROM user_teams ut
+       JOIN users u ON u.id = ut.user_id
+      WHERE ut.team_id IN (?)
+        AND ut.relation_type = 'player'
+        AND ut.is_confirmed = 1
+      ORDER BY u.last_name, u.first_name`,
+    [teamIds]
+  );
+  return rows.map((row) => ({
+    teamId: row.team_id,
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    jerseyNumber: row.jersey_number ?? null,
+  }));
+}
+
 // --- Zuordnungen schreiben ------------------------------------------------
 
 /**
@@ -410,6 +452,7 @@ module.exports = {
   POSITIONS,
   listAll,
   findByCode,
+  findById,
   updateTeam,
   getSponsors,
   updateRelationDetails,
@@ -421,6 +464,7 @@ module.exports = {
   getConfirmedRoster,
   getPendingMembers,
   listRosterCandidates,
+  listConfirmedPlayers,
   addRelation,
   removeRelation,
   confirmRelations,

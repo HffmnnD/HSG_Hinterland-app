@@ -42,6 +42,8 @@ frontend/src/
     useHandball.js             useHandballTable / useHandballSchedule /
                                useLiveTicker (Polling im 10-Sekunden-Takt)
                                Quelle: nuLiga (HHV), siehe backend/README.md
+    useSchedule.js             useEvents / useAbsences / useEventSeries /
+                               useAttendanceHistory (Termin-Modul)
   lib/
     api.js                     fetch-Wrapper, IMMER credentials: 'include'
                                (setzt bei FormData bewusst KEINEN Content-Type)
@@ -51,6 +53,8 @@ frontend/src/
     format.js                  deutsche Datumsformate
     handball.js                Beschriftungen, Ergebnis-/Zeitformate und
                                Ereignis-Symbole des Handball-Moduls
+    schedule.js                Terminarten, Status-Farben, Datums-/Zeitformate
+                               und CSV-Export des Termin-Moduls
   components/
     AppLayout.jsx              Gerüst aller geschützten Seiten:
                                Kopfzeile + MainNav + Inhalt + BottomNav
@@ -70,7 +74,7 @@ frontend/src/
     NewsManager.jsx            Verwaltung der News: Formular + Liste + Löschen
     Dashboard.jsx              /: News-Feed, „Meine Mannschaften“, Konto
     TeamsPage.jsx              /teams: eigene + alle Mannschaften
-    SchedulePage.jsx           /termine: Vorschau auf das Termin-Modul
+    SchedulePage.jsx           /termine: Termin-Modul mit Reitern
     AdminPage.jsx              /admin: Mitgliederliste + News-Verwaltung
     TeamPage.jsx               /teams/:code: Fan-Mannschaftsseite mit Reitern
                                (Übersicht / Spielplan & Tabelle / Kader /
@@ -81,6 +85,18 @@ frontend/src/
       RosterSection.jsx        Kader: Trainerstab, Spielerkarten, Positionsfilter
       TeamManagePanel.jsx      Verwaltung: Anfragen, Zuordnungen, Stammdaten
       Skeleton.jsx             Lade-Platzhalter
+    schedule/
+      UpcomingPanel.jsx        Terminliste, nach Monat gruppiert
+      EventCard.jsx            ein Termin: Zeit, Ort, eigener Status,
+                               Schnellaktionen, Absagen, Kader zum Aufklappen
+      EventAttendance.jsx      volle Kaderliste eines Termins (+ Übersteuern)
+      DeclineForm.jsx          Abmeldung – Grund ist Pflicht
+      StatusBadge.jsx          Status-Chip + Zählung „12 dabei / 2 fehlen"
+      EventForm.jsx            Termin/Serie anlegen und bearbeiten
+      AbsencePanel.jsx         eigener Urlaub / eigene Verletzungen
+      TeamAbsences.jsx         längerfristige Ausfälle im Kader (Trainer)
+      HistoryPanel.jsx         Historie, Beteiligungsquote, CSV-Export
+      PlanningPanel.jsx        Planungsbereich der Trainer:innen
     handball/
       TableWidget.jsx          Ligatabelle, eigene Mannschaft hervorgehoben
       ScheduleWidget.jsx       nächste Spiele + letzte Ergebnisse, Status-Badge
@@ -129,6 +145,53 @@ Weitere Entscheidungen, die beim Weiterbauen wichtig sind:
   verschiedene Positionen im Kader).
 * **Profilbilder gibt es noch nicht.** Die Karte zeigt die Rückennummer im
   Trikot-Kreis, ersatzweise die Initialen.
+
+## Termine (`/termine`)
+
+Trainingsplan, Sondertermine und Anwesenheiten – das Gegenstück zu
+`backend/README.md` → „Termine & Anwesenheiten".
+
+**Eine Seite, zwei Rollen.** Welche Reiter erscheinen, entscheidet nicht die
+globale Rolle, sondern die Mannschaftsbeziehung, die das Backend mit der
+Terminliste zurückgibt (`teams: [{ id, code, name, canManage, isPlayer }]`):
+
+| Reiter | sichtbar für | Inhalt |
+| ------ | ------------ | ------ |
+| **Nächste Termine** | alle | Terminliste nach Datum, nach Monat gruppiert. Mit Mannschafts-Filter und „Rückblick 30 Tage". Spieler:innen sehen „Ich bin dabei" / „Abmelden", Trainer:innen zusätzlich „Bearbeiten"/„Löschen" |
+| **Meine Abwesenheiten** | wer irgendwo `player` ist | Urlaub/Verletzung mit Zeitraum eintragen und wieder entfernen |
+| **Historie & Statistik** | alle | Zeitraum- und Terminart-Filter. Trainer:innen sehen die Beteiligung des ganzen Kaders (mit CSV-Export), Spieler:innen ausschließlich ihre eigene |
+| **Planung** | wer irgendwo `coach` ist (oder Admin) | Einzeltermin / mehrtägiges Event / Serie anlegen, laufende Serien beenden, längerfristige Ausfälle im Kader |
+
+**Zu- und Absagen.** Voreinstellung ist immer „dabei" – es gibt keinen
+„ausstehend"-Zustand. Ein Klick auf „Abmelden" öffnet `DeclineForm`; ohne
+Grund lässt sich nicht absenden (das Backend weist es zusätzlich ab). Sechs
+Vorschlags-Chips („Krank", „Beruflich", …) füllen das Freitextfeld nur aus.
+
+**Farben.**
+
+| | Bedeutung |
+| --- | --- |
+| Grün gefüllt (`.badge-confirmed`) | ausdrücklich zugesagt |
+| Grün umrandet (`.badge-default`) | dabei, aber ohne Rückmeldung |
+| Rot (`.badge-declined`) | abgesagt |
+| Gelb (`.badge-pending`) | Urlaub / Verletzung |
+
+„Keine Rückmeldung" ist bewusst grün und nicht gelb: Wer nichts sagt, ist laut
+Regel dabei und wird auch so gezählt – ein gelber Chip würde suggerieren, die
+Zusage fehle noch. Der Zusatz „keine Rückmeldung" macht den Unterschied
+trotzdem sichtbar.
+
+**Sichtbarkeit der Gründe.** Wer fehlt, sehen immer alle. Warum jemand fehlt,
+nur das Trainerteam – es sei denn, beim Termin ist „Gründe für alle sichtbar"
+gesetzt. Das Frontend zeigt dann `Grund nur für das Trainerteam` statt des
+Textes; gefiltert wird aber im **Backend**, der Grund wird gar nicht erst
+ausgeliefert.
+
+**Zeitzonen.** Termine kommen als `JJJJ-MM-TTTHH:MM:SS` ohne Zeitzone an und
+werden von `new Date()` als Ortszeit gelesen – 19:00 Uhr bleibt 19:00 Uhr.
+Reine Datumsangaben (`JJJJ-MM-TT`, z. B. Urlaubsspannen) laufen **nicht** durch
+`Date`: Die würde sie als UTC lesen und den 1. Juli westlich von Greenwich zum
+30. Juni machen. Dafür gibt es `formatIsoDate()` in `lib/schedule.js`.
 
 ## Handball-Widgets
 
@@ -188,7 +251,7 @@ Touch-Ziele sind 56 px hoch.
 | `/`            | `<ProtectedRoute>` – jeder eingeloggte User   |
 | `/teams`       | `<ProtectedRoute>` – Übersicht aller Mannschaften |
 | `/teams/:code` | `<ProtectedRoute>` – jeder eingeloggte User; Verwaltung schaltet das Backend per `canManage` frei |
-| `/termine`     | `<ProtectedRoute>` – Vorschau auf das Termin-Modul |
+| `/termine`     | `<ProtectedRoute>` – jeder eingeloggte User; welche Reiter erscheinen, richtet sich nach der Mannschaftsbeziehung (siehe „Termine") |
 | `/admin`       | `<ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>` (admin, sub_admin, trainer) |
 | `*`            | Redirect auf `/`                              |
 

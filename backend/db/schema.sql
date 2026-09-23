@@ -18,6 +18,8 @@
 --      users ──1:n──> user_teams <──n:1── teams
 --      users ──1:n──> user_services
 --      teams ──1:n──> team_sponsors
+--      teams ──1:n──> event_series ──1:n──> events ──1:n──> attendances
+--      users ──1:n──> long_term_absences <──n:1── teams
 --
 -- ============================================================================
 
@@ -208,6 +210,140 @@ CREATE TABLE IF NOT EXISTS news (
 
 
 -- ----------------------------------------------------------------------------
+--  event_series – Regel einer wiederkehrenden Trainingsserie
+-- ----------------------------------------------------------------------------
+--  Die einzelnen Einheiten werden beim Anlegen als Zeilen in `events`
+--  erzeugt (materialisiert). Diese Regel bleibt erhalten, damit sich die
+--  Serie als Ganzes bearbeiten oder beenden lässt.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS event_series (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT
+               COMMENT 'Primärschlüssel, wird von events.series_id referenziert',
+  team_id      INT UNSIGNED NOT NULL
+               COMMENT 'FK -> teams.id',
+  title        VARCHAR(120) NOT NULL
+               COMMENT 'Bezeichnung, wird auf jeden erzeugten Termin übernommen',
+  type         ENUM('REGULAR_TRAINING','SINGLE_TRAINING','EVENT_CAMP','MATCH')
+               NOT NULL DEFAULT 'REGULAR_TRAINING'
+               COMMENT 'Terminart der erzeugten Einheiten',
+  location     VARCHAR(120) DEFAULT NULL
+               COMMENT 'Halle / Treffpunkt. NULL = noch offen.',
+  weekdays     TINYINT UNSIGNED NOT NULL
+               COMMENT 'Wochentage als Bitmaske: Mo=1, Di=2, Mi=4, Do=8, Fr=16, Sa=32, So=64. "Di und Do" = 10.',
+  start_time   TIME NOT NULL COMMENT 'Uhrzeit des Beginns, gilt für jeden Wochentag der Serie',
+  end_time     TIME NOT NULL COMMENT 'Uhrzeit des Endes. Vor start_time = über Mitternacht.',
+  starts_on    DATE NOT NULL COMMENT 'Erster Tag der Serie (einschließlich)',
+  ends_on      DATE NOT NULL COMMENT 'Letzter Tag der Serie (einschließlich)',
+  reasons_visible_to_all TINYINT(1) NOT NULL DEFAULT 0
+               COMMENT 'Voreinstellung für die erzeugten Termine',
+  created_by   INT UNSIGNED DEFAULT NULL COMMENT 'FK -> users.id, ON DELETE SET NULL',
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  KEY idx_event_series_team (team_id),
+
+  CONSTRAINT fk_event_series_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+  CONSTRAINT fk_event_series_author FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Regel einer wiederkehrenden Trainingsserie. Die Einheiten stehen in events.';
+
+
+-- ----------------------------------------------------------------------------
+--  events – ein konkreter Termin (Training, Sondertermin, Spiel)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS events (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT
+               COMMENT 'Primärschlüssel, wird als event_id referenziert',
+  team_id      INT UNSIGNED NOT NULL
+               COMMENT 'FK -> teams.id. Bestimmt, wer den Termin sieht.',
+  series_id    INT UNSIGNED DEFAULT NULL
+               COMMENT 'FK -> event_series.id. NULL = Einzeltermin. ON DELETE SET NULL, damit die Historie beim Löschen der Serie bleibt.',
+  title        VARCHAR(120) NOT NULL COMMENT 'z. B. "Training" oder "Handballcamp"',
+  type         ENUM('REGULAR_TRAINING','SINGLE_TRAINING','EVENT_CAMP','MATCH') NOT NULL
+               COMMENT 'REGULAR_TRAINING = Einheit aus der Trainingsserie | SINGLE_TRAINING = zusätzliches einmaliges Training | EVENT_CAMP = Sondertermin, auch mehrtägig | MATCH = Spiel',
+  location     VARCHAR(120) DEFAULT NULL COMMENT 'Halle / Treffpunkt',
+  start_time   DATETIME NOT NULL
+               COMMENT 'Beginn in ORTSZEIT (kein UTC). DATETIME statt TIMESTAMP: 19:00 Uhr bleibt 19:00 Uhr.',
+  end_time     DATETIME NOT NULL
+               COMMENT 'Ende in Ortszeit, immer nach start_time. Mehrtägige Termine enden an einem späteren Datum.',
+  reasons_visible_to_all TINYINT(1) NOT NULL DEFAULT 0
+               COMMENT 'AUS (Standard) = nur Trainer:innen sehen die Abmeldegründe, alle anderen sehen nur WER fehlt. AN = alle sehen auch WARUM.',
+  created_by   INT UNSIGNED DEFAULT NULL COMMENT 'FK -> users.id, ON DELETE SET NULL',
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  KEY idx_events_team_start (team_id, start_time),
+  KEY idx_events_series (series_id),
+
+  CONSTRAINT fk_events_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+  CONSTRAINT fk_events_series FOREIGN KEY (series_id) REFERENCES event_series(id) ON DELETE SET NULL,
+  CONSTRAINT fk_events_author FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Trainingseinheiten, Sondertermine und Spiele einer Mannschaft.';
+
+
+-- ----------------------------------------------------------------------------
+--  attendances – ausdrückliche Zu-/Absage zu EINEM Termin
+-- ----------------------------------------------------------------------------
+--  Fehlt die Zeile, gilt die Person als ZUGESAGT. Im Training ist Dabeisein
+--  der Normalfall – melden muss sich nur, wer NICHT kommt.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS attendances (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primärschlüssel',
+  event_id    INT UNSIGNED NOT NULL COMMENT 'FK -> events.id',
+  user_id     INT UNSIGNED NOT NULL COMMENT 'FK -> users.id',
+  status      ENUM('ATTENDING','DECLINED') NOT NULL
+              COMMENT 'ATTENDING = zugesagt/da | DECLINED = abgesagt/nicht da',
+  reason      VARCHAR(200) DEFAULT NULL
+              COMMENT 'Grund der Abmeldung. PFLICHT bei DECLINED, bei ATTENDING immer NULL.',
+  set_by_user_id INT UNSIGNED DEFAULT NULL
+              COMMENT 'FK -> users.id. Wer zuletzt gespeichert hat – weicht er von user_id ab, hat der/die Trainer:in übersteuert.',
+  updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+              COMMENT 'Letzte Änderung. Entscheidet gegen long_term_absences.created_at, welche Angabe die jüngere ist.',
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_attendance_event_user (event_id, user_id),
+  KEY idx_attendances_user (user_id),
+
+  CONSTRAINT fk_attendances_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+  CONSTRAINT fk_attendances_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_attendances_setter FOREIGN KEY (set_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Zu- und Absagen zu einzelnen Terminen. Keine Zeile = zugesagt.';
+
+
+-- ----------------------------------------------------------------------------
+--  long_term_absences – Urlaub, Verletzung, sonstige längere Abwesenheit
+-- ----------------------------------------------------------------------------
+--  Deckt der Zeitraum einen Termin ab, gilt die Person dort automatisch als
+--  abgesagt – ohne Zeile in `attendances`.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS long_term_absences (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primärschlüssel',
+  user_id     INT UNSIGNED NOT NULL COMMENT 'FK -> users.id',
+  team_id     INT UNSIGNED DEFAULT NULL
+              COMMENT 'FK -> teams.id. NULL = gilt für ALLE Mannschaften der Person (Normalfall).',
+  type        ENUM('VACATION','INJURY','OTHER') NOT NULL
+              COMMENT 'VACATION = Urlaub | INJURY = Verletzung | OTHER = sonstiger Grund',
+  start_date  DATE NOT NULL COMMENT 'Erster Tag (einschließlich)',
+  end_date    DATE NOT NULL COMMENT 'Letzter Tag (einschließlich), nie vor start_date',
+  note        VARCHAR(200) DEFAULT NULL
+              COMMENT 'Freitext, wird als Abmeldegrund angezeigt. NULL -> Bezeichnung des Typs.',
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+              COMMENT 'Anlagezeitpunkt. Entscheidet gegen attendances.updated_at.',
+
+  PRIMARY KEY (id),
+  KEY idx_absences_user_range (user_id, start_date, end_date),
+  KEY idx_absences_team (team_id),
+
+  CONSTRAINT fk_absences_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_absences_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Urlaub und Verletzungen. Termine im Zeitraum gelten automatisch als abgesagt.';
+
+
+-- ----------------------------------------------------------------------------
 --  schema_migrations – vom Migrations-Runner (db/migrate.js) gepflegt
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -224,5 +360,6 @@ INSERT INTO schema_migrations (filename) VALUES
   ('002_team_confirmation.sql'),
   ('003_activate_existing_accounts.sql'),
   ('004_news_table.sql'),
-  ('005_team_page.sql')
+  ('005_team_page.sql'),
+  ('009_schedule_module.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

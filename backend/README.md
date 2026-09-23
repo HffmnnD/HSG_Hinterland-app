@@ -33,6 +33,7 @@ backend/
     teamsRoutes.js
     newsRoutes.js        GET /api/news (alle angemeldeten Mitglieder)
     handballRoutes.js    Tabelle/Spielplan/Ticker (+ Rate-Limit)
+    scheduleRoutes.js    Termine, Anwesenheiten, Abwesenheiten (+ Rate-Limit)
 
   middleware/
     authMiddleware.js    authenticate (JWT-Cookie) + checkRole (RBAC)
@@ -44,17 +45,26 @@ backend/
                           candidates / add / remove / callup / Kaderangaben
     newsController.js     listNews / createNews / deleteNews (inkl. Bild-Aufräumen)
     handballController.js getTable / getSchedule / getTicker
+    eventsController.js   Termine & Serien: listEvents / getEvent / create /
+                          update / delete (scope single|series)
+    attendanceController.js respond (Zu-/Absage) / history (Beteiligung)
+    absencesController.js Urlaub & Verletzungen (long-term)
 
   services/              Anbindung fremder Systeme (kein SQL, kein HTTP-Request/Response)
     handballClient.js    HTML-Abruf von nuLiga (axios + cheerio + Timeout)
     handballMapper.js    nuLiga-HTML -> stabile App-DTOs (Scraping)
     handballService.js   Cache, Anfrage-Bündelung, Notreserve
+    teamAccess.js        wer darf welche Mannschaft sehen / verwalten
+    attendanceService.js gültiger Status aus Rückmeldung + Abwesenheit
+    scheduleService.js   Kader + Rückmeldungen + Abwesenheiten je Termin
 
   repositories/          gesamter Datenbankzugriff (alle SELECT/INSERT/JOINs)
     userRepository.js    users + zusammengesetztes Profil, Transaktionen
     teamRepository.js    teams + user_teams (Kader, Kandidaten, Zuordnungen)
     serviceRepository.js user_services
     newsRepository.js    news (Feed, Anlegen, Löschen)
+    eventRepository.js   events + event_series (Termine, Serien)
+    attendanceRepository.js attendances + long_term_absences
 
   scripts/
     sweep-uploads.js     npm run uploads:sweep – verwaiste Bilder finden/löschen
@@ -65,6 +75,8 @@ backend/
   utils/
     roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Dienste)
     validation.js        Eingabe-Prüfung -> { ok, ... } | { ok:false, status, message }
+    schedule.js          Terminarten, Wochentags-Bitmaske, Serien-Erzeugung
+    scheduleValidation.js Eingabe-Prüfung des Termin-Moduls (gleicher Vertrag)
 
   db/
     schema.sql           laufend gepflegte, kommentierte Referenz
@@ -76,6 +88,8 @@ backend/
       004_news_table.sql                 Tabelle news (Vereins-Ankündigungen)
       005_team_page.sql                  Mannschaftsseite: Ligaverknüpfung,
                                          Foto, Sponsoren, Kaderangaben
+      009_schedule_module.sql            Termin-Modul: event_series, events,
+                                         attendances, long_term_absences
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -104,6 +118,10 @@ Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
 | `team_sponsors`     | Sponsoren je Mannschaft für den Kopfbereich der Mannschaftsseite |
 | `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)`. Kaderangaben je Mannschaft: `jersey_number`, `position`, `staff_title` |
 | `user_services`     | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
+| `event_series`      | Regel einer wiederkehrenden Trainingsserie (Wochentage als Bitmaske, Uhrzeit, Zeitraum) |
+| `events`            | ein konkreter Termin: Training, Sondertermin/Camp oder Spiel. `reasons_visible_to_all` steuert, ob alle die Abmeldegründe sehen |
+| `attendances`       | Zu-/Absagen je (Termin, Person). **Keine Zeile = zugesagt.** `reason` ist bei `DECLINED` Pflicht |
+| `long_term_absences`| Urlaub/Verletzung über einen Zeitraum – markiert jeden Termin darin automatisch als Absage |
 | `schema_migrations` | vom Migrations-Runner gepflegt – welche Migration schon lief |
 
 Alle Verknüpfungstabellen haben `ON DELETE CASCADE` auf `users`.
@@ -274,6 +292,92 @@ curl -b cookies.txt -X POST http://localhost:5000/api/admin/news \
 curl -b cookies.txt -X DELETE http://localhost:5000/api/admin/news/1
 
 curl -b cookies.txt -X POST http://localhost:5000/api/auth/logout
+```
+
+## Termine & Anwesenheiten
+
+Trainingsplan, Sondertermine und Zu-/Absagen einer Mannschaft. Im Frontend
+der Reiter **„Termine"** – eine Seite für beide Rollen, der Funktionsumfang
+ergibt sich aus der Mannschaftsbeziehung.
+
+**Die drei Regeln, auf denen alles aufbaut**
+
+1. **Kein Eintrag = zugesagt.** Im Training ist Dabeisein der Normalfall;
+   melden muss sich nur, wer nicht kommt. In `attendances` steht deshalb nur,
+   wer sich aktiv geäußert hat.
+2. **Eine Absage braucht einen Grund** – ohne Grund antwortet der Endpunkt
+   `400`.
+3. **Eine dauerhafte Abwesenheit** (Urlaub/Verletzung) markiert jeden Termin
+   im Zeitraum automatisch als Absage. Widersprechen sich Rückmeldung und
+   Abwesenheit, gilt die **jüngere** Angabe.
+
+Die Auswertung dieser Regeln steckt gebündelt in
+`services/attendanceService.js` (reine Funktionen, kein SQL).
+
+**Wer darf was** (`services/teamAccess.js`)
+
+| | Termine sehen | selbst zu-/absagen | Termine anlegen, alle Gründe sehen, Anwesenheit übersteuern |
+| --- | --- | --- | --- |
+| bestätigte:r `player` | ✔ | ✔ | – |
+| bestätigte:r `coach` | ✔ | – (nur als `player`) | ✔ |
+| `admin` / `sub_admin` | ✔ (alle Mannschaften) | – | ✔ |
+| `fan`, ohne Zuordnung | – | – | – |
+
+`fan` reicht bewusst nicht: Trainingszeiten und Abmeldungen sind interne
+Mannschaftsorganisation, keine Fan-Information.
+
+| Methode | Pfad | Wer | Beschreibung |
+| ------- | ---- | --- | ------------ |
+| GET | `/api/events` | Mitglied | Termine im Zeitraum. `?teamId=` optional (ohne: **alle eigenen** Mannschaften), `?from=&to=` als `JJJJ-MM-TT` (Standard: heute bis +120 Tage). Antwort: `{ range, teams, events }`; jeder Termin mit `myStatus`, `counts` und `declined` (wer fehlt – mit Grund nur, wenn erlaubt). |
+| GET | `/api/events/:id` | Mitglied | Ein Termin mit **vollständiger** Kaderliste (`attending`, `declined`). |
+| GET | `/api/events/series?teamId=` | Verwaltung | Trainingsserien der Mannschaft inkl. Anzahl erzeugter/offener Termine. |
+| POST | `/api/events` | Verwaltung | Einzeltermin **oder** Serie. Einzeltermin: `{ teamId, title, type, location?, reasonsVisibleToAll?, startTime, endTime }` (`JJJJ-MM-TTTHH:MM`, auch mehrtägig). Serie: statt der Zeiten `recurrence: { weekdays:[2,4], startsOn, endsOn, startTime:"19:00", endTime:"20:30" }` – Wochentage ISO (1 = Montag). Legt alle Einheiten sofort an (max. 400). |
+| PUT | `/api/events/:id?scope=single\|series` | Verwaltung | `single` ändert den einen Termin inkl. Zeiten. `series` überträgt Titel, Art, Ort und Sichtbarkeit auf alle **noch nicht begonnenen** Einheiten der Serie. |
+| DELETE | `/api/events/:id?scope=single\|series` | Verwaltung | Termin löschen (Rückmeldungen per `ON DELETE CASCADE` mit) bzw. Serie ab heute beenden. |
+| DELETE | `/api/events/series/:id` | Verwaltung | Serie als Ganzes beenden – derselbe Effekt, aus der Serienübersicht heraus. |
+| POST | `/api/attendances/respond` | Spieler:in | `{ eventId, status: 'ATTENDING'\|'DECLINED', reason?, userId? }`. `reason` ist bei `DECLINED` **Pflicht**. `userId` nur für die Verwaltung (manuelles Übersteuern). Antwort enthält den **gültigen** Status – eine Abwesenheit kann die Angabe überlagern. Nach Ende des Termins `409` für Spieler:innen, die Verwaltung darf weiter korrigieren. |
+| GET | `/api/attendances/history` | Mitglied | `?teamId=` (Pflicht), `?from=&to=` (Standard: letzte 180 Tage), `?userId=`, `?type=`. Verwaltung erhält `players` (Beteiligung je Spieler:in) und auf Wunsch `entries` einer Person; ohne Verwaltungsrechte **nur die eigene** Historie. In die Quote zählen ausschließlich Termine, die bereits begonnen haben. |
+| GET | `/api/absences/long-term` | angemeldet | Ohne Parameter die **eigenen** laufenden und künftigen Einträge. `?teamId=` (Verwaltung) = alle des Kaders. `?includePast=true` nimmt abgelaufene mit. |
+| POST | `/api/absences/long-term` | Spieler:in | `{ type: 'VACATION'\|'INJURY'\|'OTHER', startDate, endDate, note?, teamId?, userId? }`. `teamId` leer = gilt für alle eigenen Mannschaften. `userId` nur für die Verwaltung und dann **nur mit** `teamId`. |
+| DELETE | `/api/absences/long-term/:id` | eigene / Verwaltung | Entfernt den Eintrag; betroffene Termine gelten wieder als zugesagt. |
+
+**Zeitzonen.** `start_time`/`end_time` sind `DATETIME` in **Ortszeit** und
+verlassen den Server als `JJJJ-MM-TTTHH:MM:SS` **ohne** Zeitzonen-Kennung
+(`DATE_FORMAT` im Repository, nicht als JS-`Date`). Ein `Date` würde beim
+JSON-Serialisieren nach UTC umgerechnet – aus dem Training um 19:00 Uhr
+würde je nach Serverzeitzone 17:00 Uhr. Die Serien-Erzeugung rechnet aus
+demselben Grund mit UTC-basierter Wanduhr-Arithmetik
+(`utils/schedule.js`), damit die Sommerzeitumstellung mitten in der Saison
+die Trainingszeit nicht verschiebt.
+
+### Beispiele (curl)
+
+```bash
+# Trainer: feste Trainingsserie (Di + Do, 19:00-20:30) bis Saisonende
+curl -b cookies.txt -X POST http://localhost:5000/api/events \
+  -H "Content-Type: application/json" \
+  -d '{"teamId":1,"title":"Training","type":"REGULAR_TRAINING","location":"Halle West",
+       "recurrence":{"weekdays":[2,4],"startsOn":"2026-09-01","endsOn":"2027-05-31",
+                     "startTime":"19:00","endTime":"20:30"}}'
+
+# Trainer: mehrtägiges Handballcamp
+curl -b cookies.txt -X POST http://localhost:5000/api/events \
+  -H "Content-Type: application/json" \
+  -d '{"teamId":1,"title":"Handballcamp","type":"EVENT_CAMP","location":"Sportschule",
+       "startTime":"2026-10-10T09:00","endTime":"2026-10-12T16:00"}'
+
+# Spieler: abmelden (ohne reason -> 400)
+curl -b cookies.txt -X POST http://localhost:5000/api/attendances/respond \
+  -H "Content-Type: application/json" \
+  -d '{"eventId":12,"status":"DECLINED","reason":"Krank"}'
+
+# Spieler: Urlaub eintragen - alle Termine im Zeitraum gelten als Absage
+curl -b cookies.txt -X POST http://localhost:5000/api/absences/long-term \
+  -H "Content-Type: application/json" \
+  -d '{"type":"VACATION","startDate":"2026-07-01","endDate":"2026-07-15","note":"Familienurlaub"}'
+
+# War Person 5 am 01.01.2026 beim Training?
+curl -b cookies.txt "http://localhost:5000/api/attendances/history?teamId=1&userId=5&from=2026-01-01&to=2026-01-01"
 ```
 
 ## Mannschaftsseite

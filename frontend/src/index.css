@@ -352,6 +352,18 @@
     @apply border border-hsg-green-line bg-hsg-green-soft text-hsg-green-darker;
   }
 
+  /* Abgesagt (Termine). Rot – die Gegenfarbe zu .badge-confirmed. */
+  .badge-declined {
+    @apply border border-danger-line bg-danger-soft text-danger;
+  }
+
+  /* Dabei, aber ohne ausdrückliche Rückmeldung. Grün wie eine Zusage, denn
+     genau so wird die Person gezählt – nur ohne die volle Füllung, damit der
+     Unterschied zur bewussten Zusage sichtbar bleibt. */
+  .badge-default {
+    @apply border border-hsg-green-line bg-paper text-hsg-green-darker;
+  }
+
   /* Laufendes Spiel (Handball-Ticker, Spielplan). Rot, weil es die einzige
      Stelle in der App ist, die „jetzt gerade" bedeutet – bewusst kräftiger
      als die übrigen Status-Chips. */
@@ -551,6 +563,29 @@
 
   .jersey--empty {
     @apply bg-surface text-sm text-ink-muted;
+  }
+
+  /* ----------------------------------------------------------- Termine */
+  /* Datumsblock links auf jeder Terminkarte. Feste Breite, damit die Titel
+     aller Karten untereinander auf einer Linie stehen – eine Terminliste
+     liest man senkrecht, nicht waagerecht. */
+  .event-date {
+    @apply flex w-12 shrink-0 flex-col items-center justify-center rounded-sm
+      border border-line bg-surface py-2 sm:w-14;
+  }
+
+  .event-date__weekday {
+    @apply font-display text-[0.625rem] font-semibold uppercase
+      leading-none tracking-[0.08em] text-ink-muted;
+  }
+
+  .event-date__day {
+    @apply mt-0.5 font-display text-xl font-bold leading-none text-hsg-green-dark;
+  }
+
+  .event-date__month {
+    @apply mt-0.5 font-display text-[0.625rem] font-semibold uppercase
+      leading-none tracking-[0.06em] text-ink-muted;
   }
 
   /* --------------------------------------------------------- Ladezustand */
