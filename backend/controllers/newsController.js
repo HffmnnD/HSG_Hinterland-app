@@ -51,7 +51,7 @@ async function listNews(req, res, next) {
 }
 
 // POST /api/admin/news
-//   multipart/form-data: title, content, image?, image2?
+//   multipart/form-data: title, content, images[] (beliebig viele, optional)
 async function createNews(req, res, next) {
   // Multer hat hochgeladene Bilder bereits auf die Platte geschrieben.
   // Scheitert danach etwas, müssen sie wieder weg – sonst sammeln sich
@@ -73,8 +73,8 @@ async function createNews(req, res, next) {
     }
 
     // Der MIME-Typ kommt vom Client. Erst die Signatur beweist, dass die Datei
-    // wirklich das behauptete Bildformat ist – geprüft wird JEDE Datei, nicht
-    // nur die erste.
+    // wirklich das behauptete Bildformat ist – geprüft wird JEDE Datei der
+    // Strecke, nicht nur die erste.
     for (const [index, path] of imagePaths.entries()) {
       if (!(await hasValidImageSignature(path, files[index].mimetype))) {
         await cleanup();

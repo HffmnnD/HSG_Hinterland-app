@@ -88,6 +88,8 @@ backend/
                                          Mannschafts-Stammdaten
                                          (Altersklasse, Geschlecht, Sortierung)
       007_news_second_image.sql          zweites Beitragsbild (image_path_2)
+      008_news_images_table.sql          Bilder in eigene Tabelle news_images
+                                         (beliebig viele je Beitrag)
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -277,26 +279,33 @@ Vereinsgröße.
 Trainer:innen dürfen News **lesen, aber nicht anlegen, archivieren oder
 löschen** – der zweite `checkRole(ADMIN_ROLES)` in `adminRoutes.js` blockt sie.
 
-### Zwei Bilder je Beitrag
+### Beliebig viele Bilder je Beitrag
 
-Ein Beitrag darf bis zu **zwei** Bilder tragen (`image_path`, `image_path_2`;
-Migration 007). Die Middleware nimmt sie in den Feldern `image` und `image2`
-entgegen (`.fields()`, `files: 2`); ein drittes wird mit `400` abgelehnt.
+Seit Migration 008 hängen die Bilder in `news_images` (1:n). Die Zahl je
+Beitrag ist im Schema **unbegrenzt**; alle Dateien kommen im Feld `images`
+(`.array()`).
 
-- Die Antwort liefert `imageUrls: string[]` (0–2 Einträge, ohne Lücken).
-  `imageUrl` bleibt als **erstes** Bild erhalten, damit bestehende Ansichten
-  unverändert weiterlaufen.
-- Wird nur `image2` geschickt, rutscht es auf Platz 1: die Oberfläche füllt die
-  Plätze der Reihe nach, und ein Beitrag soll kein Loch an Platz 1 haben.
-- **Jede** Datei wird einzeln auf ihre Signatur geprüft, nicht nur die erste.
-  Schlägt eine fehl, werden beide wieder weggeräumt.
-- `DELETE` löscht beide Dateien; `npm run uploads:sweep` liest beide Spalten
-  (sonst hielte der Lauf jedes zweite Bild für verwaist).
+- Die Antwort liefert `imageUrls: string[]` in Anzeigereihenfolge (`sort_order`).
+  `imageUrl` bleibt als **erstes** Bild erhalten, damit Ansichten mit nur einem
+  Vorschaubild unverändert weiterlaufen.
+- Reihenfolge = Übertragungsreihenfolge; der Server vergibt `sort_order`
+  lückenlos ab 0.
+- Anlegen läuft in einer **Transaktion**: scheitert das Einfügen der Bilder,
+  entsteht auch kein Beitrag. Ein Beitrag mit halber Bilderstrecke wäre
+  schlimmer als gar keiner.
+- **Jede** Datei wird einzeln auf ihre Signatur geprüft. Schlägt eine fehl,
+  werden **alle** wieder weggeräumt.
+- `DELETE` löscht alle Dateien (Pfade werden vor dem Löschen gelesen); die
+  Zeilen verschwinden per `ON DELETE CASCADE`. `npm run uploads:sweep` liest
+  `news_images`.
+- Der Feed lädt die Bilder mit EINER Sammelabfrage für alle Beiträge der Seite –
+  zwei Abfragen insgesamt, unabhängig von der Zahl der Beiträge (kein N+1).
 
-Warum zwei Spalten und keine Tabelle `news_images`: Die Obergrenze ist bewusst
-zwei. Eine 1:n-Tabelle verlangte JOIN, Sortierspalte und eigene Aufräum-Logik
-für einen festen, kleinen Fall. Wird daraus je eine echte Bilderstrecke, ist
-der Umbau eine Migration, die beide Spalten in Zeilen überführt.
+**Warum trotzdem ein Limit je Request:** `NEWS_MAX_IMAGES_PER_REQUEST`
+(Standard 20, per `.env` änderbar) begrenzt die Dateien **einer** Anfrage. Das
+ist Lastabwehr, keine fachliche Grenze: ohne Deckel könnte ein angemeldetes
+Verwaltungskonto beliebig viele 5-MB-Dateien in einer Anfrage schicken, die
+multer alle auf die Platte schreibt, bevor irgendein Code sie sieht.
 
 ### Archivieren statt löschen
 

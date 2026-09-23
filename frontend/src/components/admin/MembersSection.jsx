@@ -91,9 +91,17 @@ export default function MembersSection() {
     });
   }, []);
 
-  /** Gemeinsame PATCH-Logik mit optimistischem Update und Rollback. */
+  /**
+   * Gemeinsame PATCH-Logik mit optimistischem Update und Rollback.
+   *
+   * Der Rollback stellt gezielt die EINE betroffene Zeile wieder her, statt
+   * eine beim Aufruf gemachte Momentaufnahme der ganzen Liste zurückzuspielen.
+   * Werden zwei Zeilen kurz nacheinander bearbeitet und die zweite schlägt
+   * fehl, hätte die Momentaufnahme auch die erfolgreiche Änderung der ersten
+   * wieder verworfen – sichtbar, bis `reload()` durch ist.
+   */
   const patchUser = async (id, body, optimistic) => {
-    const previous = users;
+    const before = users.find((u) => u.id === id);
     setSaving(id, true);
     setError(null);
     setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...optimistic } : u)));
@@ -105,7 +113,9 @@ export default function MembersSection() {
       });
       setStatsKey((key) => key + 1);
     } catch (err) {
-      setUsers(previous);
+      if (before) {
+        setUsers((prev) => prev.map((u) => (u.id === id ? before : u)));
+      }
       setError(err.message);
       reload();
     } finally {

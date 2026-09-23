@@ -92,22 +92,38 @@ export default function AdminPage() {
   );
 
   const requested = searchParams.get('bereich');
-  const active = sections.find((section) => section.key === requested) ?? sections[0];
+  // `sections` kann heute nicht leer sein (der Bereich „Mitglieder" ist für
+  // alle Verwaltungsrollen sichtbar). Der Zugriff auf `sections[0]` wäre aber
+  // die Stelle, die still mit „cannot read property 'key' of undefined"
+  // abstürzt, sobald jemand künftig auch dort `adminOnly` setzt.
+  const active =
+    sections.find((section) => section.key === requested) ?? sections[0] ?? null;
 
   // Unbekannter oder unerlaubter Bereich in der Adresse (alter Link, Tippfehler,
   // Trainer:in öffnet einen Admin-Link): still auf den ersten Bereich
   // zurückfallen, statt eine leere Seite zu zeigen.
   useEffect(() => {
-    if (requested && requested !== active.key) {
+    if (active && requested && requested !== active.key) {
       setSearchParams({ bereich: active.key }, { replace: true });
     }
-  }, [requested, active.key, setSearchParams]);
+  }, [requested, active, setSearchParams]);
 
   const selectSection = (key) => {
     setSearchParams(key === DEFAULT_SECTION ? {} : { bereich: key }, {
       replace: true,
     });
   };
+
+  if (!active) {
+    return (
+      <AppLayout width="max-w-7xl">
+        <h1 className="page-title">Verwaltung</h1>
+        <div role="alert" className="alert alert-info mt-4">
+          Für deine Rolle ist derzeit kein Verwaltungsbereich freigeschaltet.
+        </div>
+      </AppLayout>
+    );
+  }
 
   const ActiveSection = active.Component;
 

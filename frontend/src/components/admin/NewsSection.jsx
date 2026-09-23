@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Archive,
   ArchiveRestore,
+  ChevronLeft,
+  ChevronRight,
   ImagePlus,
   Newspaper,
   Plus,
@@ -19,11 +21,13 @@ import { EmptyState, ErrorNote, Loading, SuccessNote } from './ui/Feedback';
 const MAX_TITLE_LENGTH = 150;
 const MAX_CONTENT_LENGTH = 5000;
 const MAX_IMAGE_MB = 5;
-// Zwei Bilder je Beitrag – das Schwarze Brett ist keine Galerie.
-const IMAGE_SLOTS = [
-  { field: 'image', label: 'Erstes Bild' },
-  { field: 'image2', label: 'Zweites Bild' },
-];
+// Feldname des Uploads – alle Bilder kommen unter demselben Namen, ihre
+// Reihenfolge ist die Anzeigereihenfolge. Muss zu config/uploads.js passen.
+const IMAGE_FIELD = 'images';
+// Muss zu MAX_NEWS_IMAGES_PER_REQUEST im Backend passen. Die Zahl der Bilder
+// je Beitrag ist im Datenmodell unbegrenzt; begrenzt ist nur der einzelne
+// Upload (Lastabwehr).
+const MAX_IMAGES_PER_UPLOAD = 20;
 
 /**
  * News-Verwaltung mit Archiv.
@@ -394,58 +398,132 @@ function ConfirmDelete({ item, busy, onCancel, onConfirm }) {
 function NewsComposer({ open, onClose, onPublished }) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  // Ein Eintrag je Bildplatz: { file, previewUrl } oder null.
-  const [images, setImages] = useState([null, null]);
+  // Beliebig viele Einträge: { id, file, previewUrl }. `id` ist der
+  // React-Key – Dateiname und URL taugen dafür nicht, weil dieselbe Datei
+  // zweimal ausgewählt werden darf.
+  const [images, setImages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
 
-  const fileInputs = useRef([]);
+  const fileInput = useRef(null);
+  const naechsteId = useRef(0);
+  // Zweite Sicht auf denselben Zustand. Nötig, weil die Vorschau-URLs
+  // AUSSERHALB des Renderns freigegeben werden müssen (siehe applyImages) und
+  // dafür immer der aktuelle Stand gebraucht wird – auch in einem Aufruf, der
+  // nicht auf ein Rendern gewartet hat.
+  const imagesRef = useRef(images);
 
-  // Die Vorschau-URLs entstehen direkt bei der Auswahl. Dieser Effekt gibt sie
-  // nur wieder frei – beim Bildwechsel und beim Schließen –, damit der Browser
-  // die Dateien nicht festhält.
-  useEffect(() => {
-    const urls = images.map((entry) => entry?.previewUrl).filter(Boolean);
-    return () => urls.forEach((url) => URL.revokeObjectURL(url));
-  }, [images]);
-
-  /** Bild an Platz `index` setzen oder entfernen (`file = null`). */
-  const setImage = (index, file) => {
-    setImages((prev) => {
-      const next = [...prev];
-      next[index] = file ? { file, previewUrl: URL.createObjectURL(file) } : null;
-      return next;
+  /**
+   * Setzt beide Sichten gemeinsam und gibt genau die Vorschau-URLs frei, die
+   * dabei wegfallen.
+   *
+   * Warum nicht per Effekt mit `[images]`: Dessen Aufräumfunktion bekommt die
+   * URLs des VORHERIGEN Zustands und gibt sie alle frei – auch die von
+   * Bildern, die noch da sind. Beim Hinzufügen eines weiteren Bildes wurden so
+   * die Vorschauen der vorherigen widerrufen. Verglichen wird über die
+   * Objektidentität: was im neuen Zustand noch vorkommt, behält seine URL.
+   */
+  const applyImages = (next) => {
+    imagesRef.current.forEach((entry) => {
+      if (!next.includes(entry)) URL.revokeObjectURL(entry.previewUrl);
     });
+    imagesRef.current = next;
+    setImages(next);
   };
 
-  const handleImageChange = (index) => (event) => {
-    const file = event.target.files?.[0] ?? null;
+  /** Alle Bilder verwerfen und ihre Vorschau-URLs freigeben. */
+  const clearImages = () => applyImages([]);
+
+  // Letztes Netz: Wird das Formular abgeräumt (Reiterwechsel), während noch
+  // Bilder gewählt sind, blieben deren URLs sonst bis zum Neuladen der Seite
+  // bestehen.
+  useEffect(
+    () => () => {
+      imagesRef.current.forEach((entry) => URL.revokeObjectURL(entry.previewUrl));
+    },
+    []
+  );
+
+  /**
+   * Ausgewählte Dateien anhängen.
+   *
+   * `URL.createObjectURL` steht bewusst HIER und nicht in einem
+   * `setImages(prev => …)`-Updater: Updater müssen frei von Seiteneffekten
+   * sein. React ruft sie unter StrictMode doppelt auf – es entstünden doppelt
+   * so viele URLs, von denen die Hälfte nie freigegeben würde.
+   */
+  const handleImageChange = (event) => {
+    const gewaehlt = [...(event.target.files ?? [])];
+    // Das Feld sofort leeren: sonst löst dieselbe Datei beim nächsten Mal kein
+    // `change` aus, und Anhängen wäre nur einmal möglich.
+    event.target.value = '';
     setFormError(null);
+    if (gewaehlt.length === 0) return;
 
-    // Größe schon im Browser prüfen – spart einen sinnlosen Upload.
-    if (file && file.size > MAX_IMAGE_MB * 1024 * 1024) {
-      setFormError(`Jedes Bild darf höchstens ${MAX_IMAGE_MB} MB groß sein.`);
-      event.target.value = '';
-      setImage(index, null);
-      return;
+    const zuGross = gewaehlt.filter(
+      (file) => file.size > MAX_IMAGE_MB * 1024 * 1024
+    );
+    const passend = gewaehlt.filter(
+      (file) => file.size <= MAX_IMAGE_MB * 1024 * 1024
+    );
+
+    const frei = MAX_IMAGES_PER_UPLOAD - imagesRef.current.length;
+    const angenommen = passend.slice(0, Math.max(0, frei));
+
+    // Ehrlich melden, was NICHT übernommen wurde – stillschweigend Dateien zu
+    // schlucken ist die schlechteste Variante.
+    const hinweise = [];
+    if (zuGross.length > 0) {
+      hinweise.push(
+        `${zuGross.length} ${zuGross.length === 1 ? 'Bild ist' : 'Bilder sind'} größer als ${MAX_IMAGE_MB} MB und ${zuGross.length === 1 ? 'wurde' : 'wurden'} nicht übernommen.`
+      );
     }
-    setImage(index, file);
+    if (passend.length > angenommen.length) {
+      hinweise.push(
+        `Höchstens ${MAX_IMAGES_PER_UPLOAD} Bilder je Beitrag – ${passend.length - angenommen.length} davon ${passend.length - angenommen.length === 1 ? 'wurde' : 'wurden'} nicht übernommen.`
+      );
+    }
+    if (hinweise.length > 0) setFormError(hinweise.join(' '));
+
+    if (angenommen.length === 0) return;
+
+    applyImages([
+      ...imagesRef.current,
+      ...angenommen.map((file) => {
+        naechsteId.current += 1;
+        return {
+          id: naechsteId.current,
+          file,
+          previewUrl: URL.createObjectURL(file),
+        };
+      }),
+    ]);
   };
 
-  const removeImage = (index) => {
-    setImage(index, null);
-    const input = fileInputs.current[index];
-    if (input) input.value = '';
+  /** Ein Bild aus der Strecke nehmen. */
+  const removeImage = (id) => {
+    applyImages(imagesRef.current.filter((entry) => entry.id !== id));
+    setFormError(null);
+  };
+
+  /** Ein Bild um eine Position verschieben (Reihenfolge = Anzeigereihenfolge). */
+  const moveImage = (id, richtung) => {
+    const aktuell = imagesRef.current;
+    const von = aktuell.findIndex((entry) => entry.id === id);
+    const nach = von + richtung;
+    if (von < 0 || nach < 0 || nach >= aktuell.length) return;
+
+    const next = [...aktuell];
+    [next[von], next[nach]] = [next[nach], next[von]];
+    applyImages(next);
   };
 
   const resetForm = () => {
     setTitle('');
     setContent('');
-    setImages([null, null]);
+    clearImages();
     setFormError(null);
-    fileInputs.current.forEach((input) => {
-      if (input) input.value = '';
-    });
+    if (fileInput.current) fileInput.current.value = '';
   };
 
   const handleSubmit = async (event) => {
@@ -463,9 +541,8 @@ function NewsComposer({ open, onClose, onPublished }) {
     const body = new FormData();
     body.append('title', title.trim());
     body.append('content', content.trim());
-    images.forEach((entry, index) => {
-      if (entry) body.append(IMAGE_SLOTS[index].field, entry.file);
-    });
+    // Reihenfolge im FormData = Reihenfolge im Beitrag.
+    images.forEach((entry) => body.append(IMAGE_FIELD, entry.file));
 
     setSubmitting(true);
     try {
@@ -533,25 +610,58 @@ function NewsComposer({ open, onClose, onPublished }) {
         </div>
 
         <div>
-          <span className="field-label">Bilder (optional)</span>
-          <div className="grid grid-cols-2 gap-3">
-            {IMAGE_SLOTS.map((slot, index) => (
-              <ImageSlot
-                key={slot.field}
-                label={slot.label}
-                entry={images[index]}
-                disabled={submitting}
-                inputRef={(element) => {
-                  fileInputs.current[index] = element;
-                }}
-                onChange={handleImageChange(index)}
-                onRemove={() => removeImage(index)}
-              />
-            ))}
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="field-label mb-0">Bilder (optional)</span>
+            {images.length > 0 && (
+              <span className="text-xs text-ink-muted">
+                {images.length} von {MAX_IMAGES_PER_UPLOAD}
+              </span>
+            )}
           </div>
+
+          {images.length > 0 && (
+            <ul className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {images.map((entry, index) => (
+                <ImageThumb
+                  key={entry.id}
+                  entry={entry}
+                  index={index}
+                  gesamt={images.length}
+                  disabled={submitting}
+                  onRemove={() => removeImage(entry.id)}
+                  onMove={(richtung) => moveImage(entry.id, richtung)}
+                />
+              ))}
+            </ul>
+          )}
+
+          {images.length < MAX_IMAGES_PER_UPLOAD && (
+            <label
+              className={`mt-2 flex min-h-11 cursor-pointer items-center justify-center gap-2
+                rounded-sm border border-dashed border-line-strong bg-surface px-3 py-3
+                text-sm font-semibold text-ink-muted transition-colors
+                hover:border-hsg-green hover:text-hsg-green-dark
+                focus-within:ring-2 focus-within:ring-hsg-green/40
+                ${submitting ? 'pointer-events-none opacity-55' : ''}`}
+            >
+              <ImagePlus size={16} aria-hidden="true" />
+              {images.length === 0 ? 'Bilder auswählen' : 'Weitere Bilder hinzufügen'}
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+                className="sr-only"
+                onChange={handleImageChange}
+                disabled={submitting}
+              />
+            </label>
+          )}
+
           <p className="field-hint">
-            Bis zu zwei Bilder · JPG, PNG, WEBP oder GIF · je max. {MAX_IMAGE_MB}{' '}
-            MB
+            Mehrfachauswahl möglich · JPG, PNG, WEBP oder GIF · je max.{' '}
+            {MAX_IMAGE_MB} MB · die Reihenfolge hier ist die Reihenfolge im
+            Beitrag
           </p>
         </div>
 
@@ -574,58 +684,70 @@ function NewsComposer({ open, onClose, onPublished }) {
 }
 
 /**
- * Ein Bildplatz: leer eine gestrichelte Auswahlfläche, belegt die Vorschau mit
- * Entfernen-Knopf. Beide sind gleich groß (16:9), damit das Formular beim
- * Auswählen eines Bildes nicht springt.
+ * Eine Kachel der Bilderstrecke im Formular: Vorschau, Entfernen-Knopf und
+ * zwei Pfeile zum Umsortieren.
+ *
+ * Die Pfeile statt Ziehen-und-Ablegen: Drag & Drop müsste für Maus, Touch und
+ * Tastatur getrennt gebaut werden und wäre ohne Bibliothek deutlich mehr Code,
+ * als diese Aufgabe wert ist. Zwei Knöpfe funktionieren überall gleich.
  */
-function ImageSlot({ label, entry, disabled, inputRef, onChange, onRemove }) {
-  if (entry) {
-    return (
-      <div className="relative">
-        <img
-          src={entry.previewUrl}
-          alt={`Vorschau: ${label}`}
-          className="w-full rounded-sm border border-line bg-surface object-cover"
-          style={{ aspectRatio: '16 / 9' }}
-        />
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={disabled}
-          aria-label={`${label} entfernen`}
-          title="Bild entfernen"
-          className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center
-            rounded-sm border border-line-strong bg-paper/90 text-ink-muted backdrop-blur
-            transition-colors hover:border-danger hover:text-danger"
-        >
-          <X size={14} aria-hidden="true" />
-        </button>
-        <p className="mt-1 truncate text-xs text-ink-muted" title={entry.file.name}>
-          {entry.file.name}
-        </p>
-      </div>
-    );
-  }
-
+function ImageThumb({ entry, index, gesamt, disabled, onRemove, onMove }) {
   return (
-    <label
-      className={`flex cursor-pointer flex-col items-center justify-center gap-1.5
-        rounded-sm border border-dashed border-line-strong bg-surface text-ink-muted
-        transition-colors hover:border-hsg-green hover:text-hsg-green-dark
-        focus-within:ring-2 focus-within:ring-hsg-green/40
-        ${disabled ? 'pointer-events-none opacity-55' : ''}`}
-      style={{ aspectRatio: '16 / 9' }}
-    >
-      <ImagePlus size={18} aria-hidden="true" />
-      <span className="text-xs font-semibold">{label}</span>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
-        className="sr-only"
-        onChange={onChange}
-        disabled={disabled}
+    <li className="relative">
+      <img
+        src={entry.previewUrl}
+        alt={`Vorschau ${index + 1} von ${gesamt}`}
+        className="w-full rounded-sm border border-line bg-surface object-cover"
+        style={{ aspectRatio: '4 / 3' }}
       />
-    </label>
+
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        aria-label={`Bild ${index + 1} entfernen`}
+        title="Bild entfernen"
+        className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center
+          rounded-sm border border-line-strong bg-paper/90 text-ink-muted backdrop-blur
+          transition-colors hover:border-danger hover:text-danger"
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
+
+      {gesamt > 1 && (
+        <div className="absolute bottom-1.5 left-1.5 flex gap-1">
+          <button
+            type="button"
+            onClick={() => onMove(-1)}
+            disabled={disabled || index === 0}
+            aria-label={`Bild ${index + 1} nach vorne`}
+            title="Nach vorne"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-sm border
+              border-line-strong bg-paper/90 text-ink-soft backdrop-blur transition-colors
+              hover:border-hsg-green hover:text-hsg-green-dark
+              disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronLeft size={14} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMove(1)}
+            disabled={disabled || index === gesamt - 1}
+            aria-label={`Bild ${index + 1} nach hinten`}
+            title="Nach hinten"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-sm border
+              border-line-strong bg-paper/90 text-ink-soft backdrop-blur transition-colors
+              hover:border-hsg-green hover:text-hsg-green-dark
+              disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronRight size={14} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      <p className="mt-1 truncate text-xs text-ink-muted" title={entry.file.name}>
+        {entry.file.name}
+      </p>
+    </li>
   );
 }

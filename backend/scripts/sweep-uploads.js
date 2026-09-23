@@ -27,12 +27,10 @@ const APPLY = process.argv.includes('--apply');
 const REFERENCE_QUERIES = [
   {
     label: 'News-Bilder',
-    // UNION ALL über beide Bildspalten: ein Beitrag darf zwei Bilder haben
-    // (Migration 007). Fehlte die zweite Spalte hier, hielte der Lauf jedes
-    // zweite Bild für verwaist und würde es löschen.
-    sql: `SELECT image_path   AS path FROM news WHERE image_path   IS NOT NULL
-          UNION ALL
-          SELECT image_path_2 AS path FROM news WHERE image_path_2 IS NOT NULL`,
+    // Seit Migration 008 hängen die Bilder in `news_images` (beliebig viele
+    // je Beitrag). Läse der Lauf hier noch die alten Spalten, hielte er JEDES
+    // Bild für verwaist und würde die komplette Bilderstrecke löschen.
+    sql: 'SELECT image_path AS path FROM news_images',
   },
   { label: 'Mannschaftsfotos', sql: 'SELECT photo_path AS path FROM teams WHERE photo_path IS NOT NULL' },
 ];

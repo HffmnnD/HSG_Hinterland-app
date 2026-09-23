@@ -240,6 +240,103 @@
     @apply whitespace-pre-line text-sm leading-relaxed text-ink-soft;
   }
 
+  /* Abgeschnittener Fließtext. `-webkit-line-clamp` ist trotz des Präfixes in
+     allen aktuellen Browsern der Standardweg; die Zeilenzahl steht als
+     Variable, damit sie an einer Stelle liegt. `white-space: pre-line` bleibt
+     erhalten – Zeilenumbrüche aus dem Formular zählen also mit. */
+  .news-body--collapsed {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--news-clamp, 6);
+    line-clamp: var(--news-clamp, 6);
+    overflow: hidden;
+  }
+
+  /* ------------------------------------------------------ Bilderstrecke */
+  .news-gallery {
+    @apply grid list-none gap-2 p-0;
+  }
+
+  /* Ein einzelnes Bild bekommt die volle Breite – so wie bisher. */
+  .news-gallery--single {
+    @apply grid-cols-1;
+  }
+
+  /* Ab zwei Bildern Kacheln: auf dem Handy zwei nebeneinander, ab `sm` drei.
+     Mehr Spalten würden die Kacheln zu Briefmarken machen. */
+  .news-gallery--grid {
+    @apply grid-cols-2 sm:grid-cols-3;
+  }
+
+  /* Der Knopf IST die Kachel: die ganze Fläche ist das Klickziel, nicht nur
+     das Bild darin. */
+  .news-gallery__item {
+    @apply relative block w-full overflow-hidden rounded-sm border border-line
+      bg-surface transition-colors hover:border-hsg-green;
+  }
+
+  .news-gallery__item > img {
+    @apply h-full w-full object-cover;
+  }
+
+  .news-gallery--single .news-gallery__item > img {
+    aspect-ratio: 16 / 9;
+  }
+
+  .news-gallery--grid .news-gallery__item > img {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* „+N" über der letzten Kachel, wenn mehr Bilder vorhanden sind. */
+  .news-gallery__more {
+    @apply absolute inset-0 flex items-center justify-center bg-hsg-dark/60
+      font-display text-lg font-bold text-white;
+  }
+
+  /* ------------------------------------------------------- Vollbild */
+  .lightbox {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-hsg-dark/95 p-4;
+    padding-top: calc(1rem + var(--safe-t));
+    padding-bottom: calc(1rem + var(--safe-b));
+  }
+
+  .lightbox__image {
+    @apply max-h-full max-w-full rounded-sm object-contain shadow-pop;
+  }
+
+  .lightbox__bar {
+    @apply absolute inset-x-0 top-0 z-10 flex items-center gap-3 px-4;
+    padding-top: calc(0.75rem + var(--safe-t));
+  }
+
+  .lightbox__counter {
+    @apply rounded-sm bg-black/40 px-2.5 py-1 font-display text-xs font-semibold
+      tracking-[0.06em] text-white;
+  }
+
+  /* Knöpfe auf dunklem Grund: eigener Fokusring, der dort sichtbar bleibt. */
+  .lightbox__btn {
+    @apply inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full
+      bg-black/40 text-white transition-colors hover:bg-black/70;
+  }
+
+  .lightbox__btn:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+  }
+
+  .lightbox__nav {
+    @apply absolute top-1/2 z-10 -translate-y-1/2;
+  }
+
+  .lightbox__nav--prev {
+    @apply left-3;
+  }
+
+  .lightbox__nav--next {
+    @apply right-3;
+  }
+
   /* dezenter, aber sichtbarer Hinweiskasten */
   .card-note {
     @apply rounded border border-dashed border-line-strong bg-surface p-5 text-sm text-ink-muted;

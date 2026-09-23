@@ -95,7 +95,7 @@ frontend/src/
       MembersSection.jsx       Mitglieder: Kennzahlen, Suche, Rollen-/Status-
                                Filter, Tabelle, Seitenschaltung
       NewsSection.jsx          News: Umschalter „Aktiv“/„Archiv“, Dialog zum
-                               Veröffentlichen (bis zu zwei Bilder),
+                               Veröffentlichen (beliebig viele Bilder),
                                Archivieren, Zurückholen, Löschen mit Rückfrage
       TeamsSection.jsx         Mannschaften: Stammdaten-Tabelle mit klickbaren
                                Zellen (nuLiga -> bearbeiten, Kader -> Kader-
@@ -276,6 +276,27 @@ darf die Antwort auf „mü“ die Tabelle nicht mehr überschreiben.
 Gesucht wird über Vor- und Nachname, die Kombination aus beiden, die E-Mail
 und die **Mitgliedsnummer** (= die Konto-ID, erste Tabellenspalte).
 
+### News auf der Startseite
+
+- **Langer Text:** `NewsCard` klammert den Fließtext auf sechs Zeilen
+  (`.news-body--collapsed`) und blendet „Mehr anzeigen" ein – aber nur, wenn
+  tatsächlich etwas abgeschnitten ist. Das wird **gemessen**
+  (`scrollHeight` vs. `clientHeight`), nicht an der Zeichenzahl geschätzt: ob
+  sechs Zeilen voll werden, hängt von Fensterbreite, Schrift und Umbrüchen ab,
+  und ein Knopf, der beim Klick nichts ändert, ist schlimmer als keiner.
+  Gemessen wird nach dem Einhängen, bei Fenster-Größenänderung und wenn die
+  Webfonts geladen sind. Weder `ResizeObserver` (der geklammerte Absatz hat
+  eine feste Höhe, seine Box ändert sich nie) noch `requestAnimationFrame`
+  (feuert in einem Hintergrund-Tab gar nicht) taugen hier als Auslöser – beides
+  wurde ausprobiert und wieder verworfen.
+- **Bilderstrecke:** ein Bild füllt die Breite (16:9), mehrere stehen als
+  4:3-Kacheln im Raster. Höchstens sechs Kacheln; sind es mehr, trägt die
+  letzte ein „+N".
+- **Vollbild:** Klick auf eine Kachel öffnet `Lightbox` – Pfeiltasten und
+  Knöpfe blättern (umlaufend), Escape oder Klick auf die Fläche schließt, die
+  Seite dahinter scrollt nicht mit, und der Fokus kehrt danach dorthin zurück,
+  wo er herkam. Auch die Bilder hinter dem „+N" sind so erreichbar.
+
 ### System-Status: was die Diagramme zeigen
 
 - **Anfragen und Fehler je Minute** – eine Fläche (Anfragen) plus eine Linie
@@ -306,10 +327,11 @@ und die **Mitgliedsnummer** (= die Konto-ID, erste Tabellenspalte).
   fünf Beiträge, „Ältere Beiträge anzeigen“ lädt den Rest nach.
 - **Verwalten:** `admin/NewsSection.jsx` (nur `admin`/`sub_admin`) sendet
   `multipart/form-data` an `POST /api/admin/news`. Je Beitrag sind **zwei
-  Bilder** möglich (Felder `image` und `image2`); sie werden vor dem Upload im
-  Browser auf 5 MB geprüft und als Vorschau angezeigt. In der Liste zeigt ein
-  zweites Blatt hinter dem Vorschaubild an, dass ein Beitrag zwei Bilder
-  trägt; `NewsCard` stellt sie ab `sm` nebeneinander.
+  Bilder** möglich (alle im Feld `images`, Mehrfachauswahl); sie werden vor
+  dem Upload im Browser auf 5 MB geprüft, als Kacheln angezeigt und lassen sich
+  mit zwei Pfeilen umsortieren – die Reihenfolge im Formular ist die Reihenfolge
+  im Beitrag. In der Liste zeigt ein zweites Blatt hinter dem Vorschaubild an,
+  dass ein Beitrag mehrere Bilder trägt.
 - **Eingabefelder in Dialogen:** Der Dialog (`admin/ui/Modal.jsx`) hält
   `onClose` in einem Ref und hängt seinen Effekt **nur** an `open`. Stünde
   `onClose` in der Abhängigkeitsliste, liefe der Effekt bei jedem Rendern neu

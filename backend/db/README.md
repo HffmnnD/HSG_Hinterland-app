@@ -13,6 +13,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/005_team_page.sql` | Mannschaftsseite: Ligaverknüpfung, Foto, Sponsoren, Kaderangaben. |
 | `migrations/006_admin_console.sql` | News-Archiv (`is_archived`) und Mannschafts-Stammdaten (`age_group`, `gender`, `sort_order`). |
 | `migrations/007_news_second_image.sql` | Zweites Beitragsbild (`image_path_2`). |
+| `migrations/008_news_images_table.sql` | Bilder in die Tabelle `news_images` überführt – beliebig viele je Beitrag. |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
@@ -126,8 +127,7 @@ angemeldeten Mitglieder, absteigend nach `created_at`.
 | `id` | Primärschlüssel |
 | `title` | Überschrift (max. 150 Zeichen) |
 | `content` | Fließtext (max. 5000 Zeichen, per Validierung). **Reiner Text** – das Frontend rendert ihn nie als HTML |
-| `image_path` | Relativer Pfad des ersten Bilds in `backend/uploads/`, z. B. `news/ab12cd34.jpg`. `NULL` = ohne Bild |
-| `image_path_2` | Zweites Bild, gleiches Format. `NULL` = kein zweites. Höchstens zwei Bilder je Beitrag; die Plätze werden der Reihe nach gefüllt |
+| (Bilder) | stehen seit Migration 008 in `news_images` – beliebig viele je Beitrag |
 | `is_archived` | `0` = aktiv (im Feed), `1` = archiviert. Archivierte Beiträge verschwinden aus dem Dashboard, bleiben in der Verwaltung erhalten und lassen sich zurückholen |
 | `author_id` | FK → `users.id`, `ON DELETE SET NULL` (Beitrag überlebt das Löschen des Kontos) |
 | `created_at` / `updated_at` | Veröffentlichung / letzte Änderung |

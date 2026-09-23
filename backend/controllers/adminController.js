@@ -14,6 +14,7 @@ const {
   parseId,
 } = require('../utils/validation');
 const { ADMIN_ROLES, ROLES } = require('../utils/roles');
+const { publicUrlFor } = require('../config/uploads');
 
 // Seitengröße der Mitgliedertabelle. Der Client darf sie wählen, aber nur
 // innerhalb dieser Grenzen – sonst holt ein `?pageSize=100000` doch wieder
@@ -169,6 +170,21 @@ async function updateUser(req, res, next) {
 
 // --- Mannschaften -----------------------------------------------------------
 
+/**
+ * Mannschaft für die Ausgabe aufbereiten: der gespeicherte Foto-Pfad wird zur
+ * abrufbaren URL, der interne Dateipfad verlässt den Server nicht.
+ *
+ * Gleiche Regel wie in teamsController.presentTeam. Sie hier zu wiederholen
+ * ist billiger als das Risiko, dass die beiden Team-Endpunkte unterschiedlich
+ * geformte Objekte liefern – das Frontend nutzt beide.
+ */
+function presentTeam(team) {
+  if (!team) return null;
+  const { photoPath, ...rest } = team;
+  return { ...rest, photoUrl: publicUrlFor(photoPath) };
+}
+
+
 // GET /api/admin/teams
 //
 // Wie /api/teams, aber mit Mitgliederzahlen je Mannschaft – die braucht die
@@ -176,7 +192,7 @@ async function updateUser(req, res, next) {
 async function listTeams(req, res, next) {
   try {
     const teams = await teamRepository.listAllWithCounts();
-    return res.json({ teams });
+    return res.json({ teams: teams.map(presentTeam) });
   } catch (err) {
     return next(err);
   }
@@ -217,7 +233,7 @@ async function createTeam(req, res, next) {
     const team = await teamRepository.findByCode(fields.code);
     return res.status(201).json({
       message: `Mannschaft „${fields.name}“ angelegt.`,
-      team: { ...team, id: team?.id ?? teamId },
+      team: { ...presentTeam(team), id: team?.id ?? teamId },
     });
   } catch (err) {
     return next(err);

@@ -194,12 +194,6 @@ CREATE TABLE IF NOT EXISTS news (
   content     TEXT NOT NULL
               COMMENT 'Fließtext der Ankündigung (Pflicht). Reiner Text – wird im Frontend nie als HTML gerendert.',
 
-  image_path  VARCHAR(255) DEFAULT NULL
-              COMMENT 'Relativer Pfad des Beitragsbilds in backend/uploads/, z. B. "news/ab12cd34.jpg". NULL = ohne Bild.',
-
-  image_path_2 VARCHAR(255) DEFAULT NULL
-              COMMENT 'Zweites Beitragsbild (gleiches Format). NULL = kein zweites Bild. Höchstens zwei Bilder je Beitrag.',
-
   is_archived TINYINT(1) NOT NULL DEFAULT 0
               COMMENT 'Archiviert (1) oder aktiv (0). Archivierte Beiträge verschwinden aus dem Feed, bleiben in der Verwaltung unter "Archiv" erhalten und lassen sich zurückholen.',
 
@@ -222,6 +216,27 @@ CREATE TABLE IF NOT EXISTS news (
 
 
 -- ----------------------------------------------------------------------------
+--  news_images – Bilder eines Beitrags (beliebig viele, in Reihenfolge)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS news_images (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT
+              COMMENT 'Primärschlüssel',
+  news_id     INT UNSIGNED NOT NULL
+              COMMENT 'FK -> news.id, ON DELETE CASCADE. Die Dateien räumt der Controller weg.',
+  image_path  VARCHAR(255) NOT NULL
+              COMMENT 'Relativer Pfad in backend/uploads/, z. B. "news/ab12cd34.jpg".',
+  sort_order  SMALLINT UNSIGNED NOT NULL DEFAULT 0
+              COMMENT 'Anzeigereihenfolge im Beitrag, kleinste Zahl zuerst.',
+
+  PRIMARY KEY (id),
+  KEY idx_news_images_news (news_id, sort_order),
+
+  CONSTRAINT fk_news_images_news FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Bilder eines Vereins-Beitrags. Beliebig viele je Beitrag.';
+
+
+-- ----------------------------------------------------------------------------
 --  schema_migrations – vom Migrations-Runner (db/migrate.js) gepflegt
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -240,5 +255,6 @@ INSERT INTO schema_migrations (filename) VALUES
   ('004_news_table.sql'),
   ('005_team_page.sql'),
   ('006_admin_console.sql'),
-  ('007_news_second_image.sql')
+  ('007_news_second_image.sql'),
+  ('008_news_images_table.sql')
 ON DUPLICATE KEY UPDATE filename = filename;
