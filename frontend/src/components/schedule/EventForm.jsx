@@ -1,71 +1,68 @@
 import { useState } from 'react';
 
 import {
-  EVENT_TYPES,
-  EVENT_TYPE_HINTS,
   EVENT_TYPE_LABELS,
   WEEKDAYS,
   shiftIsoDate,
   toDateInput,
 } from '../../lib/schedule';
 
-/** Beginn/Ende eines neuen Termins: heute Abend, 19:00 bis 20:30 Uhr. */
-function defaultTimes() {
-  const today = toDateInput();
-  return { start: `${today}T19:00`, end: `${today}T20:30` };
-}
-
 /** `YYYY-MM-DDTHH:MM:SS` -> Wert für <input type="datetime-local">. */
 const toInputValue = (value) => (value ? value.slice(0, 16) : '');
 
+// Terminarten, die von Hand angelegt werden. MATCH fehlt bewusst: Spiele
+// kommen aus nuLiga, von Hand angelegte würden beim nächsten Abgleich
+// doppelt im Kalender stehen.
+const SINGLE_TYPES = ['SINGLE_TRAINING', 'EVENT_CAMP'];
+
 /**
- * Formular für einen Termin – als Einzeltermin, mehrtägiges Event oder
- * wiederkehrende Trainingsserie.
+ * Formular für eine wiederkehrende Trainingszeit oder einen Einzeltermin.
  *
- * @param {{ teams: object[],
+ * Die Mannschaft wählt der Planungsbereich – hier steht nur noch, WAS und
+ * WANN. Auch die frühere Umschaltung Serie/Einzeltermin ist raus: Welcher
+ * Fall gemeint ist, entscheidet der Knopf, über den das Formular geöffnet
+ * wurde.
+ *
+ * @param {{ mode: 'series'|'single',
  *           event?: object|null,
- *           defaultTeamId?: number|null,
  *           busy?: boolean,
  *           onSubmit: (payload:object, options:{scope:string}) => Promise<void>,
  *           onCancel?: () => void }} props
- *   `event` gesetzt = Bearbeiten (die Mannschaft steht dann fest).
+ *   `event` gesetzt = einen bestehenden Termin bearbeiten.
  */
 export default function EventForm({
-  teams,
+  mode,
   event = null,
-  defaultTeamId = null,
   busy = false,
   onSubmit,
   onCancel,
 }) {
   const editing = Boolean(event);
-  const times = defaultTimes();
+  const today = toDateInput();
 
-  const [teamId, setTeamId] = useState(
-    String(event?.teamId ?? defaultTeamId ?? teams[0]?.id ?? '')
+  const [title, setTitle] = useState(
+    event?.title ?? (mode === 'series' ? 'Training' : '')
   );
-  const [title, setTitle] = useState(event?.title ?? 'Training');
-  const [type, setType] = useState(event?.type ?? 'REGULAR_TRAINING');
+  const [type, setType] = useState(
+    event?.type ?? (mode === 'series' ? 'REGULAR_TRAINING' : 'SINGLE_TRAINING')
+  );
   const [location, setLocation] = useState(event?.location ?? '');
   const [reasonsVisible, setReasonsVisible] = useState(
     event?.reasonsVisibleToAll ?? false
   );
 
-  // 'single' = ein Termin, 'series' = wiederkehrend.
-  // Beim Bearbeiten bedeutet 'series': Änderung für alle künftigen Termine
-  // der Serie.
-  const [mode, setMode] = useState('single');
-
+  // Einzeltermin
   const [startTime, setStartTime] = useState(
-    toInputValue(event?.startTime) || times.start
+    toInputValue(event?.startTime) || `${today}T19:00`
   );
   const [endTime, setEndTime] = useState(
-    toInputValue(event?.endTime) || times.end
+    toInputValue(event?.endTime) || `${today}T20:30`
   );
 
+  // Serie
   const [weekdays, setWeekdays] = useState([2, 4]);
-  const [startsOn, setStartsOn] = useState(toDateInput());
-  const [endsOn, setEndsOn] = useState(shiftIsoDate(toDateInput(), 180));
+  const [startsOn, setStartsOn] = useState(today);
+  const [endsOn, setEndsOn] = useState(shiftIsoDate(today, 180));
   const [clockStart, setClockStart] = useState('19:00');
   const [clockEnd, setClockEnd] = useState('20:30');
 
@@ -82,27 +79,20 @@ export default function EventForm({
     submitEvent.preventDefault();
     setFormError(null);
 
-    if (!editing && !teamId) {
-      setFormError('Bitte eine Mannschaft auswählen.');
-      return;
-    }
     if (mode === 'series' && !editing && weekdays.length === 0) {
       setFormError('Bitte mindestens einen Wochentag auswählen.');
       return;
     }
 
     const base = {
-      title,
+      title: title.trim(),
       type,
       location: location.trim() || null,
       reasonsVisibleToAll: reasonsVisible,
     };
 
     if (editing) {
-      await onSubmit(
-        mode === 'series' ? base : { ...base, startTime, endTime },
-        { scope: mode }
-      );
+      await onSubmit({ ...base, startTime, endTime }, { scope: 'single' });
       return;
     }
 
@@ -110,7 +100,6 @@ export default function EventForm({
       mode === 'series'
         ? {
             ...base,
-            teamId: Number(teamId),
             recurrence: {
               weekdays,
               startsOn,
@@ -119,10 +108,12 @@ export default function EventForm({
               endTime: clockEnd,
             },
           }
-        : { ...base, teamId: Number(teamId), startTime, endTime },
+        : { ...base, startTime, endTime },
       { scope: 'single' }
     );
   };
+
+  const showSeriesFields = mode === 'series' && !editing;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -132,49 +123,7 @@ export default function EventForm({
         </p>
       )}
 
-      {/* ------------------------------------------------ Was für ein Termin */}
       <div className="grid gap-4 sm:grid-cols-2">
-        {!editing && (
-          <div>
-            <label className="field-label" htmlFor="event-team">
-              Mannschaft
-            </label>
-            <select
-              id="event-team"
-              value={teamId}
-              onChange={(changed) => setTeamId(changed.target.value)}
-              disabled={busy}
-              className="field-control"
-            >
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div>
-          <label className="field-label" htmlFor="event-type">
-            Art
-          </label>
-          <select
-            id="event-type"
-            value={type}
-            onChange={(changed) => setType(changed.target.value)}
-            disabled={busy}
-            className="field-control"
-          >
-            {EVENT_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {EVENT_TYPE_LABELS[value]}
-              </option>
-            ))}
-          </select>
-          <p className="field-hint">{EVENT_TYPE_HINTS[type]}</p>
-        </div>
-
         <div>
           <label className="field-label" htmlFor="event-title">
             Titel
@@ -187,14 +136,14 @@ export default function EventForm({
             maxLength={120}
             required
             disabled={busy}
-            placeholder="z. B. Training oder Handballcamp"
+            placeholder={mode === 'series' ? 'Training' : 'z. B. Handballcamp'}
             className="field-control"
           />
         </div>
 
         <div>
           <label className="field-label" htmlFor="event-location">
-            Ort <span className="font-normal text-ink-muted">(optional)</span>
+            Halle / Treffpunkt
           </label>
           <input
             id="event-location"
@@ -209,202 +158,169 @@ export default function EventForm({
         </div>
       </div>
 
-      {/* ------------------------------------------------------- Zeitpunkt */}
-      <fieldset className="fieldset">
-        <legend>{editing ? 'Umfang der Änderung' : 'Wann?'}</legend>
-
-        <div
-          role="group"
-          aria-label={editing ? 'Umfang' : 'Terminart'}
-          className="flex flex-wrap gap-2"
-        >
-          <button
-            type="button"
-            onClick={() => setMode('single')}
-            aria-pressed={mode === 'single'}
-            disabled={busy}
-            className={`chip chip-sm ${mode === 'single' ? 'chip-active' : ''}`}
-          >
-            {editing ? 'Nur dieser Termin' : 'Einzeltermin'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('series')}
-            aria-pressed={mode === 'series'}
-            disabled={busy || (editing && !event?.seriesId)}
-            title={
-              editing && !event?.seriesId
-                ? 'Dieser Termin gehört zu keiner Serie.'
-                : undefined
-            }
-            className={`chip chip-sm ${mode === 'series' ? 'chip-active' : ''}`}
-          >
-            {editing ? 'Ganze Serie' : 'Wiederkehrend'}
-          </button>
+      {/* Bei einer Serie ist die Art immer Training – da gibt es nichts zu
+          wählen. Nur beim Einzeltermin ist die Unterscheidung nötig. */}
+      {mode === 'single' && !editing && (
+        <div>
+          <span className="field-label">Art</span>
+          <div role="group" aria-label="Terminart" className="flex flex-wrap gap-1.5">
+            {SINGLE_TYPES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setType(value)}
+                aria-pressed={type === value}
+                disabled={busy}
+                className={`chip chip-sm ${type === value ? 'chip-active' : ''}`}
+              >
+                {EVENT_TYPE_LABELS[value]}
+              </button>
+            ))}
+          </div>
         </div>
+      )}
 
-        {mode === 'single' ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      {showSeriesFields ? (
+        <div className="space-y-4">
+          <div>
+            <span className="field-label">Wochentage</span>
+            <div className="flex flex-wrap gap-1.5">
+              {WEEKDAYS.map((day) => (
+                <button
+                  key={day.value}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={weekdays.includes(day.value)}
+                  aria-label={day.label}
+                  disabled={busy}
+                  onClick={() => toggleWeekday(day.value)}
+                  className={`chip chip-sm ${
+                    weekdays.includes(day.value) ? 'chip-active' : ''
+                  }`}
+                >
+                  {day.short}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="field-label" htmlFor="event-start">
-                Beginn
+              <label className="field-label" htmlFor="series-clock-start">
+                Von
               </label>
               <input
-                id="event-start"
-                type="datetime-local"
-                value={startTime}
-                onChange={(changed) => setStartTime(changed.target.value)}
+                id="series-clock-start"
+                type="time"
+                value={clockStart}
+                onChange={(changed) => setClockStart(changed.target.value)}
                 required
                 disabled={busy}
                 className="field-control"
               />
             </div>
             <div>
-              <label className="field-label" htmlFor="event-end">
-                Ende
+              <label className="field-label" htmlFor="series-clock-end">
+                Bis
               </label>
               <input
-                id="event-end"
-                type="datetime-local"
-                value={endTime}
-                onChange={(changed) => setEndTime(changed.target.value)}
+                id="series-clock-end"
+                type="time"
+                value={clockEnd}
+                onChange={(changed) => setClockEnd(changed.target.value)}
                 required
                 disabled={busy}
                 className="field-control"
               />
-              <p className="field-hint">
-                Für ein mehrtägiges Camp hier den letzten Tag eintragen.
-              </p>
             </div>
-          </div>
-        ) : editing ? (
-          <p className="field-hint mt-4">
-            Titel, Art, Ort und die Sichtbarkeit der Gründe werden für alle
-            noch nicht begonnenen Termine der Serie übernommen. Datum und
-            Uhrzeit der einzelnen Einheiten bleiben unverändert – dafür die
-            Serie neu anlegen.
-          </p>
-        ) : (
-          <div className="mt-4 space-y-4">
             <div>
-              <span className="field-label">Wochentage</span>
-              <div className="flex flex-wrap gap-1.5">
-                {WEEKDAYS.map((day) => (
-                  <button
-                    key={day.value}
-                    type="button"
-                    role="checkbox"
-                    aria-checked={weekdays.includes(day.value)}
-                    aria-label={day.label}
-                    disabled={busy}
-                    onClick={() => toggleWeekday(day.value)}
-                    className={`chip chip-sm ${
-                      weekdays.includes(day.value) ? 'chip-active' : ''
-                    }`}
-                  >
-                    {day.short}
-                  </button>
-                ))}
-              </div>
+              <label className="field-label" htmlFor="series-from">
+                Erster Termin
+              </label>
+              <input
+                id="series-from"
+                type="date"
+                value={startsOn}
+                onChange={(changed) => setStartsOn(changed.target.value)}
+                required
+                disabled={busy}
+                className="field-control"
+              />
             </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="field-label" htmlFor="series-clock-start">
-                  Beginn
-                </label>
-                <input
-                  id="series-clock-start"
-                  type="time"
-                  value={clockStart}
-                  onChange={(changed) => setClockStart(changed.target.value)}
-                  required
-                  disabled={busy}
-                  className="field-control"
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="series-clock-end">
-                  Ende
-                </label>
-                <input
-                  id="series-clock-end"
-                  type="time"
-                  value={clockEnd}
-                  onChange={(changed) => setClockEnd(changed.target.value)}
-                  required
-                  disabled={busy}
-                  className="field-control"
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="series-from">
-                  Erster Termin
-                </label>
-                <input
-                  id="series-from"
-                  type="date"
-                  value={startsOn}
-                  onChange={(changed) => setStartsOn(changed.target.value)}
-                  required
-                  disabled={busy}
-                  className="field-control"
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="series-to">
-                  Letzter Termin
-                </label>
-                <input
-                  id="series-to"
-                  type="date"
-                  value={endsOn}
-                  onChange={(changed) => setEndsOn(changed.target.value)}
-                  required
-                  disabled={busy}
-                  className="field-control"
-                />
-                <p className="field-hint">
-                  Üblicherweise das Saisonende. Alle Einheiten werden sofort
-                  angelegt und sind für den Kader sichtbar.
-                </p>
-              </div>
+            <div>
+              <label className="field-label" htmlFor="series-to">
+                Letzter Termin
+              </label>
+              <input
+                id="series-to"
+                type="date"
+                value={endsOn}
+                onChange={(changed) => setEndsOn(changed.target.value)}
+                required
+                disabled={busy}
+                className="field-control"
+              />
+              <p className="field-hint">Üblicherweise das Saisonende.</p>
             </div>
           </div>
-        )}
-      </fieldset>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="field-label" htmlFor="event-start">
+              Beginn
+            </label>
+            <input
+              id="event-start"
+              type="datetime-local"
+              value={startTime}
+              onChange={(changed) => setStartTime(changed.target.value)}
+              required
+              disabled={busy}
+              className="field-control"
+            />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="event-end">
+              Ende
+            </label>
+            <input
+              id="event-end"
+              type="datetime-local"
+              value={endTime}
+              onChange={(changed) => setEndTime(changed.target.value)}
+              required
+              disabled={busy}
+              className="field-control"
+            />
+            <p className="field-hint">
+              Für ein mehrtägiges Camp hier den letzten Tag eintragen.
+            </p>
+          </div>
+        </div>
+      )}
 
-      {/* --------------------------------------------------- Sichtbarkeit */}
-      <div className="rounded-md border border-line bg-surface/60 p-4">
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            checked={reasonsVisible}
-            onChange={(changed) => setReasonsVisible(changed.target.checked)}
-            disabled={busy}
-            className="mt-0.5 h-5 w-5 shrink-0 accent-hsg-green"
-          />
-          <span>
-            <span className="block text-sm font-bold text-ink">
-              Abmeldegründe für alle Spieler:innen sichtbar
-            </span>
-            <span className="field-hint">
-              Aus (Standard): Der Kader sieht nur, WER fehlt. Den Grund sieht
-              nur das Trainerteam. An: Jede:r sieht auch, WARUM jemand fehlt.
-            </span>
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          checked={reasonsVisible}
+          onChange={(changed) => setReasonsVisible(changed.target.checked)}
+          disabled={busy}
+          className="mt-0.5 h-5 w-5 shrink-0 accent-hsg-green"
+        />
+        <span>
+          <span className="block text-sm font-bold text-ink">
+            Abmeldegründe für alle sichtbar
           </span>
-        </label>
-      </div>
+          <span className="field-hint">
+            Aus: Der Kader sieht nur, wer fehlt. An: auch warum.
+          </span>
+        </span>
+      </label>
 
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={busy} className="btn btn-primary">
-          {busy
-            ? 'Speichern …'
-            : editing
-              ? 'Änderungen speichern'
-              : mode === 'series'
-                ? 'Serie anlegen'
-                : 'Termin anlegen'}
+          {busy ? 'Speichern …' : editing ? 'Speichern' : 'Anlegen'}
         </button>
         {onCancel && (
           <button

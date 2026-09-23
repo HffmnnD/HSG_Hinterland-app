@@ -6,28 +6,41 @@
 //
 //   GET    /api/events?teamId=&from=&to=   Termine im Zeitraum (+ eigener Status)
 //   GET    /api/events/series?teamId=      Trainingsserien der Mannschaft
+//   POST   /api/events/nuliga              Ligaspielplan übernehmen (an/aus)
 //   DELETE /api/events/series/:id          Serie als Ganzes beenden
 //   GET    /api/events/:id                 ein Termin mit voller Kaderliste
 //   POST   /api/events                     Einzeltermin ODER ganze Serie anlegen
 //   PUT    /api/events/:id?scope=          Termin ändern (single | series)
+//   POST   /api/events/:id/cancel          Termin absagen / Absage zurücknehmen
 //   DELETE /api/events/:id?scope=          Termin/Serie entfernen
 const eventRepository = require('../repositories/eventRepository');
+const teamRepository = require('../repositories/teamRepository');
 const teamAccess = require('../services/teamAccess');
+const nuligaSyncService = require('../services/nuligaSyncService');
 const scheduleService = require('../services/scheduleService');
 const { parseId } = require('../utils/validation');
 const {
   validateEventCreate,
   validateEventUpdate,
+  validateCancel,
   validateScope,
   validateRange,
 } = require('../utils/scheduleValidation');
-const { nowSqlDateTime, todaySqlDate, wallClockMs, toSqlDate } =
-  require('../utils/schedule');
+const {
+  nowSqlDateTime,
+  todaySqlDate,
+  wallClockMs,
+  toSqlDate,
+  typesForCategory,
+  EVENT_CATEGORIES,
+} = require('../utils/schedule');
 
 // Standardfenster der Terminliste, wenn der Client keinen Zeitraum angibt:
-// von heute bis in vier Monate. Deckt eine Hin- oder Rückrunde ab, ohne die
-// komplette Historie mitzuladen.
-const DEFAULT_RANGE_DAYS = 120;
+// von heute bis in rund zehn Monate. Damit steht eine KOMPLETTE Saison in der
+// Liste – bei vier Monaten fehlte die Rückrunde, und ein übernommener
+// Ligaspielplan wirkte halb leer. Die Historie bleibt trotzdem draußen, denn
+// gezählt wird ab heute.
+const DEFAULT_RANGE_DAYS = 300;
 
 /** `YYYY-MM-DD` um n Tage verschieben. */
 function shiftDate(date, days) {
@@ -75,8 +88,21 @@ async function listEvents(req, res, next) {
       return res.status(resolved.status).json({ message: resolved.message });
     }
 
+    const category = req.query.category;
+    if (category !== undefined && !(category in EVENT_CATEGORIES)) {
+      return res.status(400).json({
+        message: `Ungültige Kategorie. Erlaubt: ${Object.keys(EVENT_CATEGORIES).join(', ')}.`,
+      });
+    }
+
     const from = range.from ?? todaySqlDate();
     const to = range.to ?? shiftDate(from, DEFAULT_RANGE_DAYS);
+
+    // Fälligen Ligaspiel-Abgleich anstoßen, aber NICHT darauf warten: Der
+    // Abruf beim Verband darf zehn Sekunden dauern, so lange soll niemand vor
+    // einem leeren Kalender sitzen. Das Ergebnis erscheint beim nächsten
+    // Aufruf; der Dienst begrenzt sich selbst auf einen Lauf je Mannschaft.
+    nuligaSyncService.syncStaleTeams(resolved.selected);
 
     const accessByTeam = new Map(
       resolved.selected.map((team) => [team.id, team])
@@ -84,7 +110,8 @@ async function listEvents(req, res, next) {
     const events = await eventRepository.listForTeams(
       resolved.selected.map((team) => team.id),
       `${from} 00:00:00`,
-      `${to} 23:59:59`
+      `${to} 23:59:59`,
+      typesForCategory(category)
     );
 
     const statusByEvent = await scheduleService.buildStatusByEvent(events);
@@ -159,6 +186,77 @@ async function deleteSeries(req, res, next) {
     return res.json({
       message: `Serie beendet – ${removed} künftige Termine entfernt. Vergangene Einheiten bleiben in der Historie.`,
       removed,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// POST /api/events/nuliga   Body: { teamId, enabled }
+//
+// Schaltet die Übernahme des Ligaspielplans für eine Mannschaft ein oder aus.
+// Beim Einschalten wird sofort abgeglichen; ein erneuter Aufruf mit
+// `enabled: true` dient als „jetzt aktualisieren".
+//
+// Beim Ausschalten verschwinden nur die KÜNFTIGEN übernommenen Spiele.
+// Vergangene bleiben samt Rückmeldungen stehen – sonst wäre die Historie
+// mit einem Klick gelöscht.
+async function setNuligaSync(req, res, next) {
+  try {
+    const teamId = parseId(req.body?.teamId);
+    if (!teamId) {
+      return res.status(400).json({ message: 'Ungültige Mannschafts-ID.' });
+    }
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ message: 'enabled muss true oder false sein.' });
+    }
+
+    const access = await teamAccess.requireManager(
+      { userId: req.userId, userRole: req.userRole },
+      teamId
+    );
+    if (!access.ok) {
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    if (!access.team.handballTeamId) {
+      return res.status(400).json({
+        message:
+          'Für diese Mannschaft ist keine nuLiga-Nummer hinterlegt. Ein:e Administrator:in kann sie auf der Mannschaftsseite eintragen.',
+      });
+    }
+
+    await teamRepository.updateTeam(teamId, {
+      nuliga_sync_enabled: enabled ? 1 : 0,
+    });
+
+    if (!enabled) {
+      const removed = await eventRepository.deleteFutureNuligaEvents(
+        teamId,
+        nowSqlDateTime()
+      );
+      return res.json({
+        message: `Ligaspiele ausgeblendet – ${removed} künftige Spiele entfernt. Vergangene bleiben in der Historie.`,
+        enabled: false,
+        removed,
+      });
+    }
+
+    const result = await nuligaSyncService.syncTeam(access.team);
+    if (!result.ok) {
+      return res.json({
+        message:
+          'Eingeschaltet, aber der Verband antwortet gerade nicht. Die Spiele erscheinen, sobald nuLiga wieder erreichbar ist.',
+        enabled: true,
+        imported: 0,
+      });
+    }
+
+    return res.json({
+      message: `Ligaspiele übernommen – ${result.imported} Spiele im Kalender.`,
+      enabled: true,
+      imported: result.imported,
     });
   } catch (err) {
     return next(err);
@@ -318,6 +416,56 @@ async function updateEvent(req, res, next) {
   }
 }
 
+// POST /api/events/:id/cancel   Body: { cancelled, reason? }
+//
+// Sagt einen Termin ab, ohne ihn zu löschen. Der Termin bleibt in der Liste
+// stehen und ist deutlich als abgesagt gekennzeichnet – wer nicht in die App
+// schaut, steht sonst vor der Halle. In die Beteiligungsquote zählt er nicht
+// mehr: Niemand soll schlechter dastehen, weil der Verein abgesagt hat.
+//
+// Die Rückmeldungen bleiben erhalten, damit das Zurücknehmen der Absage nichts
+// zerstört. Zum endgültigen Entfernen gibt es weiterhin DELETE.
+async function cancelEvent(req, res, next) {
+  try {
+    const id = parseId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ message: 'Ungültige Termin-ID.' });
+    }
+
+    const event = await eventRepository.findById(id);
+    if (!event) {
+      return res.status(404).json({ message: 'Termin nicht gefunden.' });
+    }
+
+    const access = await teamAccess.requireManager(
+      { userId: req.userId, userRole: req.userRole },
+      event.teamId
+    );
+    if (!access.ok) {
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    const input = validateCancel(req.body);
+    if (!input.ok) {
+      return res.status(input.status).json({ message: input.message });
+    }
+
+    await eventRepository.updateEvent(id, {
+      cancelled_at: input.cancelled ? nowSqlDateTime() : null,
+      cancel_reason: input.reason,
+    });
+
+    return res.json({
+      message: input.cancelled
+        ? 'Termin abgesagt. Alle in der Mannschaft sehen das jetzt im Kalender.'
+        : 'Absage zurückgenommen – der Termin findet wieder statt.',
+      cancelled: input.cancelled,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 // DELETE /api/events/:id?scope=single|series
 async function deleteEvent(req, res, next) {
   try {
@@ -370,9 +518,11 @@ async function deleteEvent(req, res, next) {
 module.exports = {
   listEvents,
   listSeries,
+  setNuligaSync,
   deleteSeries,
   getEvent,
   createEvent,
   updateEvent,
+  cancelEvent,
   deleteEvent,
 };

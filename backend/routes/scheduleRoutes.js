@@ -13,10 +13,12 @@ const rateLimit = require('express-rate-limit');
 const {
   listEvents,
   listSeries,
+  setNuligaSync,
   deleteSeries,
   getEvent,
   createEvent,
   updateEvent,
+  cancelEvent,
   deleteEvent,
 } = require('../controllers/eventsController');
 const {
@@ -60,8 +62,12 @@ eventsRouter.get('/:id', requireAuth, getEvent);
 // Ebenfalls vor '/:id': sonst wäre „series" die Termin-ID.
 eventsRouter.delete('/series/:id', writeLimiter, requireAuth, deleteSeries);
 
+// Vor '/:id', sonst wäre „nuliga" die Termin-ID.
+eventsRouter.post('/nuliga', writeLimiter, requireAuth, setNuligaSync);
+
 eventsRouter.post('/', writeLimiter, requireAuth, createEvent);
 eventsRouter.put('/:id', writeLimiter, requireAuth, updateEvent);
+eventsRouter.post('/:id/cancel', writeLimiter, requireAuth, cancelEvent);
 eventsRouter.delete('/:id', writeLimiter, requireAuth, deleteEvent);
 
 // --- /api/attendances -------------------------------------------------------

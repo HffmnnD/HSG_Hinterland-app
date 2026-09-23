@@ -32,6 +32,22 @@ export const EVENT_TYPE_HINTS = {
   MATCH: 'Punkt-, Pokal- oder Freundschaftsspiel',
 };
 
+/**
+ * Grobe Gruppen für die Filter. Die Oberfläche fragt „nur Training" oder
+ * „nur Spiele" – nicht nach den vier Einzelwerten. Die Schlüssel müssen zu
+ * EVENT_CATEGORIES in backend/utils/schedule.js passen.
+ */
+export const EVENT_CATEGORIES = [
+  { key: 'training', label: 'Training', types: ['REGULAR_TRAINING', 'SINGLE_TRAINING'] },
+  { key: 'match', label: 'Spiele', types: ['MATCH'] },
+  { key: 'other', label: 'Sonstiges', types: ['EVENT_CAMP'] },
+];
+
+/** Kategorie einer Terminart. */
+export function categoryOf(type) {
+  return EVENT_CATEGORIES.find((entry) => entry.types.includes(type))?.key ?? null;
+}
+
 export function eventTypeLabel(type) {
   return EVENT_TYPE_LABELS[type] ?? type;
 }
@@ -100,27 +116,26 @@ export const QUICK_REASONS = [
  */
 export function statusPresentation(status, source) {
   if (status === 'DECLINED') {
-    if (source === 'ABSENCE') {
-      return { label: 'Nicht da', badge: 'badge-pending', dot: 'bg-warn' };
-    }
-    return { label: 'Abgesagt', badge: 'badge-declined', dot: 'bg-danger' };
+    // Urlaub und Verletzung sind etwas anderes als eine kurzfristige Absage –
+    // deshalb gelb statt rot.
+    return source === 'ABSENCE'
+      ? { label: 'Nicht da', badge: 'badge-pending', dot: 'bg-warn' }
+      : { label: 'Abgesagt', badge: 'badge-declined', dot: 'bg-danger' };
   }
-  if (source === 'DEFAULT') {
-    return {
-      label: 'Dabei',
-      badge: 'badge-default',
-      dot: 'bg-hsg-green',
-      hint: 'keine Rückmeldung',
-    };
-  }
-  return { label: 'Zugesagt', badge: 'badge-confirmed', dot: 'bg-hsg-green' };
+  // Zwischen „hat zugesagt" und „hat nichts gesagt" wird bewusst NICHT mehr
+  // unterschieden: Dabeisein ist der Normalfall, beides zählt gleich.
+  return { label: 'Dabei', badge: 'badge-confirmed', dot: 'bg-hsg-green' };
 }
 
-/** Erklärt, wer den Status gesetzt hat. null, wenn es nichts zu erklären gibt. */
+/**
+ * Erklärt den EIGENEN Status, wenn er nicht selbst gesetzt wurde.
+ *
+ * Bewusst nur für die eigene Zeile: In der Kaderliste stand dieser Zusatz
+ * hinter jedem Namen und machte sie unlesbar.
+ */
 export function sourceHint(source) {
   if (source === 'COACH') return 'vom Trainerteam eingetragen';
   if (source === 'ABSENCE') return 'aus Urlaub / Verletzung';
-  if (source === 'DEFAULT') return 'keine Rückmeldung';
   return null;
 }
 
@@ -260,35 +275,4 @@ export function shiftIsoDate(value, days) {
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(year, month - 1, day + days);
   return toDateInput(date);
-}
-
-// --- Export -----------------------------------------------------------------
-
-/**
- * Zeilen als CSV-Text. Semikolon als Trenner und BOM voran, damit Excel in
- * deutscher Einstellung die Spalten richtig trennt und Umlaute anzeigt.
- *
- * @param {string[]} header
- * @param {(string|number|null)[][]} rows
- */
-export function buildCsv(header, rows) {
-  const escape = (value) => {
-    const text = value === null || value === undefined ? '' : String(value);
-    return /[";\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  const lines = [header, ...rows].map((row) => row.map(escape).join(';'));
-  return `\uFEFF${lines.join('\r\n')}`;
-}
-
-/** CSV-Text als Datei anbieten. */
-export function downloadCsv(filename, csv) {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }

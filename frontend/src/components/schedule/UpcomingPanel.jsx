@@ -36,19 +36,24 @@ function groupByMonth(events) {
 /**
  * Terminliste, nach Datum sortiert und nach Monat gruppiert.
  *
- * @param {{ events: object[], viewerId: number, showTeam?: boolean,
+ * Die Mannschaft steht auf jeder Karte selbst – hier gibt es dafür keinen
+ * Schalter mehr. Wer in mehreren Mannschaften ist, soll sie immer sehen,
+ * nicht nur im ungefilterten Fall.
+ *
+ * @param {{ events: object[], viewerId: number,
  *           loading?: boolean, busy?: boolean, emptyHint?: string,
- *           onRespond: Function, onEdit?: Function, onDelete?: Function }} props
+ *           onRespond: Function, onEdit?: Function, onCancel?: Function,
+ *           onDelete?: Function }} props
  */
 export default function UpcomingPanel({
   events,
   viewerId,
-  showTeam = false,
   loading = false,
   busy = false,
   emptyHint,
   onRespond,
   onEdit,
+  onCancel,
   onDelete,
 }) {
   if (loading) {
@@ -65,7 +70,7 @@ export default function UpcomingPanel({
     return (
       <p className="card-note">
         {emptyHint ??
-          'In diesem Zeitraum stehen keine Termine an. Sobald das Trainerteam Trainingszeiten einträgt, erscheinen sie hier.'}
+          'Hier steht nichts an. Sobald das Trainerteam Trainingszeiten einträgt, erscheinen sie hier.'}
       </p>
     );
   }
@@ -81,10 +86,10 @@ export default function UpcomingPanel({
                 key={event.id}
                 event={event}
                 viewerId={viewerId}
-                showTeam={showTeam}
                 busy={busy}
                 onRespond={onRespond}
                 onEdit={onEdit}
+                onCancel={onCancel}
                 onDelete={onDelete}
               />
             ))}

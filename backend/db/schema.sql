@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS teams (
                    COMMENT 'nuLiga-Mannschaftsnummer (`teamtable`, rein numerisch). Speist Tabelle, Spielplan und Live-Ticker der Mannschaftsseite. NULL = keine Ligaanbindung.',
   photo_path       VARCHAR(255) DEFAULT NULL
                    COMMENT 'Relativer Pfad des Mannschaftsfotos in backend/uploads/, z. B. "teams/ab12.jpg". Ausgeliefert über /api/uploads/<pfad>.',
+  nuliga_sync_enabled TINYINT(1) NOT NULL DEFAULT 0
+                   COMMENT 'Ligaspiele aus nuLiga als Termine in den Kalender übernehmen? Standard aus. Wird im Planungsbereich vom Trainerteam gesetzt.',
+  nuliga_synced_at DATETIME DEFAULT NULL
+                   COMMENT 'Zeitpunkt des letzten erfolgreichen nuLiga-Abgleichs (Ortszeit). NULL = noch nie.',
   code             VARCHAR(20) NOT NULL
                    COMMENT 'Kurzkürzel für URLs und Chips, z. B. "MJC". Eindeutig, immer GROSS.',
 
@@ -258,6 +262,8 @@ CREATE TABLE IF NOT EXISTS events (
                COMMENT 'FK -> teams.id. Bestimmt, wer den Termin sieht.',
   series_id    INT UNSIGNED DEFAULT NULL
                COMMENT 'FK -> event_series.id. NULL = Einzeltermin. ON DELETE SET NULL, damit die Historie beim Löschen der Serie bleibt.',
+  nuliga_game_id VARCHAR(64) DEFAULT NULL
+               COMMENT 'Herkunft aus nuLiga als "nr:<Spielnummer>@<Saison>", z. B. "nr:14@2026". NULL = von Hand angelegt (der Abgleich fasst solche Termine nie an). Bewusst die Spielnummer und nicht die nuLiga-Spiel-ID: die entsteht erst mit dem Spielbericht und fehlt vor der Saison bei fast jedem Spiel.',
   title        VARCHAR(120) NOT NULL COMMENT 'z. B. "Training" oder "Handballcamp"',
   type         ENUM('REGULAR_TRAINING','SINGLE_TRAINING','EVENT_CAMP','MATCH') NOT NULL
                COMMENT 'REGULAR_TRAINING = Einheit aus der Trainingsserie | SINGLE_TRAINING = zusätzliches einmaliges Training | EVENT_CAMP = Sondertermin, auch mehrtägig | MATCH = Spiel',
@@ -268,6 +274,10 @@ CREATE TABLE IF NOT EXISTS events (
                COMMENT 'Ende in Ortszeit, immer nach start_time. Mehrtägige Termine enden an einem späteren Datum.',
   reasons_visible_to_all TINYINT(1) NOT NULL DEFAULT 0
                COMMENT 'AUS (Standard) = nur Trainer:innen sehen die Abmeldegründe, alle anderen sehen nur WER fehlt. AN = alle sehen auch WARUM.',
+  cancelled_at DATETIME DEFAULT NULL
+               COMMENT 'Zeitpunkt der Absage (Ortszeit). NULL = findet statt. Gesetzt = Termin bleibt sichtbar, ist als abgesagt gekennzeichnet und zählt in keiner Beteiligungsquote mit.',
+  cancel_reason VARCHAR(200) DEFAULT NULL
+               COMMENT 'Kurzer Grund der Absage, z. B. "Halle belegt". Sehen alle in der Mannschaft.',
   created_by   INT UNSIGNED DEFAULT NULL COMMENT 'FK -> users.id, ON DELETE SET NULL',
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -275,6 +285,9 @@ CREATE TABLE IF NOT EXISTS events (
   PRIMARY KEY (id),
   KEY idx_events_team_start (team_id, start_time),
   KEY idx_events_series (series_id),
+  -- Macht den nuLiga-Abgleich idempotent: ein zweiter Lauf aktualisiert
+  -- denselben Termin, statt ihn doppelt anzulegen.
+  UNIQUE KEY uq_events_nuliga (team_id, nuliga_game_id),
 
   CONSTRAINT fk_events_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
   CONSTRAINT fk_events_series FOREIGN KEY (series_id) REFERENCES event_series(id) ON DELETE SET NULL,
@@ -361,5 +374,8 @@ INSERT INTO schema_migrations (filename) VALUES
   ('003_activate_existing_accounts.sql'),
   ('004_news_table.sql'),
   ('005_team_page.sql'),
-  ('009_schedule_module.sql')
+  ('009_schedule_module.sql'),
+  ('010_nuliga_games.sql'),
+  ('011_event_cancellation.sql'),
+  ('012_nuliga_key_cleanup.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

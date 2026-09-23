@@ -19,13 +19,17 @@ const WRITABLE_EVENT_COLUMNS = new Set([
   'start_time',
   'end_time',
   'reasons_visible_to_all',
+  'cancelled_at',
+  'cancel_reason',
 ]);
 
 const EVENT_COLUMNS = `
-  e.id, e.team_id, e.series_id, e.title, e.type, e.location,
+  e.id, e.team_id, e.series_id, e.nuliga_game_id, e.title, e.type, e.location,
   DATE_FORMAT(e.start_time, '%Y-%m-%dT%H:%i:%s') AS start_time,
   DATE_FORMAT(e.end_time,   '%Y-%m-%dT%H:%i:%s') AS end_time,
-  e.reasons_visible_to_all, e.created_by`;
+  e.reasons_visible_to_all, e.created_by,
+  DATE_FORMAT(e.cancelled_at, '%Y-%m-%dT%H:%i:%s') AS cancelled_at,
+  e.cancel_reason`;
 
 // DATE-Spalten ebenfalls als Text: ein JS-`Date` würde beim JSON-Serialisieren
 // in UTC umgerechnet und könnte dabei einen Tag zurückrutschen.
@@ -52,12 +56,19 @@ function mapEvent(row) {
     teamCode: row.team_code ?? null,
     teamName: row.team_name ?? null,
     seriesId: row.series_id ?? null,
+    // Gesetzt = aus nuLiga übernommen. Solche Termine lassen sich nicht von
+    // Hand bearbeiten, der nächste Abgleich würde die Änderung überschreiben.
+    nuligaGameId: row.nuliga_game_id ?? null,
     title: row.title,
     type: row.type,
     location: row.location ?? null,
     startTime: row.start_time,
     endTime: row.end_time,
     reasonsVisibleToAll: Boolean(row.reasons_visible_to_all),
+    // Gesetzt = der Termin fällt aus. Er bleibt sichtbar, zählt aber in keiner
+    // Beteiligungsquote mehr mit.
+    cancelledAt: row.cancelled_at ?? null,
+    cancelReason: row.cancel_reason ?? null,
   };
 }
 
@@ -106,8 +117,16 @@ async function findById(id, runner = pool) {
  * @param {string} fromSql `YYYY-MM-DD HH:MM:SS`
  * @param {string} toSql   `YYYY-MM-DD HH:MM:SS`
  */
-async function listForTeams(teamIds, fromSql, toSql, runner = pool) {
+async function listForTeams(teamIds, fromSql, toSql, types = null, runner = pool) {
   if (teamIds.length === 0) return [];
+
+  const params = [teamIds, fromSql, toSql];
+  let typeClause = '';
+  if (types && types.length > 0) {
+    typeClause = 'AND e.type IN (?)';
+    params.push(types);
+  }
+
   const [rows] = await runner.query(
     `SELECT ${EVENT_COLUMNS}, t.code AS team_code, t.name AS team_name
        FROM events e
@@ -115,8 +134,9 @@ async function listForTeams(teamIds, fromSql, toSql, runner = pool) {
       WHERE e.team_id IN (?)
         AND e.end_time >= ?
         AND e.start_time <= ?
+        ${typeClause}
       ORDER BY e.start_time, e.id`,
-    [teamIds, fromSql, toSql]
+    params
   );
   return rows.map(mapEvent);
 }
@@ -245,6 +265,80 @@ async function createSeriesWithEvents({
 }
 
 /**
+ * Spiele aus nuLiga anlegen bzw. aktualisieren.
+ *
+ * Der UNIQUE-Index `(team_id, nuliga_game_id)` macht den Abgleich idempotent:
+ * Ein zweiter Lauf legt nichts doppelt an, sondern schreibt Titel, Ort und
+ * Anwurf fort. `reasons_visible_to_all` und die Rückmeldungen bleiben dabei
+ * unangetastet – die gehören der Mannschaft, nicht dem Verband.
+ *
+ * @param {{nuligaGameId:string, title:string, location:string|null,
+ *          startTime:string, endTime:string}[]} rows
+ * @returns {Promise<number>} Anzahl übernommener Spiele
+ */
+async function upsertNuligaEvents(teamId, rows, runner = pool) {
+  if (rows.length === 0) return 0;
+
+  await runner.query(
+    `INSERT INTO events
+       (team_id, nuliga_game_id, title, type, location, start_time, end_time)
+     VALUES ?
+     ON DUPLICATE KEY UPDATE
+       title      = VALUES(title),
+       location   = VALUES(location),
+       start_time = VALUES(start_time),
+       end_time   = VALUES(end_time)`,
+    [
+      rows.map((row) => [
+        teamId,
+        row.nuligaGameId,
+        row.title,
+        'MATCH',
+        row.location,
+        row.startTime,
+        row.endTime,
+      ]),
+    ]
+  );
+  return rows.length;
+}
+
+/**
+ * Übernommene Spiele entfernen, die nuLiga nicht mehr führt (abgesagt oder
+ * zurückgezogen). NUR künftige – vergangene Spiele sind Historie und behalten
+ * ihre Anwesenheiten.
+ *
+ * @param {string[]} keepIds Spiel-IDs, die der aktuelle Spielplan nennt
+ * @returns {Promise<number>} Anzahl entfernter Termine
+ */
+async function deleteStaleNuligaEvents(teamId, keepIds, nowSql, runner = pool) {
+  const params = [teamId, nowSql];
+  let keepClause = '';
+  if (keepIds.length > 0) {
+    keepClause = 'AND nuliga_game_id NOT IN (?)';
+    params.push(keepIds);
+  }
+
+  const [result] = await runner.query(
+    `DELETE FROM events
+      WHERE team_id = ?
+        AND nuliga_game_id IS NOT NULL
+        AND start_time >= ?
+        ${keepClause}`,
+    params
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Alle künftigen nuLiga-Termine einer Mannschaft entfernen – wenn das
+ * Trainerteam die Übernahme wieder abschaltet.
+ */
+async function deleteFutureNuligaEvents(teamId, nowSql, runner = pool) {
+  return deleteStaleNuligaEvents(teamId, [], nowSql, runner);
+}
+
+/**
  * Einzelnen Termin ändern. `fields` enthält bereits geprüfte Spaltennamen.
  * @returns {Promise<number>} Anzahl geänderter Zeilen
  */
@@ -339,6 +433,9 @@ module.exports = {
   findSeriesById,
   createEvent,
   createSeriesWithEvents,
+  upsertNuligaEvents,
+  deleteStaleNuligaEvents,
+  deleteFutureNuligaEvents,
   updateEvent,
   updateSeriesAndFutureEvents,
   deleteEvent,

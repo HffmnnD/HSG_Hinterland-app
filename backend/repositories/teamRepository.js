@@ -13,7 +13,8 @@ const RELATION_GROUPS = ['player', 'coach', 'fan'];
 const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
 
 // Spalten der Mannschaft, die überall gleich ausgelesen werden.
-const TEAM_COLUMNS = 'id, code, name, handball_team_id, photo_path';
+const TEAM_COLUMNS =
+  'id, code, name, handball_team_id, photo_path, nuliga_sync_enabled, DATE_FORMAT(nuliga_synced_at, \'%Y-%m-%dT%H:%i:%s\') AS nuliga_synced_at';
 
 // Nur diese Spalten dürfen über updateTeam bzw. updateRelationDetails
 // geschrieben werden. Defense-in-depth wie WRITABLE_USER_COLUMNS in
@@ -21,7 +22,11 @@ const TEAM_COLUMNS = 'id, code, name, handball_team_id, photo_path';
 // (Werte laufen über ?), deshalb dürfen sie NIE aus einer Anfrage stammen.
 // Heute liefert utils/validation.js ausschließlich feste Schlüssel – diese
 // Prüfung stellt sicher, dass das auch nach künftigen Erweiterungen gilt.
-const WRITABLE_TEAM_COLUMNS = new Set(['handball_team_id', 'photo_path']);
+const WRITABLE_TEAM_COLUMNS = new Set([
+  'handball_team_id',
+  'photo_path',
+  'nuliga_sync_enabled',
+]);
 const WRITABLE_RELATION_COLUMNS = new Set([
   'jersey_number',
   'position',
@@ -50,6 +55,9 @@ function mapTeam(row) {
     // nuLiga-Nummer für Tabelle/Spielplan/Ticker. null = keine Ligaanbindung.
     handballTeamId: row.handball_team_id ?? null,
     photoPath: row.photo_path ?? null,
+    // Werden die Ligaspiele als Termine in den Kalender übernommen?
+    nuligaSyncEnabled: Boolean(row.nuliga_sync_enabled),
+    nuligaSyncedAt: row.nuliga_synced_at ?? null,
   };
 }
 
@@ -103,6 +111,20 @@ async function updateTeam(teamId, fields, runner = pool) {
   const [result] = await runner.query(
     `UPDATE teams SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`,
     [...keys.map((k) => fields[k]), teamId]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Zeitpunkt des letzten nuLiga-Abgleichs festhalten.
+ *
+ * Bewusst nicht über updateTeam: `nuliga_synced_at` ist kein Feld, das jemand
+ * von Hand setzt, sondern ein Protokoll des Abgleichs.
+ */
+async function markNuligaSynced(teamId, nowSql, runner = pool) {
+  const [result] = await runner.query(
+    'UPDATE teams SET nuliga_synced_at = ? WHERE id = ?',
+    [nowSql, teamId]
   );
   return result.affectedRows;
 }
@@ -454,6 +476,7 @@ module.exports = {
   findByCode,
   findById,
   updateTeam,
+  markNuligaSynced,
   getSponsors,
   updateRelationDetails,
   isJerseyNumberTaken,

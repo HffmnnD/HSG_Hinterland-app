@@ -588,6 +588,71 @@
       leading-none tracking-[0.06em] text-ink-muted;
   }
 
+  /* Anwesenheits-Balken auf der Terminkarte. Die eine Frage, die vor jedem
+     Training zählt – deshalb als breite Fläche und nicht als kleiner Chip
+     irgendwo zwischen den Angaben. */
+  .attend-bar {
+    @apply mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3;
+  }
+
+  .attend-bar__label {
+    @apply font-display text-base font-bold uppercase tracking-[0.04em];
+  }
+
+  .attend-bar--yes {
+    @apply border-hsg-green-line bg-hsg-green-soft;
+  }
+
+  .attend-bar--yes .attend-bar__label {
+    @apply text-hsg-green-darker;
+  }
+
+  .attend-bar--no {
+    @apply border-danger-line bg-danger-soft;
+  }
+
+  .attend-bar--no .attend-bar__label {
+    @apply text-danger;
+  }
+
+  /* Urlaub/Verletzung: abwesend, aber aus anderem Grund als einer Absage */
+  .attend-bar--absent {
+    @apply border-warn-line bg-warn-soft;
+  }
+
+  .attend-bar--absent .attend-bar__label {
+    @apply text-warn;
+  }
+
+  /* Abgesagter Termin – muss man beim Überfliegen der Liste sehen, ohne zu
+     lesen. Deshalb volle rote Fläche statt eines Badges am Rand. */
+  .event-cancelled {
+    @apply -mx-5 -mt-5 mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1
+      rounded-t-md bg-danger px-5 py-2.5 text-white;
+  }
+
+  .event-cancelled__label {
+    @apply font-display text-base font-bold uppercase tracking-[0.08em];
+  }
+
+  /* ------------------------------------------------------------- Dialog */
+  /* Abdunklung hinter einem Dialog. Fixiert, damit die Rückfrage auch dann
+     mitten im Bild steht, wenn weit unten in einer langen Liste geklickt
+     wurde. */
+  .modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-end justify-center overflow-y-auto
+      bg-hsg-dark/60 p-4 sm:items-center;
+    padding-bottom: calc(1rem + var(--safe-b));
+  }
+
+  .modal-card {
+    @apply w-full max-w-md rounded-md border border-line bg-paper p-5 shadow-pop;
+  }
+
+  .modal-title {
+    @apply font-display text-lg font-bold uppercase tracking-[0.03em] text-ink;
+  }
+
   /* --------------------------------------------------------- Ladezustand */
   /* Platzhalterfläche, die die Form des späteren Inhalts vorwegnimmt. */
   .skeleton {

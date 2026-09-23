@@ -11,6 +11,9 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/002_team_confirmation.sql` | `is_confirmed` ergänzt, globale Admin-Freigabe abgeschafft. |
 | `migrations/004_news_table.sql` | Tabelle `news` für Vereins-Ankündigungen. |
 | `migrations/005_team_page.sql` | Mannschaftsseite: nuLiga-Nummer, Foto, Sponsoren, Kaderangaben. |
+| `migrations/012_nuliga_key_cleanup.sql` | Entfernt Spiele, die der erste (fehlerhafte) nuLiga-Abgleich unter der Spiel-ID angelegt hat. |
+| `migrations/011_event_cancellation.sql` | `events.cancelled_at` / `cancel_reason`: Termine absagen statt löschen. |
+| `migrations/010_nuliga_games.sql` | Ligaspiele aus nuLiga als Termine (`events.nuliga_game_id`, Schalter je Mannschaft). |
 | `migrations/009_schedule_module.sql` | Termin-Modul: `event_series`, `events`, `attendances`, `long_term_absences`. |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
@@ -164,8 +167,16 @@ Die Vorlage für „jeden Dienstag und Donnerstag, 19:00–20:30 Uhr, Halle West
 | `title` | z. B. „Training" oder „Handballcamp" |
 | `type` | `REGULAR_TRAINING` \| `SINGLE_TRAINING` \| `EVENT_CAMP` \| `MATCH` |
 | `location` | Halle / Treffpunkt, `NULL` = noch offen |
+| `nuliga_game_id` | Herkunft aus nuLiga als `nr:<Spielnummer>@<Saison>`, `NULL` = von Hand angelegt. Zusammen mit `team_id` **UNIQUE**, damit ein erneuter Abgleich denselben Termin aktualisiert statt ihn zu verdoppeln |
+| `cancelled_at` / `cancel_reason` | Gesetzt = der Termin fällt aus. Er bleibt sichtbar und deutlich gekennzeichnet, zählt aber in keiner Beteiligungsquote mehr mit. Die Rückmeldungen bleiben erhalten, damit sich die Absage zurücknehmen lässt |
 | `start_time` / `end_time` | **DATETIME in Ortszeit**, nicht TIMESTAMP: 19:00 Uhr bleibt 19:00 Uhr, egal in welcher Zeitzone der Server läuft. Mehrtägige Termine (Camp) enden an einem späteren Datum |
 | `reasons_visible_to_all` | `0` (Standard) = nur das Trainerteam sieht die Abmeldegründe, alle anderen nur **wer** fehlt. `1` = alle sehen auch **warum** |
+
+> **Ligaspiele** werden als echte Zeilen hier abgelegt (`type = 'MATCH'`),
+> nicht bloß eingeblendet. Nur so gilt für sie dasselbe wie für jedes
+> Training: Abmelden, Kaderübersicht, getrennte Auswertung. Der Abgleich läuft
+> in `backend/services/nuligaSyncService.js` und rührt von Hand angelegte
+> Termine nie an.
 
 ### `attendances` – Zu- und Absagen zu einem Termin
 

@@ -80,49 +80,50 @@ async function requireManager(viewer, teamId, message = MANAGE_DENIED) {
 }
 
 /**
- * Alle Mannschaften, deren Termine die Person sehen darf – die Grundlage der
- * Ansicht „meine Termine".
+ * Alle Mannschaften, deren Kalender die Person sehen darf.
  *
  * Administration sieht alle Mannschaften: Sie verwaltet ohnehin jede und
  * gehört oft keiner als Spieler:in oder Trainer:in an – ohne diese Ausnahme
- * wäre der Terminbereich für sie leer.
+ * wäre der Kalender für sie leer.
  *
- * @returns {Promise<{id:number, code:string, name:string,
- *                    canManage:boolean, isPlayer:boolean}[]>}
+ * @returns {Promise<{id:number, code:string, name:string, canManage:boolean,
+ *                    isPlayer:boolean, handballTeamId:string|null,
+ *                    nuligaSyncEnabled:boolean,
+ *                    nuligaSyncedAt:string|null}[]>}
  */
 async function listAccessibleTeams(viewer) {
   const isAdmin = ADMIN_ROLES.includes(viewer.userRole);
-  const relations = await teamRepository.getTeamsForUser(viewer.userId);
+  const [allTeams, relations] = await Promise.all([
+    teamRepository.listAll(),
+    teamRepository.getTeamsForUser(viewer.userId),
+  ]);
 
-  const byTeam = new Map();
+  // Beziehungen je Mannschaft zusammenfassen: dieselbe Person kann dort
+  // gleichzeitig spielen und trainieren.
+  const roles = new Map();
   for (const entry of relations) {
     if (!entry.isConfirmed) continue;
     if (!SCHEDULE_RELATIONS.includes(entry.relationType)) continue;
-
-    const known = byTeam.get(entry.id) ?? {
-      id: entry.id,
-      code: entry.code,
-      name: entry.name,
-      canManage: false,
-      isPlayer: false,
-    };
+    const known = roles.get(entry.id) ?? { canManage: false, isPlayer: false };
     if (entry.relationType === 'coach') known.canManage = true;
     if (entry.relationType === 'player') known.isPlayer = true;
-    byTeam.set(entry.id, known);
+    roles.set(entry.id, known);
   }
 
-  if (!isAdmin) {
-    return [...byTeam.values()].sort((a, b) => a.id - b.id);
-  }
-
-  const all = await teamRepository.listAll();
-  return all.map((team) => ({
-    id: team.id,
-    code: team.code,
-    name: team.name,
-    canManage: true,
-    isPlayer: byTeam.get(team.id)?.isPlayer ?? false,
-  }));
+  return allTeams
+    .filter((team) => isAdmin || roles.has(team.id))
+    .map((team) => ({
+      id: team.id,
+      code: team.code,
+      name: team.name,
+      canManage: isAdmin || (roles.get(team.id)?.canManage ?? false),
+      isPlayer: roles.get(team.id)?.isPlayer ?? false,
+      // Für den Planungsbereich: gibt es eine Ligaanbindung, und werden die
+      // Spiele daraus in den Kalender übernommen?
+      handballTeamId: team.handballTeamId,
+      nuligaSyncEnabled: team.nuligaSyncEnabled,
+      nuligaSyncedAt: team.nuligaSyncedAt,
+    }));
 }
 
 module.exports = {

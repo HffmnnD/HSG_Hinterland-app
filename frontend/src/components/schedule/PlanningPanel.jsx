@@ -2,20 +2,17 @@ import { useState } from 'react';
 
 import { apiFetch } from '../../lib/api';
 import { useEventSeries } from '../../hooks/useSchedule';
-import {
-  eventTypeLabel,
-  formatIsoRange,
-  weekdayList,
-} from '../../lib/schedule';
+import { formatIsoRange, weekdayList } from '../../lib/schedule';
 import EventForm from './EventForm';
 import TeamAbsences from './TeamAbsences';
 
 /**
- * Planungsbereich für Trainer:innen: Termine anlegen und laufende
- * Trainingsserien verwalten.
+ * Planungsbereich der Trainer:innen.
  *
- * Das Bearbeiten und Löschen EINZELNER Termine passiert bewusst dort, wo sie
- * stehen – im Reiter „Nächste Termine" an der jeweiligen Karte.
+ * Aufgebaut wie die Arbeit selbst: ZUERST die Mannschaft wählen, dann alles
+ * für genau diese Mannschaft. Vorher standen Formular, Serienliste und
+ * Ausfälle nebeneinander, jeweils mit eigener Mannschaftsauswahl – wer drei
+ * Mannschaften trainiert, wusste nie, worauf sich was bezog.
  *
  * @param {{ teams: object[], busy?: boolean,
  *           onRun: (action:() => Promise<any>, fallback?:string) => Promise<any>,
@@ -24,21 +21,32 @@ import TeamAbsences from './TeamAbsences';
  */
 export default function PlanningPanel({ teams, busy = false, onRun, onChanged }) {
   const [teamId, setTeamId] = useState(teams[0]?.id ?? null);
-  const [creating, setCreating] = useState(false);
+  // null = kein Formular offen, sonst 'series' | 'single'
+  const [creating, setCreating] = useState(null);
 
+  const team = teams.find((entry) => entry.id === teamId) ?? null;
   const { series, loading, error, reload } = useEventSeries(teamId);
+
+  if (teams.length === 0) {
+    return (
+      <p className="card-note">
+        Du verwaltest aktuell keine Mannschaft. Planen können Trainer:innen der
+        jeweiligen Mannschaft sowie die Administration.
+      </p>
+    );
+  }
 
   const handleCreate = async (payload) => {
     const created = await onRun(
       () =>
         apiFetch('/api/events', {
           method: 'POST',
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, teamId }),
         }),
-      'Termin angelegt.'
+      'Gespeichert.'
     );
     if (created) {
-      setCreating(false);
+      setCreating(null);
       await reload();
       await onChanged();
     }
@@ -47,7 +55,7 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
   const handleDeleteSeries = async (entry) => {
     const removed = await onRun(
       () => apiFetch(`/api/events/series/${entry.id}`, { method: 'DELETE' }),
-      'Serie beendet.'
+      'Trainingszeit beendet.'
     );
     if (removed) {
       await reload();
@@ -55,84 +63,87 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
     }
   };
 
-  if (teams.length === 0) {
-    return (
-      <p className="card-note">
-        Du verwaltest aktuell keine Mannschaft. Termine anlegen können
-        Trainer:innen der jeweiligen Mannschaft sowie die Administration.
-      </p>
+  const handleNuliga = async (enabled) => {
+    const result = await onRun(() =>
+      apiFetch('/api/events/nuliga', {
+        method: 'POST',
+        body: JSON.stringify({ teamId, enabled }),
+      })
     );
-  }
+    if (result) await onChanged();
+  };
 
   return (
     <div className="space-y-8">
-      {/* ------------------------------------------------ Termin anlegen */}
-      <section className={creating ? 'card' : 'card-accent'}>
-        {creating ? (
-          <>
-            <p className="eyebrow">Neuer Termin</p>
-            <h2 className="section-title mt-1.5 text-base">
-              Training, Sondertermin oder Serie
-            </h2>
-            <div className="mt-5">
-              <EventForm
-                teams={teams}
-                defaultTeamId={teamId}
-                busy={busy}
-                onSubmit={handleCreate}
-                onCancel={() => setCreating(false)}
-              />
-            </div>
-          </>
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="section-title text-base">Termine planen</h2>
-              <p className="mt-1 text-sm text-ink-soft">
-                Wiederkehrendes Training, einmalige Zusatztermine oder ein
-                mehrtägiges Camp – der Kader sieht es sofort.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="btn btn-primary btn-sm"
-            >
-              Termin anlegen
-            </button>
+      {/* ------------------------------------------ 1. Mannschaft wählen */}
+      {teams.length > 1 && (
+        <section>
+          <p className="eyebrow">Mannschaft</p>
+          <div
+            role="group"
+            aria-label="Mannschaft für die Planung"
+            className="mt-2 flex flex-wrap gap-1.5"
+          >
+            {teams.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => {
+                  setTeamId(entry.id);
+                  setCreating(null);
+                }}
+                aria-pressed={teamId === entry.id}
+                className={`chip ${teamId === entry.id ? 'chip-active' : ''}`}
+              >
+                {entry.name}
+              </button>
+            ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
-      {/* ------------------------------------------ Ausfälle im Kader */}
-      <section>
-        <h2 className="section-title">Längerfristige Ausfälle</h2>
-        <p className="mt-1 text-sm text-ink-soft">
-          Urlaub und Verletzungen aus dem Kader. Betroffene Termine sind
-          automatisch als Absage hinterlegt – hier stehen sie am Stück.
-        </p>
-        <TeamAbsences teamId={teamId} />
-      </section>
-
-      {/* -------------------------------------------------- Serien-Liste */}
+      {/* ------------------------------------------- 2. Trainingszeiten */}
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="section-title">Trainingsserien</h2>
-          {teams.length > 1 && (
-            <select
-              aria-label="Mannschaft der Serienübersicht"
-              value={teamId ?? ''}
-              onChange={(event) => setTeamId(Number(event.target.value))}
-              className="field-control-sm"
-            >
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </select>
+          <h2 className="section-title">Trainingszeiten</h2>
+          {creating === null && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setCreating('series')}
+                className="btn btn-primary btn-sm"
+              >
+                Trainingszeit
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreating('single')}
+                className="btn btn-outline btn-sm"
+              >
+                Einzeltermin
+              </button>
+            </div>
           )}
         </div>
+
+        {creating !== null && (
+          <div className="card mt-3">
+            <p className="eyebrow">
+              {creating === 'series'
+                ? 'Wiederkehrende Trainingszeit'
+                : 'Einzelner Termin'}
+              {team && ` · ${team.name}`}
+            </p>
+            <div className="mt-4">
+              <EventForm
+                mode={creating}
+                busy={busy}
+                onSubmit={handleCreate}
+                onCancel={() => setCreating(null)}
+              />
+            </div>
+          </div>
+        )}
 
         {error && (
           <p role="alert" className="alert alert-error mt-3">
@@ -141,13 +152,10 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
         )}
 
         {loading ? (
-          <div className="mt-3 space-y-2">
-            <span className="skeleton h-20 w-full" />
-          </div>
+          <span className="skeleton mt-3 h-20 w-full" />
         ) : series.length === 0 ? (
           <p className="card-note mt-3">
-            Noch keine Serie angelegt. Über „Termin anlegen" →
-            „Wiederkehrend" entsteht der feste Trainingsplan.
+            Noch keine feste Trainingszeit hinterlegt.
           </p>
         ) : (
           <ul className="list-panel mt-3">
@@ -156,29 +164,15 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
                 key={entry.id}
                 className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4"
               >
-                <span className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-display text-sm font-bold uppercase tracking-[0.03em] text-ink">
-                      {entry.title}
-                    </span>
-                    <span className="badge badge-neutral">
-                      {eventTypeLabel(entry.type)}
-                    </span>
-                    {entry.reasonsVisibleToAll && (
-                      <span className="badge badge-confirmed">
-                        Gründe öffentlich
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-sm text-ink-soft">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-ink">
                     {weekdayList(entry.weekdays)} · {entry.startTime} –{' '}
                     {entry.endTime} Uhr
-                    {entry.location ? ` · ${entry.location}` : ''}
                   </span>
-                  <span className="text-xs text-ink-muted">
+                  <span className="block text-sm text-ink-soft">
+                    {entry.location ?? 'Ort offen'} ·{' '}
                     {formatIsoRange(entry.startsOn, entry.endsOn)} ·{' '}
-                    {entry.eventCount} Termine, {entry.upcomingCount} noch
-                    offen
+                    {entry.upcomingCount} Termine offen
                   </span>
                 </span>
 
@@ -188,18 +182,76 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
                   onClick={() => handleDeleteSeries(entry)}
                   className="btn btn-danger btn-sm"
                 >
-                  Serie beenden
+                  Beenden
                 </button>
               </li>
             ))}
           </ul>
         )}
+      </section>
 
-        <p className="field-hint">
-          „Serie beenden" entfernt alle noch nicht begonnenen Termine dieser
-          Serie. Vergangene Einheiten bleiben mitsamt Anwesenheiten in der
-          Historie erhalten.
-        </p>
+      {/* ----------------------------------------------- 3. Ligaspiele */}
+      <section>
+        <h2 className="section-title">Ligaspiele aus nuLiga</h2>
+
+        {!team?.handballTeamId ? (
+          <p className="card-note mt-3">
+            Für diese Mannschaft ist keine nuLiga-Nummer hinterlegt. Ein:e
+            Administrator:in kann sie auf der Mannschaftsseite eintragen –
+            danach lassen sich die Ligaspiele hier übernehmen.
+          </p>
+        ) : (
+          <div className="card mt-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-ink-soft">
+                Spiele automatisch in den Kalender übernehmen. Sie zählen dann
+                wie jeder andere Termin: Der Kader kann sich abmelden, und die
+                Beteiligung lässt sich getrennt auswerten.
+              </p>
+              {team.nuligaSyncEnabled && team.nuligaSyncedAt && (
+                <p className="field-hint">
+                  Zuletzt abgeglichen:{' '}
+                  {new Date(team.nuligaSyncedAt).toLocaleString('de-DE', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}{' '}
+                  Uhr
+                </p>
+              )}
+            </div>
+
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {team.nuligaSyncEnabled && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleNuliga(true)}
+                  className="btn btn-outline btn-sm"
+                >
+                  Aktualisieren
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleNuliga(!team.nuligaSyncEnabled)}
+                className={`btn btn-sm ${
+                  team.nuligaSyncEnabled ? 'btn-danger' : 'btn-primary'
+                }`}
+              >
+                {team.nuligaSyncEnabled ? 'Ausschalten' : 'Einschalten'}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ------------------------------------------ 4. Ausfälle im Kader */}
+      <section>
+        <h2 className="section-title">Längerfristige Ausfälle</h2>
+        <TeamAbsences teamId={teamId} />
       </section>
     </div>
   );

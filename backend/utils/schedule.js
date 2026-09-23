@@ -16,6 +16,22 @@ const EVENT_TYPES = [
   'MATCH',
 ];
 
+/**
+ * Grobe Gruppen für die Filter im Kalender. Die Oberfläche fragt „nur
+ * Training" oder „nur Spiele" – nicht nach den vier Einzelwerten.
+ */
+const EVENT_CATEGORIES = {
+  training: ['REGULAR_TRAINING', 'SINGLE_TRAINING'],
+  match: ['MATCH'],
+  other: ['EVENT_CAMP'],
+};
+
+/** Terminarten einer Kategorie. Unbekannte Kategorie -> null (= kein Filter). */
+function typesForCategory(category) {
+  if (!category) return null;
+  return EVENT_CATEGORIES[category] ?? null;
+}
+
 const ATTENDANCE_STATUS = ['ATTENDING', 'DECLINED'];
 
 const ABSENCE_TYPES = ['VACATION', 'INJURY', 'OTHER'];
@@ -149,6 +165,44 @@ function todaySqlDate(now = new Date()) {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/**
+ * Echter UTC-Zeitpunkt (`2026-10-04T17:00:00.000Z`) -> Wanduhrzeit in der
+ * Vereinszeitzone als `YYYY-MM-DD HH:MM:SS`.
+ *
+ * nuLiga liefert Anwurfzeiten als UTC-Zeitstempel; `events.start_time` hält
+ * dagegen die Ortszeit (siehe Kopf dieser Datei). Ohne diese Umrechnung stünde
+ * ein Anwurf um 19:00 Uhr im Kalender als 17:00 Uhr.
+ *
+ * @returns {string|null} null bei ungültiger Eingabe
+ */
+function utcIsoToLocalSql(isoText, timeZone = 'Europe/Berlin') {
+  const date = new Date(isoText);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  // hourCycle h23 liefert für Mitternacht je nach Umgebung "24" statt "00".
+  const hour = get('hour') === '24' ? '00' : get('hour');
+  return `${get('year')}-${get('month')}-${get('day')} ${hour}:${get('minute')}:${get('second')}`;
+}
+
+/** Wanduhrzeit `YYYY-MM-DD HH:MM:SS` um Minuten verschieben. */
+function addMinutesToSql(sqlText, minutes) {
+  const [datePart, timePart] = String(sqlText).split(' ');
+  const ms = wallClockMs(datePart, (timePart ?? '00:00').slice(0, 5));
+  return ms === null ? null : toSqlDateTime(ms + minutes * 60000);
+}
+
 // --- Serien-Erzeugung -------------------------------------------------------
 
 /**
@@ -196,6 +250,8 @@ function buildOccurrences({ weekdays, startsOn, endsOn, startTime, endTime }) {
 
 module.exports = {
   EVENT_TYPES,
+  EVENT_CATEGORIES,
+  typesForCategory,
   ATTENDANCE_STATUS,
   ABSENCE_TYPES,
   DEFAULT_STATUS,
@@ -210,6 +266,8 @@ module.exports = {
   toSqlDateTime,
   timeToMinutes,
   durationMinutes,
+  utcIsoToLocalSql,
+  addMinutesToSql,
   nowSqlDateTime,
   nowLocalIso,
   todaySqlDate,

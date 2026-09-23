@@ -89,10 +89,18 @@ const EMPTY_EVENTS = { events: [], teams: [], range: null };
 /**
  * Termine einer oder aller eigenen Mannschaften im Zeitraum.
  *
- * @param {{ teamId?: number|null, from?: string|null, to?: string|null }} opts
+ * @param {{ teamId?: number|null, category?: string|null,
+ *           from?: string|null, to?: string|null }} opts
+ *   `category` ist 'training' | 'match' | 'other' – die Oberfläche filtert
+ *   nach diesen Gruppen, nicht nach den vier Einzelwerten.
  */
-export function useEvents({ teamId = null, from = null, to = null } = {}) {
-  const path = `/api/events${query({ teamId, from, to })}`;
+export function useEvents({
+  teamId = null,
+  category = null,
+  from = null,
+  to = null,
+} = {}) {
+  const path = `/api/events${query({ teamId, category, from, to })}`;
   const { data, loading, error, reload } = useApiResource(
     path,
     selectEvents,
@@ -142,10 +150,10 @@ export function useAttendanceHistory({
   userId = null,
   from = null,
   to = null,
-  type = null,
+  category = null,
 } = {}) {
   const path = teamId
-    ? `/api/attendances/history${query({ teamId, userId, from, to, type })}`
+    ? `/api/attendances/history${query({ teamId, userId, from, to, category })}`
     : null;
   const { data, loading, error, reload } = useApiResource(
     path,

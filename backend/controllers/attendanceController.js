@@ -14,7 +14,8 @@ const { applyReasonVisibility } = require('../services/attendanceService');
 const { parseId } = require('../utils/validation');
 const { validateRespond, validateRange } = require('../utils/scheduleValidation');
 const {
-  EVENT_TYPES,
+  EVENT_CATEGORIES,
+  typesForCategory,
   nowLocalIso,
   todaySqlDate,
   wallClockMs,
@@ -28,10 +29,10 @@ const NOT_IN_ROSTER =
   'Diese Person steht nicht im Kader der Mannschaft.';
 const NOT_A_PLAYER =
   'Nur Spieler:innen dieser Mannschaft können sich zu- oder abmelden.';
+const EVENT_CANCELLED =
+  'Dieser Termin wurde abgesagt – eine Zu- oder Absage ist nicht mehr nötig.';
 const EVENT_OVER =
   'Der Termin ist vorbei. Eine nachträgliche Änderung kann nur der/die Trainer:in eintragen.';
-const FOREIGN_HISTORY =
-  'Du kannst nur deine eigene Historie einsehen.';
 
 function shiftDate(date, days) {
   return toSqlDate(wallClockMs(date, '00:00') + days * 86400000);
@@ -80,6 +81,12 @@ async function respond(req, res, next) {
         .json({ message: forSomeoneElse ? NOT_IN_ROSTER : NOT_A_PLAYER });
     }
 
+    // Ein abgesagter Termin findet nicht statt – eine Rückmeldung dazu hätte
+    // keine Bedeutung und würde nur die Kaderliste verwirren.
+    if (event.cancelledAt) {
+      return res.status(409).json({ message: EVENT_CANCELLED });
+    }
+
     // Ein abgelaufener Termin lässt sich nicht mehr selbst „umsagen" – sonst
     // ließe sich die eigene Beteiligungsquote nachträglich schönen. Der/die
     // Trainer:in darf korrigieren, genau dafür ist die Übersteuerung da.
@@ -114,7 +121,7 @@ async function respond(req, res, next) {
   }
 }
 
-// GET /api/attendances/history?teamId=X&userId=Y&from=&to=&type=
+// GET /api/attendances/history?teamId=X&userId=Y&from=&to=&category=
 //
 // Beantwortet zwei Fragen mit derselben Abfrage:
 //   „War Person X am 01.01.2026 beim Training?"  -> entries
@@ -131,11 +138,13 @@ async function history(req, res, next) {
       return res.status(range.status).json({ message: range.message });
     }
 
-    const type = req.query.type;
-    if (type !== undefined && !EVENT_TYPES.includes(type)) {
-      return res
-        .status(400)
-        .json({ message: `Ungültige Terminart. Erlaubt: ${EVENT_TYPES.join(', ')}.` });
+    // Gefiltert wird nach Kategorie („nur Training", „nur Spiele"), nicht nach
+    // den vier Einzelwerten – danach fragt in der Halle niemand.
+    const category = req.query.category;
+    if (category !== undefined && !(category in EVENT_CATEGORIES)) {
+      return res.status(400).json({
+        message: `Ungültige Kategorie. Erlaubt: ${Object.keys(EVENT_CATEGORIES).join(', ')}.`,
+      });
     }
 
     const viewer = { userId: req.userId, userRole: req.userRole };
@@ -144,42 +153,40 @@ async function history(req, res, next) {
       return res.status(access.status).json({ message: access.message });
     }
 
-    // Ohne Verwaltungsrechte gibt es ausschließlich die eigene Historie –
-    // die Beteiligungsquote der Mitspieler:innen geht niemanden sonst an.
+    // Die Beteiligung ist innerhalb der Mannschaft für ALLE einsehbar, nicht
+    // nur für das Trainerteam: Wer regelmäßig kommt, darf sehen, wer das auch
+    // tut – das ist im Verein gelebte Praxis und keine Personalakte.
+    //
+    // Geschützt bleibt allein der GRUND einer Absage: Den filtert weiter
+    // unten applyReasonVisibility nach der Einstellung des jeweiligen Termins.
     const requestedUserId =
       req.query.userId === undefined ? null : parseId(req.query.userId);
     if (req.query.userId !== undefined && !requestedUserId) {
       return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
     }
-    if (
-      !access.canManage &&
-      requestedUserId !== null &&
-      requestedUserId !== req.userId
-    ) {
-      return res.status(403).json({ message: FOREIGN_HISTORY });
-    }
-    const focusUserId = access.canManage
-      ? requestedUserId
-      : requestedUserId ?? req.userId;
+    const focusUserId = requestedUserId;
 
     const to = range.to ?? todaySqlDate();
     const from = range.from ?? shiftDate(to, -DEFAULT_HISTORY_DAYS);
 
-    const allEvents = await eventRepository.listForTeams(
+    const events = await eventRepository.listForTeams(
       [teamId],
       `${from} 00:00:00`,
-      `${to} 23:59:59`
+      `${to} 23:59:59`,
+      typesForCategory(category)
     );
-    const events = type
-      ? allEvents.filter((event) => event.type === type)
-      : allEvents;
 
     const statusByEvent = await scheduleService.buildStatusByEvent(events);
     const now = nowLocalIso();
 
     // Nur begonnene Termine zählen in die Quote: Ein Training in drei Wochen
     // ist noch keine Teilnahme, sonst wäre jede Statistik geschönt.
-    const countedEvents = events.filter((event) => event.startTime <= now);
+    //
+    // Abgesagte Termine zählen ebenfalls nicht – niemand soll eine schlechtere
+    // Quote bekommen, weil der Verein die Halle nicht hatte.
+    const countedEvents = events.filter(
+      (event) => event.startTime <= now && !event.cancelledAt
+    );
 
     const tally = new Map();
     for (const event of countedEvents) {
@@ -223,11 +230,10 @@ async function history(req, res, next) {
         name: access.team.name,
       },
       canManage: access.canManage,
-      type: type ?? null,
+      category: category ?? null,
       totalEvents: events.length,
       countedEvents: countedEvents.length,
-      // Die Kaderübersicht sieht nur, wer die Mannschaft verwaltet.
-      players: access.canManage ? players : [],
+      players,
     };
 
     // Einzelne Person im Fokus -> Termin für Termin auflisten.
@@ -255,6 +261,7 @@ async function history(req, res, next) {
           startTime: event.startTime,
           endTime: event.endTime,
           isPast: event.startTime <= now,
+          cancelledAt: event.cancelledAt,
           status: visible.status,
           reason: visible.reason,
           reasonHidden: Boolean(visible.reasonHidden),

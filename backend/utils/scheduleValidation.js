@@ -313,6 +313,34 @@ function validateEventUpdate(body, { scope = 'single', currentType } = {}) {
   return { ok: true, fields: base.fields, times: single.times };
 }
 
+/**
+ * Prüft den Body für POST /api/events/:id/cancel.
+ *
+ * Beim Absagen ist ein Grund Pflicht – „fällt aus" ohne Angabe löst in der
+ * Mannschaft nur Rückfragen aus. Beim Zurücknehmen der Absage braucht es
+ * keinen.
+ *
+ * @returns {{ ok:true, cancelled:boolean, reason:string|null }
+ *          | { ok:false, status, message }}
+ */
+function validateCancel(body) {
+  const cancelled = body?.cancelled;
+  if (typeof cancelled !== 'boolean') {
+    return fail('cancelled muss true oder false sein.');
+  }
+
+  if (!cancelled) return { ok: true, cancelled: false, reason: null };
+
+  const reason = cleanText(body?.reason, {
+    label: 'Der Grund der Absage',
+    max: MAX_REASON_LENGTH,
+  });
+  if (!reason.ok) {
+    return fail('Bitte einen kurzen Grund für die Absage angeben.');
+  }
+  return { ok: true, cancelled: true, reason: reason.value };
+}
+
 /** `scope`-Query-Parameter für Bearbeiten/Löschen. */
 function validateScope(value) {
   const scope = value ?? 'single';
@@ -466,6 +494,7 @@ module.exports = {
   daysBetween,
   validateEventCreate,
   validateEventUpdate,
+  validateCancel,
   validateScope,
   validateRespond,
   validateAbsence,

@@ -53,8 +53,8 @@ frontend/src/
     format.js                  deutsche Datumsformate
     handball.js                Beschriftungen, Ergebnis-/Zeitformate und
                                Ereignis-Symbole des Handball-Moduls
-    schedule.js                Terminarten, Status-Farben, Datums-/Zeitformate
-                               und CSV-Export des Termin-Moduls
+    schedule.js                Terminarten, Kategorien, Status-Farben und
+                               Datums-/Zeitformate des Kalenders
   components/
     AppLayout.jsx              Gerüst aller geschützten Seiten:
                                Kopfzeile + MainNav + Inhalt + BottomNav
@@ -64,6 +64,7 @@ frontend/src/
     NavIcons.jsx               Inline-SVG-Icons der Navigation
     ScrollToTop.jsx            setzt den Scroll-Stand bei Seitenwechsel zurück
     Badge.jsx                  Badge / RoleBadge (Rollen- und Status-Chips)
+    Modal.jsx                  Rückfrage-Dialog über dem Inhalt (fixiert)
     FullScreenLoader.jsx
     ErrorBoundary.jsx          fängt Render-Fehler ab (keine weisse Seite)
     ProtectedRoute.jsx         Routen-Schutz nach Login-Status + Rolle
@@ -74,7 +75,7 @@ frontend/src/
     NewsManager.jsx            Verwaltung der News: Formular + Liste + Löschen
     Dashboard.jsx              /: News-Feed, „Meine Mannschaften“, Konto
     TeamsPage.jsx              /teams: eigene + alle Mannschaften
-    SchedulePage.jsx           /termine: Termin-Modul mit Reitern
+    CalendarPage.jsx           /kalender: Kalender-Modul mit Reitern
     AdminPage.jsx              /admin: Mitgliederliste + News-Verwaltung
     TeamPage.jsx               /teams/:code: Fan-Mannschaftsseite mit Reitern
                                (Übersicht / Spielplan & Tabelle / Kader /
@@ -87,16 +88,16 @@ frontend/src/
       Skeleton.jsx             Lade-Platzhalter
     schedule/
       UpcomingPanel.jsx        Terminliste, nach Monat gruppiert
-      EventCard.jsx            ein Termin: Zeit, Ort, eigener Status,
-                               Schnellaktionen, Absagen, Kader zum Aufklappen
-      EventAttendance.jsx      volle Kaderliste eines Termins (+ Übersteuern)
+      EventCard.jsx            ein Termin: Mannschaft, Zeit, Ort, grosser
+                               Status-Balken, Abmelden, Mannschaft aufklappen
+      TeamRoster.jsx           ganze Mannschaft: Da / Nicht da (+ Übersteuern)
+      EventDialogs.jsx         Absagen, Löschen, Bearbeiten als Dialog
       DeclineForm.jsx          Abmeldung – Grund ist Pflicht
-      StatusBadge.jsx          Status-Chip + Zählung „12 dabei / 2 fehlen"
-      EventForm.jsx            Termin/Serie anlegen und bearbeiten
+      EventForm.jsx            Trainingszeit oder Einzeltermin anlegen
       AbsencePanel.jsx         eigener Urlaub / eigene Verletzungen
       TeamAbsences.jsx         längerfristige Ausfälle im Kader (Trainer)
-      HistoryPanel.jsx         Historie, Beteiligungsquote, CSV-Export
-      PlanningPanel.jsx        Planungsbereich der Trainer:innen
+      ParticipationPanel.jsx   Beteiligung in Prozent je Person
+      PlanningPanel.jsx        Planung je Mannschaft (Zeiten, nuLiga, Ausfälle)
     handball/
       TableWidget.jsx          Ligatabelle, eigene Mannschaft hervorgehoben
       ScheduleWidget.jsx       nächste Spiele + letzte Ergebnisse, Status-Badge
@@ -146,46 +147,78 @@ Weitere Entscheidungen, die beim Weiterbauen wichtig sind:
 * **Profilbilder gibt es noch nicht.** Die Karte zeigt die Rückennummer im
   Trikot-Kreis, ersatzweise die Initialen.
 
-## Termine (`/termine`)
+## Kalender (`/kalender`)
 
-Trainingsplan, Sondertermine und Anwesenheiten – das Gegenstück zu
-`backend/README.md` → „Termine & Anwesenheiten".
+Trainingszeiten, Ligaspiele, Sondertermine und Anwesenheiten – das Gegenstück
+zu `backend/README.md` → „Kalender".
 
 **Eine Seite, zwei Rollen.** Welche Reiter erscheinen, entscheidet nicht die
 globale Rolle, sondern die Mannschaftsbeziehung, die das Backend mit der
-Terminliste zurückgibt (`teams: [{ id, code, name, canManage, isPlayer }]`):
+Terminliste zurückgibt (`teams: [{ id, code, name, canManage, isPlayer, … }]`):
 
 | Reiter | sichtbar für | Inhalt |
 | ------ | ------------ | ------ |
-| **Nächste Termine** | alle | Terminliste nach Datum, nach Monat gruppiert. Mit Mannschafts-Filter und „Rückblick 30 Tage". Spieler:innen sehen „Ich bin dabei" / „Abmelden", Trainer:innen zusätzlich „Bearbeiten"/„Löschen" |
-| **Meine Abwesenheiten** | wer irgendwo `player` ist | Urlaub/Verletzung mit Zeitraum eintragen und wieder entfernen |
-| **Historie & Statistik** | alle | Zeitraum- und Terminart-Filter. Trainer:innen sehen die Beteiligung des ganzen Kaders (mit CSV-Export), Spieler:innen ausschließlich ihre eigene |
-| **Planung** | wer irgendwo `coach` ist (oder Admin) | Einzeltermin / mehrtägiges Event / Serie anlegen, laufende Serien beenden, längerfristige Ausfälle im Kader |
+| **Anstehend** | alle | Terminliste nach Datum, nach Monat gruppiert. Filter nach Mannschaft und nach Kategorie (Training / Spiele / Sonstiges) sowie „Rückblick 30 Tage" |
+| **Meine Abwesenheiten** | wer irgendwo `player` ist | Urlaub/Verletzung mit Zeitraum eintragen und entfernen |
+| **Beteiligung** | alle | Zeitraum + Kategorie, dann je Person der Anteil in Prozent. Ein Klick öffnet die Termine dahinter. **Jedes Mitglied** sieht die ganze Mannschaft, nicht nur das Trainerteam; die eigene Zeile ist grün hinterlegt |
+| **Planung** | wer irgendwo `coach` ist (oder Admin) | **Erst die Mannschaft wählen**, dann Trainingszeiten, Einzeltermine, Ligaspiele aus nuLiga und längerfristige Ausfälle für genau diese Mannschaft |
 
-**Zu- und Absagen.** Voreinstellung ist immer „dabei" – es gibt keinen
-„ausstehend"-Zustand. Ein Klick auf „Abmelden" öffnet `DeclineForm`; ohne
-Grund lässt sich nicht absenden (das Backend weist es zusätzlich ab). Sechs
-Vorschlags-Chips („Krank", „Beruflich", …) füllen das Freitextfeld nur aus.
+**Die Terminkarte** beantwortet von oben nach unten drei Fragen, in genau
+dieser Reihenfolge:
+
+1. **Was und wann?** Datumsblock, Titel und eine Zeile
+   `Mannschaft · Uhrzeit · Halle`. Die Mannschaft steht bewusst dort und nicht
+   als Kürzel in der Ecke – wer in zwei Mannschaften spielt oder eine
+   trainiert und in einer anderen spielt, muss auf einen Blick sehen, um
+   wessen Training es geht. Eine Art-Kennzeichnung erscheint nur, wo sie etwas
+   hinzufügt (Spiel, Sondertermin); bei einem Training stünde sonst dreimal
+   „Training" auf derselben Karte.
+2. **Bin ich dabei?** Ein breiter farbiger Balken (`.attend-bar`) mit
+   „Du bist dabei" / „Du bist abgemeldet" / „Du bist nicht da". Das ist die
+   Frage, wegen der die meisten die App überhaupt öffnen – deshalb Fläche
+   statt Chip.
+3. **Wer sonst?** Ein kleiner Knopf mit Personen-Symbol und Zählung
+   („14 von 16"). Ein Klick klappt `TeamRoster` auf: die ganze Mannschaft,
+   geteilt in **Da** und **Nicht da**.
+
+**Abgesagte Termine** tragen eine rote Fläche über der ganzen Karte
+(`.event-cancelled`) samt Grund, der Titel ist durchgestrichen. Das muss man
+beim Überfliegen der Liste sehen, ohne zu lesen. Der Termin bleibt stehen –
+wer nicht in die App schaut, stünde sonst vor der Halle.
+
+**Zu- und Absagen.** Es gibt **keinen** „Ich bin dabei"-Knopf: Zusagen ist der
+Standard, da ist nichts zu bestätigen. Angeboten wird nur „Abmelden" – und wer
+abgesagt hat, findet dort „Doch dabei" und „Grund ändern". Ohne Grund lässt
+sich nicht absenden (das Backend weist es zusätzlich ab).
 
 **Farben.**
 
 | | Bedeutung |
 | --- | --- |
-| Grün gefüllt (`.badge-confirmed`) | ausdrücklich zugesagt |
-| Grün umrandet (`.badge-default`) | dabei, aber ohne Rückmeldung |
+| Grün (`.badge-confirmed`) | dabei |
 | Rot (`.badge-declined`) | abgesagt |
 | Gelb (`.badge-pending`) | Urlaub / Verletzung |
 
-„Keine Rückmeldung" ist bewusst grün und nicht gelb: Wer nichts sagt, ist laut
-Regel dabei und wird auch so gezählt – ein gelber Chip würde suggerieren, die
-Zusage fehle noch. Der Zusatz „keine Rückmeldung" macht den Unterschied
-trotzdem sichtbar.
+Zwischen „hat zugesagt" und „hat nichts gesagt" wird nicht unterschieden –
+beides zählt gleich, und zwei Grüntöne hätten nur Fragen aufgeworfen.
 
 **Sichtbarkeit der Gründe.** Wer fehlt, sehen immer alle. Warum jemand fehlt,
-nur das Trainerteam – es sei denn, beim Termin ist „Gründe für alle sichtbar"
-gesetzt. Das Frontend zeigt dann `Grund nur für das Trainerteam` statt des
-Textes; gefiltert wird aber im **Backend**, der Grund wird gar nicht erst
-ausgeliefert.
+nur das Trainerteam – es sei denn, beim Termin ist „Abmeldegründe für alle
+sichtbar" gesetzt. Gefiltert wird im **Backend**: Der Grund wird gar nicht
+erst ausgeliefert. In der Liste steht dann schlicht der Name, ohne Hinweis
+darauf, dass es einen Grund gibt.
+
+**Ligaspiele.** Ist im Planungsbereich „Ligaspiele aus nuLiga" eingeschaltet,
+stehen die Spiele als normale Termine im Kalender – mit Abmeldung,
+Kaderübersicht und eigener Beteiligungsquote. Bearbeiten und Löschen sind
+gesperrt: Der nächste Abgleich würde die Änderung überschreiben. Absagen geht
+trotzdem, denn das ist eine Information der Mannschaft, nicht des Verbands.
+
+**Rückfragen sind echte Dialoge** (`components/Modal.jsx`), keine Kästen am
+Seitenanfang: Wer weit unten in einer langen Liste auf „Löschen" tippt, sieht
+einen Kasten ganz oben nicht – die Aktion wirkte dann, als sei nichts
+passiert. Der Dialog liegt fixiert über der Seite, auf dem Handy von unten
+eingeblendet, und schließt per Escape oder Klick auf die Abdunklung.
 
 **Zeitzonen.** Termine kommen als `JJJJ-MM-TTTHH:MM:SS` ohne Zeitzone an und
 werden von `new Date()` als Ortszeit gelesen – 19:00 Uhr bleibt 19:00 Uhr.
@@ -251,7 +284,8 @@ Touch-Ziele sind 56 px hoch.
 | `/`            | `<ProtectedRoute>` – jeder eingeloggte User   |
 | `/teams`       | `<ProtectedRoute>` – Übersicht aller Mannschaften |
 | `/teams/:code` | `<ProtectedRoute>` – jeder eingeloggte User; Verwaltung schaltet das Backend per `canManage` frei |
-| `/termine`     | `<ProtectedRoute>` – jeder eingeloggte User; welche Reiter erscheinen, richtet sich nach der Mannschaftsbeziehung (siehe „Termine") |
+| `/kalender`    | `<ProtectedRoute>` – jeder eingeloggte User; welche Reiter erscheinen, richtet sich nach der Mannschaftsbeziehung (siehe „Kalender") |
+| `/termine`     | Weiterleitung auf `/kalender` (alter Pfad aus der Vorschau-Version) |
 | `/admin`       | `<ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>` (admin, sub_admin, trainer) |
 | `*`            | Redirect auf `/`                              |
 
