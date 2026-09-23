@@ -127,6 +127,143 @@ async function listAllWithProfiles(runner = pool) {
   );
 }
 
+/**
+ * Seite der Mitgliederliste für die Verwaltung – gefiltert, durchsucht und
+ * seitenweise.
+ *
+ * Warum nicht wie bisher alles laden und im Browser filtern: bei 1000+
+ * Konten wären das je Aufruf rund ein Megabyte JSON plus 1000 Zeilen im DOM.
+ * Gefiltert und begrenzt wird deshalb in SQL; der Browser bekommt nur die
+ * Seite, die er wirklich anzeigt.
+ *
+ * Die Relationen (Mannschaften, Dienste) werden ausschliesslich für die IDs
+ * DIESER Seite nachgeladen – zwei Sammelabfragen statt N+1, unabhängig von
+ * der Gesamtgröße des Vereins.
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.search]   Freitext: Vor-/Nachname, E-Mail oder
+ *                                 Mitgliedsnummer (= users.id).
+ * @param {string} [opts.role]     Genau eine Rolle, sonst alle.
+ * @param {'active'|'inactive'} [opts.status]  Gesperrt/aktiv, sonst alle.
+ * @param {number} [opts.page=1]
+ * @param {number} [opts.pageSize=20]
+ * @returns {Promise<{ users: object[], total: number, page: number,
+ *                     pageSize: number, pageCount: number }>}
+ */
+async function listPageWithProfiles(
+  { search, role, status, page = 1, pageSize = 20 } = {},
+  runner = pool
+) {
+  const where = [];
+  const params = [];
+
+  if (search) {
+    // CONCAT über beide Namensteile, damit auch "Anna Müller" trifft und
+    // nicht nur "Anna" oder "Müller".
+    where.push(
+      `(u.first_name LIKE ? OR u.last_name LIKE ?
+        OR CONCAT(u.first_name, ' ', u.last_name) LIKE ?
+        OR u.email LIKE ? OR CAST(u.id AS CHAR) LIKE ?)`
+    );
+    const like = `%${search}%`;
+    params.push(like, like, like, like, like);
+  }
+  if (role) {
+    where.push('u.role = ?');
+    params.push(role);
+  }
+  if (status === 'active') where.push('u.is_approved = 1');
+  else if (status === 'inactive') where.push('u.is_approved = 0');
+
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+  const [[countRow]] = await runner.query(
+    `SELECT COUNT(*) AS total FROM users u ${whereSql}`,
+    params
+  );
+  const total = Number(countRow.total);
+
+  // Seite begrenzen: nach einer Filterung kann die zuvor gewählte Seite
+  // ausserhalb des Bereichs liegen – dann die letzte vorhandene liefern,
+  // statt eine leere Tabelle zu zeigen.
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const offset = (safePage - 1) * pageSize;
+
+  const [rows] = await runner.query(
+    `SELECT ${PUBLIC_COLUMNS.split(', ').map((c) => `u.${c}`).join(', ')}
+       FROM users u
+       ${whereSql}
+      ORDER BY u.last_name, u.first_name, u.id
+      LIMIT ? OFFSET ?`,
+    [...params, pageSize, offset]
+  );
+
+  if (rows.length === 0) {
+    return { users: [], total, page: safePage, pageSize, pageCount };
+  }
+
+  const ids = rows.map((row) => row.id);
+  const [memberships] = await runner.query(
+    `SELECT ut.user_id, ut.relation_type, t.id, t.code, t.name
+       FROM user_teams ut
+       JOIN teams t ON t.id = ut.team_id
+      WHERE ut.user_id IN (?)
+      ORDER BY t.sort_order, t.name`,
+    [ids]
+  );
+  const [services] = await runner.query(
+    'SELECT user_id, service_type FROM user_services WHERE user_id IN (?) ORDER BY service_type',
+    [ids]
+  );
+
+  const teamsByUser = groupBy(memberships, 'user_id', (m) => ({
+    id: m.id,
+    code: m.code,
+    name: m.name,
+    relationType: m.relation_type,
+  }));
+  const servicesByUser = groupBy(services, 'user_id', (s) => s.service_type);
+
+  return {
+    users: rows.map((row) =>
+      toProfile(row, teamsByUser.get(row.id) ?? [], servicesByUser.get(row.id) ?? [])
+    ),
+    total,
+    page: safePage,
+    pageSize,
+    pageCount,
+  };
+}
+
+/**
+ * Kennzahlen der Mitgliederverwaltung: Gesamtzahl, Verteilung nach Rolle,
+ * gesperrte Konten und Neuzugänge der letzten 30 Tage.
+ *
+ * Eine Abfrage statt fünf – die Zahlen stehen im Kopf der Verwaltung und
+ * sollen den Seitenaufbau nicht ausbremsen.
+ */
+async function getMemberStats(runner = pool) {
+  const [[row]] = await runner.query(
+    `SELECT COUNT(*)                                        AS total,
+            SUM(is_approved = 1)                            AS active,
+            SUM(is_approved = 0)                            AS inactive,
+            SUM(created_at >= NOW() - INTERVAL 30 DAY)      AS recent
+       FROM users`
+  );
+  const [roleRows] = await runner.query(
+    'SELECT role, COUNT(*) AS count FROM users GROUP BY role'
+  );
+
+  return {
+    total: Number(row?.total ?? 0),
+    active: Number(row?.active ?? 0),
+    inactive: Number(row?.inactive ?? 0),
+    recent: Number(row?.recent ?? 0),
+    byRole: roleRows.map((r) => ({ role: r.role, count: Number(r.count) })),
+  };
+}
+
 // --- Schreiben ---------------------------------------------------------------
 
 /**
@@ -237,6 +374,8 @@ module.exports = {
   buildProfile,
   getFullProfile,
   listAllWithProfiles,
+  listPageWithProfiles,
+  getMemberStats,
   createWithProfile,
   applyAdminChange,
 };

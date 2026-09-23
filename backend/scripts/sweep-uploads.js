@@ -25,7 +25,13 @@ const APPLY = process.argv.includes('--apply');
 
 // Alle Stellen, an denen ein Upload-Pfad in der Datenbank steht.
 const REFERENCE_QUERIES = [
-  { label: 'News-Bilder', sql: 'SELECT image_path AS path FROM news WHERE image_path IS NOT NULL' },
+  {
+    label: 'News-Bilder',
+    // Seit Migration 008 hängen die Bilder in `news_images` (beliebig viele
+    // je Beitrag). Läse der Lauf hier noch die alten Spalten, hielte er JEDES
+    // Bild für verwaist und würde die komplette Bilderstrecke löschen.
+    sql: 'SELECT image_path AS path FROM news_images',
+  },
   { label: 'Mannschaftsfotos', sql: 'SELECT photo_path AS path FROM teams WHERE photo_path IS NOT NULL' },
 ];
 

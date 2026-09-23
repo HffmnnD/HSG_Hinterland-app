@@ -1,324 +1,168 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
-import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { useTeams } from '../hooks/useTeams';
-import { ADMIN_ROLES, ROLES, roleLabel } from '../lib/roles';
-import { relationLabelPlural, serviceLabel } from '../lib/participation';
-import TeamSelect from './TeamSelect';
+import { ADMIN_ROLES } from '../lib/roles';
 import AppLayout from './AppLayout';
-import NewsManager from './NewsManager';
-import { RoleBadge } from './Badge';
+import { Loading } from './admin/ui/Feedback';
 
+// Die Bereiche werden erst geladen, wenn sie geöffnet werden.
+//
+// Das ist hier kein vorsorgliches Feintuning, sondern rechnet sich sofort:
+// der System-Status bringt die Diagramm-Bibliothek mit, die allein rund
+// 130 kB (gepackt) wiegt. Läge sie im Hauptbündel, müsste JEDES Mitglied sie
+// beim Öffnen der App herunterladen – für eine Seite, die nur Admins je zu
+// sehen bekommen. Als eigene Teilstücke zahlt sie nur, wer sie aufruft.
+const MembersSection = lazy(() => import('./admin/MembersSection'));
+const NewsSection = lazy(() => import('./admin/NewsSection'));
+const TeamsSection = lazy(() => import('./admin/TeamsSection'));
+const SystemSection = lazy(() => import('./admin/SystemSection'));
+
+/**
+ * Alle Bereiche der Verwaltung an EINER Stelle definiert – Reiterleiste und
+ * Inhaltsauswahl speisen sich daraus. So kann kein Reiter auftauchen, zu dem
+ * es keinen Bereich gibt (oder umgekehrt).
+ *
+ * `adminOnly` blendet einen Bereich für Trainer:innen aus. Das Backend lehnt
+ * die zugehörigen Endpunkte ohnehin ab (siehe routes/adminRoutes.js) – hier
+ * wird nur gar nicht erst etwas angeboten, das nicht geht.
+ */
+const SECTIONS = [
+  {
+    key: 'mitglieder',
+    label: 'Mitglieder',
+    title: 'Mitgliederverwaltung',
+    description: 'Rollen, Sperren und Mannschaftszuordnungen der Vereinsmitglieder.',
+    Component: MembersSection,
+  },
+  {
+    key: 'news',
+    label: 'News',
+    title: 'News & Beiträge',
+    description: 'Beiträge veröffentlichen, archivieren und aus dem Archiv zurückholen.',
+    adminOnly: true,
+    Component: NewsSection,
+  },
+  {
+    key: 'mannschaften',
+    label: 'Mannschaften',
+    title: 'Mannschaftsverwaltung',
+    description: 'Mannschaften anlegen und ihre Stammdaten samt nuLiga-Anbindung pflegen.',
+    adminOnly: true,
+    Component: TeamsSection,
+  },
+  {
+    key: 'system',
+    label: 'System-Status',
+    title: 'System-Status',
+    description: 'Auslastung, Verkehr und Zustand des Servers.',
+    adminOnly: true,
+    Component: SystemSection,
+  },
+];
+
+const DEFAULT_SECTION = SECTIONS[0].key;
+
+/**
+ * Verwaltungsbereich (/admin).
+ *
+ * Die Reiterleiste ist dieselbe wie auf der Mannschaftsseite – gleiche Klassen
+ * (`.tabs` / `.tab` / `.tab--active`), gleiche ARIA-Rollen, gleiches Verhalten
+ * (`replace`, damit das Blättern nicht die Historie füllt). Reiter sollen
+ * überall in der App gleich aussehen und sich gleich anfühlen; zwei eigene
+ * Navigationsmuster für dieselbe Aufgabe wären reine Willkür.
+ *
+ * Jeder Bereich lädt seine Daten selbst, sobald er sichtbar wird – die Seite
+ * holt also nie Mitglieder, System-Kennzahlen und News auf einmal, sondern nur
+ * das, was gerade angezeigt wird.
+ *
+ * Der gewählte Bereich steht in der Adresse (`/admin?bereich=news`). Damit
+ * lässt sich ein Bereich verlinken, und der Zurück-Knopf des Browsers tut das
+ * Erwartbare.
+ */
 export default function AdminPage() {
-  const { user: currentUser } = useAuth();
-  const { teams: allTeams } = useTeams();
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const actorRole = currentUser?.role;
-  // admin & sub_admin dürfen Rolle und Freigabe ändern, Trainer:innen nicht.
-  const canManageAccounts = ADMIN_ROLES.includes(actorRole);
-  const isSubAdmin = actorRole === 'sub_admin';
+  const canManageAccounts = ADMIN_ROLES.includes(user?.role);
 
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  // Mehrere Zeilen können gleichzeitig gespeichert werden.
-  const [savingIds, setSavingIds] = useState(() => new Set());
+  const sections = useMemo(
+    () => SECTIONS.filter((section) => !section.adminOnly || canManageAccounts),
+    [canManageAccounts]
+  );
 
-  const setSaving = useCallback((id, isSaving) => {
-    setSavingIds((prev) => {
-      const next = new Set(prev);
-      if (isSaving) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }, []);
+  const requested = searchParams.get('bereich');
+  // `sections` kann heute nicht leer sein (der Bereich „Mitglieder" ist für
+  // alle Verwaltungsrollen sichtbar). Der Zugriff auf `sections[0]` wäre aber
+  // die Stelle, die still mit „cannot read property 'key' of undefined"
+  // abstürzt, sobald jemand künftig auch dort `adminOnly` setzt.
+  const active =
+    sections.find((section) => section.key === requested) ?? sections[0] ?? null;
 
-  // Serverstand nachladen, OHNE eine bestehende Fehlermeldung zu überschreiben.
-  const reloadUsers = useCallback(async () => {
-    try {
-      const data = await apiFetch('/api/admin/users');
-      setUsers(data?.users ?? []);
-    } catch {
-      // Die ursprüngliche Fehlermeldung bleibt stehen.
-    }
-  }, []);
-
-  // Initiales Laden – setState erst nach dem await, um Kaskaden-Renders zu vermeiden.
+  // Unbekannter oder unerlaubter Bereich in der Adresse (alter Link, Tippfehler,
+  // Trainer:in öffnet einen Admin-Link): still auf den ersten Bereich
+  // zurückfallen, statt eine leere Seite zu zeigen.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await apiFetch('/api/admin/users');
-        if (!cancelled) setUsers(data?.users ?? []);
-      } catch (err) {
-        if (!cancelled) setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Gemeinsame PATCH-Logik mit optimistischem Update und Rollback.
-  const patchUser = async (id, body, optimistic) => {
-    const previous = users;
-    setSaving(id, true);
-    setError(null);
-    setUsers((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, ...optimistic } : u))
-    );
-    try {
-      await apiFetch(`/api/admin/users/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      });
-    } catch (err) {
-      setUsers(previous);
-      setError(err.message);
-      reloadUsers();
-    } finally {
-      setSaving(id, false);
+    if (active && requested && requested !== active.key) {
+      setSearchParams({ bereich: active.key }, { replace: true });
     }
+  }, [requested, active, setSearchParams]);
+
+  const selectSection = (key) => {
+    setSearchParams(key === DEFAULT_SECTION ? {} : { bereich: key }, {
+      replace: true,
+    });
   };
 
-  const changeRole = (id, role) => patchUser(id, { role }, { role });
-  const approve = (id) =>
-    patchUser(id, { isApproved: true }, { isApproved: true });
+  if (!active) {
+    return (
+      <AppLayout width="max-w-7xl">
+        <h1 className="page-title">Verwaltung</h1>
+        <div role="alert" className="alert alert-info mt-4">
+          Für deine Rolle ist derzeit kein Verwaltungsbereich freigeschaltet.
+        </div>
+      </AppLayout>
+    );
+  }
 
-  // Die Chips steuern die Spieler-Zuordnung; Trainer-/Fan-Beziehungen werden
-  // auf der Mannschaftsseite gepflegt und bleiben hier unverändert.
-  const togglePlayerTeam = (userId, teamId) => {
-    const target = users.find((u) => u.id === userId);
-    const teams = target?.teams ?? [];
-    const playerIds = teams
-      .filter((t) => t.relationType === 'player')
-      .map((t) => t.id);
-    const nextIds = playerIds.includes(teamId)
-      ? playerIds.filter((x) => x !== teamId)
-      : [...playerIds, teamId];
-
-    const nextTeams = [
-      ...teams.filter((t) => t.relationType !== 'player'),
-      ...nextIds
-        .map((tid) => allTeams.find((t) => t.id === tid))
-        .filter(Boolean)
-        .map((t) => ({ ...t, relationType: 'player' })),
-    ];
-
-    patchUser(userId, { teamIds: nextIds }, { teams: nextTeams });
-  };
-
-  // Sub-Admins dürfen Admin-Konten nicht bearbeiten (das Backend blockt es
-  // ebenfalls – hier nur, damit die UI es gar nicht erst anbietet).
-  const isLockedRow = (user) => isSubAdmin && user.role === 'admin';
-
-  // Sub-Admins dürfen die Rolle „Admin“ nicht vergeben.
-  const assignableRoles = isSubAdmin
-    ? ROLES.filter((r) => r !== 'admin')
-    : ROLES;
+  const ActiveSection = active.Component;
 
   return (
-    <AppLayout width="max-w-6xl">
-      <div className="flex flex-wrap items-center gap-2">
+    <AppLayout width="max-w-7xl">
+      <header>
         <h1 className="page-title">Verwaltung</h1>
-        <RoleBadge role={actorRole} />
+        <p className="mt-1 text-sm text-ink-muted">{active.description}</p>
+      </header>
+
+      <div className="tabs mt-6" role="tablist" aria-label="Bereiche der Verwaltung">
+        {sections.map((section) => (
+          <button
+            key={section.key}
+            type="button"
+            role="tab"
+            id={`tab-${section.key}`}
+            aria-selected={active.key === section.key}
+            aria-controls={`panel-${section.key}`}
+            onClick={() => selectSection(section.key)}
+            className={`tab ${active.key === section.key ? 'tab--active' : ''}`}
+          >
+            {section.label}
+          </button>
+        ))}
       </div>
-      {isSubAdmin && (
-        <div className="alert alert-info mt-3">
-          Als Sub-Admin kannst du Admin-Konten nicht bearbeiten und die Rolle
-          „Admin“ nicht vergeben.
-        </div>
-      )}
 
-      <section className="mt-6">
-        <h2 className="section-title">Mitglieder</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          {canManageAccounts
-            ? 'Rollen und Mannschaftszuordnungen verwalten.'
-            : 'Mannschaftszuordnung der Mitglieder verwalten.'}
-        </p>
-
-        {error && (
-          <div role="alert" className="alert alert-error mt-4">
-            {error}
-          </div>
-        )}
-
-        {loading ? (
-          <p className="mt-4 text-sm text-ink-muted">Wird geladen …</p>
-        ) : users.length === 0 ? (
-          <p className="mt-4 text-sm text-ink-muted">
-            Keine Mitglieder gefunden.
-          </p>
-        ) : (
-          <div className="table-wrap mt-4">
-            <table className="data-table min-w-[900px]">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>E-Mail</th>
-                  <th>Rolle</th>
-                  <th>Mannschaften (Spieler)</th>
-                  <th>Weitere</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => {
-                  const isSelf = u.id === currentUser?.id;
-                  const busy = savingIds.has(u.id);
-                  const locked = isLockedRow(u);
-                  const teams = u.teams ?? [];
-                  const playerTeamIds = teams
-                    .filter((t) => t.relationType === 'player')
-                    .map((t) => t.id);
-                  const otherRelations = ['coach', 'fan']
-                    .map((relation) => ({
-                      relation,
-                      entries: teams.filter((t) => t.relationType === relation),
-                    }))
-                    .filter((group) => group.entries.length > 0);
-
-                  return (
-                    <tr key={u.id}>
-                      <td>
-                        <span className="font-bold text-ink">
-                          {u.firstName} {u.lastName}
-                        </span>
-                        {isSelf && (
-                          <span className="ml-2 text-xs text-ink-muted">
-                            (du)
-                          </span>
-                        )}
-                        {locked && (
-                          <span
-                            className="badge badge-neutral ml-2"
-                            title="Admin-Konten sind für Sub-Admins gesperrt."
-                          >
-                            gesperrt
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-ink-muted">{u.email}</td>
-
-                      <td>
-                        {canManageAccounts ? (
-                          <select
-                            value={u.role}
-                            disabled={busy || isSelf || locked}
-                            onChange={(e) => changeRole(u.id, e.target.value)}
-                            className="field-control-sm"
-                            title={
-                              locked
-                                ? 'Sub-Admins dürfen Admin-Konten nicht bearbeiten.'
-                                : isSelf
-                                  ? 'Die eigene Rolle kann hier nicht geändert werden.'
-                                  : undefined
-                            }
-                          >
-                            {/* Aktuelle Rolle immer anzeigen, auch wenn sie
-                                nicht vergeben werden darf. */}
-                            {(assignableRoles.includes(u.role)
-                              ? assignableRoles
-                              : [u.role, ...assignableRoles]
-                            ).map((r) => (
-                              <option key={r} value={r}>
-                                {roleLabel(r)}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="text-ink-soft">
-                            {roleLabel(u.role)}
-                          </span>
-                        )}
-                      </td>
-
-                      <td>
-                        <TeamSelect
-                          teams={allTeams}
-                          selectedIds={playerTeamIds}
-                          onToggle={(teamId) => togglePlayerTeam(u.id, teamId)}
-                          disabled={busy || locked}
-                          size="sm"
-                        />
-                      </td>
-
-                      <td>
-                        {otherRelations.length === 0 &&
-                        u.services.length === 0 ? (
-                          <span className="text-xs text-ink-muted">—</span>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {otherRelations.map(({ relation, entries }) => (
-                              <div key={relation} className="text-xs">
-                                <span className="text-ink-muted">
-                                  {relationLabelPlural(relation)}:{' '}
-                                </span>
-                                {entries.map((t, i) => (
-                                  <span key={t.id}>
-                                    {i > 0 && ', '}
-                                    <Link
-                                      to={`/teams/${t.code}`}
-                                      className="link"
-                                      title={t.name}
-                                    >
-                                      {t.code}
-                                    </Link>
-                                  </span>
-                                ))}
-                              </div>
-                            ))}
-                            {u.services.length > 0 && (
-                              <div className="text-xs text-ink-muted">
-                                Dienste:{' '}
-                                <span className="text-ink-soft">
-                                  {u.services.map(serviceLabel).join(', ')}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      <td>
-                        {u.isApproved ? (
-                          <span className="status text-hsg-green-dark">
-                            <span className="status-dot bg-hsg-green" />
-                            Aktiv
-                          </span>
-                        ) : canManageAccounts && !locked ? (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => approve(u.id)}
-                            className="btn btn-primary btn-sm"
-                          >
-                            {busy ? '…' : 'Reaktivieren'}
-                          </button>
-                        ) : (
-                          <span className="status text-warn">
-                            <span className="status-dot bg-warn" />
-                            Gesperrt
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* Vereins-News – Trainer:innen dürfen keine Beiträge veröffentlichen
-          (das Backend lehnt sie ohnehin ab). */}
-      {canManageAccounts && <NewsManager />}
+      {/* `key` erzwingt einen frischen Zustand beim Bereichswechsel – sonst
+          würde z. B. eine offene Suche im nächsten Bereich nachwirken. */}
+      <div
+        id={`panel-${active.key}`}
+        role="tabpanel"
+        aria-labelledby={`tab-${active.key}`}
+        className="mt-6"
+      >
+        <Suspense fallback={<Loading>{active.title} wird geladen …</Loading>}>
+          <ActiveSection key={active.key} />
+        </Suspense>
+      </div>
     </AppLayout>
   );
 }
