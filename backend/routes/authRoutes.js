@@ -9,10 +9,13 @@ const {
   setTheme,
   completeOnboarding,
   updatePreferences,
+  setProfilePhoto,
+  deleteProfilePhoto,
   changePassword,
 } = require('../controllers/authController');
 const { authenticate, checkRole } = require('../middleware/authMiddleware');
 const { ROLES } = require('../utils/roles');
+const { uploadUserPhoto } = require('../config/uploads');
 
 const router = express.Router();
 
@@ -38,6 +41,19 @@ const registerLimiter = rateLimit({
   message: {
     message:
       'Zu viele Registrierungen von dieser Adresse. Bitte versuche es später erneut.',
+  },
+});
+
+// Profilbilder landen auf der Platte – dieselbe Überlegung wie beim
+// Mannschaftsfoto: Ein durchgedrehtes Skript oder ein übernommenes Konto soll
+// sie nicht vollschreiben können.
+const photoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    message: 'Zu viele Bild-Uploads. Bitte in einigen Minuten erneut versuchen.',
   },
 });
 
@@ -73,5 +89,17 @@ router.patch('/me/theme', requireActiveAccount, setTheme);
 router.post('/me/onboarding', requireActiveAccount, completeOnboarding);
 router.patch('/me/preferences', requireActiveAccount, updatePreferences);
 router.post('/me/password', passwordLimiter, requireActiveAccount, changePassword);
+
+// Reihenfolge wie bei den Mannschaftsfotos: erst bremsen, dann anmelden, DANN
+// erst die Datei entgegennehmen – so landet eine abgelehnte Anfrage gar nicht
+// erst auf der Platte.
+router.post(
+  '/me/photo',
+  photoLimiter,
+  requireActiveAccount,
+  uploadUserPhoto,
+  setProfilePhoto
+);
+router.delete('/me/photo', requireActiveAccount, deleteProfilePhoto);
 
 module.exports = router;

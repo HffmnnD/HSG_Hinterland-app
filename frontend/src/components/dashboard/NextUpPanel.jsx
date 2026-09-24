@@ -21,13 +21,19 @@ const MAX_ENTRIES = 4;
  * nicht zwei Orte mit womöglich unterschiedlichem Stand.
  *
  * @param {{ events: object[], loading?: boolean, error?: string|null,
- *           hasTeams: boolean }} props
+ *           hasTeams: boolean, className?: string }} props
  */
-export default function NextUpPanel({ events, loading = false, error, hasTeams }) {
+export default function NextUpPanel({
+  events,
+  loading = false,
+  error,
+  hasTeams,
+  className = '',
+}) {
   const upcoming = events.slice(0, MAX_ENTRIES);
 
   return (
-    <section className="panel">
+    <section className={`panel ${className}`}>
       <div className="panel__header">
         <h2 className="section-title flex items-center gap-2 text-base">
           <CalendarDays size={16} aria-hidden="true" className="text-ink-muted" />

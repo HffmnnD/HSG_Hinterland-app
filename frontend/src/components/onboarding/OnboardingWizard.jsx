@@ -6,7 +6,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { useTeams } from '../../hooks/useTeams';
 import { PARTICIPATION_OPTIONS } from '../../lib/participation';
 import Brand from '../Brand';
-import { ThemeChoice } from '../ThemeToggle';
+import ThemeChoice from '../ThemeChoice';
+import ProfileForm from '../account/ProfileForm';
 import TeamChoice from './TeamChoice';
 
 /**
@@ -33,6 +34,7 @@ import TeamChoice from './TeamChoice';
 const STEPS = [
   { key: 'rollen', label: 'Deine Rolle' },
   { key: 'mannschaften', label: 'Mannschaften' },
+  { key: 'profil', label: 'Profil' },
   { key: 'design', label: 'Design' },
 ];
 
@@ -51,6 +53,9 @@ export default function OnboardingWizard() {
   // Das Design wird sofort angewandt (man will es sehen), aber erst am Ende
   // zusammen mit allem anderen gespeichert.
   const [theme, setThemeChoice] = useState(activeTheme);
+  // Die Telefonnummer reicht der letzte Schritt mit ein; das Profilbild lädt
+  // <ProfileForm> sofort hoch (siehe dort).
+  const [phone, setPhone] = useState(user?.phone ?? '');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -117,7 +122,11 @@ export default function OnboardingWizard() {
     if (saving) return;
     setSaving(true);
     setError(null);
-    const result = await completeOnboarding({ theme, teams: relations });
+    const result = await completeOnboarding({
+      theme,
+      phone: phone.trim(),
+      teams: relations,
+    });
     if (!result.success) {
       setError(result.message);
       setSaving(false);
@@ -144,7 +153,7 @@ export default function OnboardingWizard() {
         </p>
         <h1 className="page-title mt-1">Zwei Minuten, dann passt alles</h1>
         <p className="mt-2 text-sm text-ink-muted">
-          Damit die App dir die richtigen Termine zeigt, brauchen wir drei
+          Damit die App dir die richtigen Termine zeigt, brauchen wir ein paar
           Angaben. Ändern kannst du sie später jederzeit unter „Mein Konto".
         </p>
 
@@ -293,7 +302,22 @@ export default function OnboardingWizard() {
             </>
           )}
 
-          {/* ------------------------------------------------- 3. Design */}
+          {/* ------------------------------------------------- 3. Profil */}
+          {step.key === 'profil' && (
+            <>
+              <h2 className="section-title text-base">Wie sollen dich andere sehen?</h2>
+              <p className="mt-1 text-sm text-ink-muted">
+                Beides ist freiwillig – du kannst den Schritt überspringen und
+                später unter „Mein Konto" nachholen.
+              </p>
+
+              <div className="mt-4">
+                <ProfileForm phone={phone} onPhoneChange={setPhone} />
+              </div>
+            </>
+          )}
+
+          {/* ------------------------------------------------- 4. Design */}
           {step.key === 'design' && (
             <>
               <h2 className="section-title text-base">Wie soll die App aussehen?</h2>
@@ -318,6 +342,12 @@ export default function OnboardingWizard() {
                     {relations.length === 0
                       ? 'keine'
                       : `${relations.length} Zuordnung${relations.length === 1 ? '' : 'en'}`}
+                  </Summary>
+                  <Summary label="Profilbild">
+                    {user?.photoUrl ? 'hochgeladen' : 'keins – Initialen'}
+                  </Summary>
+                  <Summary label="Telefon">
+                    {phone.trim() || 'keine Angabe'}
                   </Summary>
                   <Summary label="Design">
                     {theme === 'system'

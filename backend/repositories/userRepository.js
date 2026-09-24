@@ -7,8 +7,8 @@
 //
 //   {
 //     id, firstName, lastName, email,
+//     photoUrl: string|null, phone: string|null,
 //     isApproved: boolean,
-//     awaitingApproval: boolean,   // noch nie freigegeben (nicht: gesperrt)
 //     role: 'admin' | 'sub_admin' | 'trainer' | 'spieler' | 'zuschauer',
 //     theme: 'system' | 'light' | 'dark',
 //     onboardingCompleted: boolean,
@@ -17,32 +17,31 @@
 //     createdAt
 //   }
 const pool = require('../config/db');
+const { publicUrlFor } = require('../config/uploads');
 const teamRepository = require('./teamRepository');
 const serviceRepository = require('./serviceRepository');
 
 // Spalten, die an den Client dürfen – NIE password_hash.
 //
-// `approved_at` und `onboarding_completed_at` verlassen den Server bewusst
-// nicht als Zeitstempel: das Frontend braucht daraus nur zwei Ja/Nein-Fragen
-// („wartet auf Freigabe?", „Onboarding erledigt?"). Ein Zeitstempel hätte
-// zusätzlich die Zeitzonen-Frage aufgeworfen, ohne irgendwo angezeigt zu werden.
+// `onboarding_completed_at` verlässt den Server bewusst nicht als Zeitstempel:
+// Das Frontend braucht daraus nur eine Ja/Nein-Frage („Onboarding erledigt?").
+// Ein Zeitstempel hätte zusätzlich die Zeitzonen-Frage aufgeworfen, ohne
+// irgendwo angezeigt zu werden.
 const PUBLIC_COLUMNS =
-  'id, first_name, last_name, email, is_approved, approved_at, role, theme, ' +
-  'onboarding_completed_at, created_at';
+  'id, first_name, last_name, email, photo_path, phone, is_approved, role, ' +
+  'theme, onboarding_completed_at, created_at';
 
 /** Formt eine users-Zeile + Relationen in die oben dokumentierte Struktur. */
 function toProfile(row, teams, services) {
-  const isApproved = Boolean(row.is_approved);
   return {
     id: row.id,
     firstName: row.first_name,
     lastName: row.last_name,
     email: row.email,
-    isApproved,
-    // Nicht freigegeben UND noch nie freigegeben = neue Registrierung. Ein
-    // gesperrtes Konto hat `approved_at` gesetzt – die Verwaltung soll beides
-    // unterscheiden können, sonst steht bei jeder Neuanmeldung „gesperrt".
-    awaitingApproval: !isApproved && !row.approved_at,
+    // Der interne Dateipfad verlässt den Server nie – nur die abrufbare URL.
+    photoUrl: publicUrlFor(row.photo_path),
+    phone: row.phone ?? null,
+    isApproved: Boolean(row.is_approved),
     role: row.role,
     theme: row.theme ?? 'system',
     onboardingCompleted: Boolean(row.onboarding_completed_at),
@@ -128,10 +127,7 @@ async function getFullProfile(id, runner = pool) {
  * @param {string} [opts.search]   Freitext: Vor-/Nachname, E-Mail oder
  *                                 Mitgliedsnummer (= users.id).
  * @param {string} [opts.role]     Genau eine Rolle, sonst alle.
- * @param {'active'|'pending'|'locked'|'inactive'} [opts.status]
- *        active = freigegeben | pending = wartet auf die erste Freigabe |
- *        locked = war freigegeben und ist gesperrt | inactive = beides
- *        (pending + locked). Ohne Angabe alle.
+ * @param {'active'|'inactive'} [opts.status]  aktiv/gesperrt, sonst alle.
  * @param {number} [opts.page=1]
  * @param {number} [opts.pageSize=20]
  * @returns {Promise<{ users: object[], total: number, page: number,
@@ -160,11 +156,7 @@ async function listPageWithProfiles(
     params.push(role);
   }
   if (status === 'active') where.push('u.is_approved = 1');
-  else if (status === 'pending') {
-    where.push('u.is_approved = 0 AND u.approved_at IS NULL');
-  } else if (status === 'locked') {
-    where.push('u.is_approved = 0 AND u.approved_at IS NOT NULL');
-  } else if (status === 'inactive') where.push('u.is_approved = 0');
+  else if (status === 'inactive') where.push('u.is_approved = 0');
 
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
@@ -229,7 +221,7 @@ async function listPageWithProfiles(
 
 /**
  * Kennzahlen der Mitgliederverwaltung: Gesamtzahl, Verteilung nach Rolle,
- * offene Freigaben, gesperrte Konten und Neuzugänge der letzten 30 Tage.
+ * gesperrte Konten und Neuzugänge der letzten 30 Tage.
  *
  * Eine Abfrage statt fünf – die Zahlen stehen im Kopf der Verwaltung und
  * sollen den Seitenaufbau nicht ausbremsen.
@@ -239,8 +231,6 @@ async function getMemberStats(runner = pool) {
     `SELECT COUNT(*)                                        AS total,
             SUM(is_approved = 1)                            AS active,
             SUM(is_approved = 0)                            AS inactive,
-            SUM(is_approved = 0 AND approved_at IS NULL)     AS pending,
-            SUM(is_approved = 0 AND approved_at IS NOT NULL) AS locked,
             SUM(created_at >= NOW() - INTERVAL 30 DAY)      AS recent
        FROM users`
   );
@@ -252,8 +242,6 @@ async function getMemberStats(runner = pool) {
     total: Number(row?.total ?? 0),
     active: Number(row?.active ?? 0),
     inactive: Number(row?.inactive ?? 0),
-    pending: Number(row?.pending ?? 0),
-    locked: Number(row?.locked ?? 0),
     recent: Number(row?.recent ?? 0),
     byRole: roleRows.map((r) => ({ role: r.role, count: Number(r.count) })),
   };
@@ -269,8 +257,9 @@ async function getMemberStats(runner = pool) {
  * Freigabe (siehe completeOnboarding). Damit braucht diese Funktion auch keine
  * Transaktion mehr – sie schreibt genau eine Zeile.
  *
- * `is_approved` wird NICHT gesetzt -> Spalten-Default 0: das Konto wartet auf
- * die Freigabe durch die Verwaltung.
+ * `is_approved` wird NICHT gesetzt -> Spalten-Default 1: das Konto ist sofort
+ * aktiv. Eine Freigabe durch die Verwaltung gibt es nicht; `is_approved = 0`
+ * entsteht ausschliesslich durch eine spätere Admin-Sperre.
  *
  * Wirft `ER_DUP_ENTRY`, wenn die E-Mail bereits existiert (der Controller
  * macht daraus ein 409) – kein SELECT-dann-INSERT, also keine Race Condition.
@@ -305,6 +294,32 @@ async function updatePassword(userId, passwordHash, runner = pool) {
   return result.affectedRows > 0;
 }
 
+/**
+ * Profilbild setzen oder entfernen (`null`).
+ * @returns {Promise<string|null>} der VORHERIGE Pfad – die Datei räumt der
+ *   Controller weg, nachdem der neue Wert sicher gespeichert ist.
+ */
+async function setPhotoPath(userId, photoPath, runner = pool) {
+  const [[row]] = await runner.query(
+    'SELECT photo_path FROM users WHERE id = ?',
+    [userId]
+  );
+  await runner.query('UPDATE users SET photo_path = ? WHERE id = ?', [
+    photoPath,
+    userId,
+  ]);
+  return row?.photo_path ?? null;
+}
+
+/** Telefonnummer setzen oder entfernen (`null`). */
+async function setPhone(userId, phone, runner = pool) {
+  const [result] = await runner.query('UPDATE users SET phone = ? WHERE id = ?', [
+    phone,
+    userId,
+  ]);
+  return result.affectedRows > 0;
+}
+
 /** Design-Vorliebe speichern ('system' | 'light' | 'dark'). */
 async function setTheme(userId, theme, runner = pool) {
   const [result] = await runner.query('UPDATE users SET theme = ? WHERE id = ?', [
@@ -327,9 +342,10 @@ async function setTheme(userId, theme, runner = pool) {
  * bisher erst, wenn ein:e Trainer:in die coach-Zuordnung bestätigt.
  *
  * @param {number} userId
- * @param {{ theme:string, relations:{teamId:number, relationType:string}[] }} input
+ * @param {{ theme:string, phone?:string|null,
+ *           relations:{teamId:number, relationType:string}[] }} input
  */
-async function completeOnboarding(userId, { theme, relations }) {
+async function completeOnboarding(userId, { theme, phone, relations }) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -337,9 +353,10 @@ async function completeOnboarding(userId, { theme, relations }) {
     await conn.query(
       `UPDATE users
           SET theme = ?,
+              phone = ?,
               onboarding_completed_at = NOW()
         WHERE id = ?`,
-      [theme, userId]
+      [theme, phone ?? null, userId]
     );
 
     await teamRepository.replaceSelfRelations(conn, userId, relations);
@@ -370,16 +387,20 @@ async function completeOnboarding(userId, { theme, relations }) {
 }
 
 /**
- * Ändert Design und/oder Mannschaftswahl des EIGENEN Kontos (Bereich „Mein
- * Konto"). Wie completeOnboarding, nur ohne den Onboarding-Zeitstempel.
+ * Ändert Design, Telefonnummer und/oder Mannschaftswahl des EIGENEN Kontos
+ * (Bereich „Mein Konto"). Wie completeOnboarding, nur ohne den
+ * Onboarding-Zeitstempel.
  */
-async function updateOwnPreferences(userId, { theme, relations }) {
+async function updateOwnPreferences(userId, { theme, phone, relations }) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
     if (theme !== undefined) {
       await conn.query('UPDATE users SET theme = ? WHERE id = ?', [theme, userId]);
+    }
+    if (phone !== undefined) {
+      await conn.query('UPDATE users SET phone = ? WHERE id = ?', [phone, userId]);
     }
     if (relations !== undefined) {
       await teamRepository.replaceSelfRelations(conn, userId, relations);
@@ -419,15 +440,8 @@ async function applyAdminChange(userId, { accountFields, playerTeamIds, services
       if (unknown.length > 0) {
         throw new Error(`Nicht erlaubte Spalte(n): ${unknown.join(', ')}`);
       }
-      const assignments = cols.map((c) => `${c} = ?`);
-      // Die ERSTE Freigabe hält zusätzlich den Zeitpunkt fest. Nur dann wird
-      // aus „wartet auf Freigabe" dauerhaft „war freigegeben" – eine späteres
-      // Sperren setzt is_approved zurück, approved_at bleibt stehen.
-      if (accountFields.is_approved === 1) {
-        assignments.push('approved_at = COALESCE(approved_at, NOW())');
-      }
       await conn.query(
-        `UPDATE users SET ${assignments.join(', ')} WHERE id = ?`,
+        `UPDATE users SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`,
         [...cols.map((c) => accountFields[c]), userId]
       );
     }
@@ -474,6 +488,8 @@ module.exports = {
   createAccount,
   getPasswordHash,
   updatePassword,
+  setPhotoPath,
+  setPhone,
   setTheme,
   completeOnboarding,
   updateOwnPreferences,

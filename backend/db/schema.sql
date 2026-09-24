@@ -43,14 +43,16 @@ CREATE TABLE IF NOT EXISTS users (
                  COMMENT 'Nachname (Pflicht, max. 100 Zeichen)',
 
   email          VARCHAR(255) NOT NULL
-                 COMMENT 'E-Mail = Login-Name. Immer klein/getrimmt gespeichert. Eindeutig.',
+                 COMMENT 'E-Mail = Login-Name. Immer klein/getrimmt gespeichert. Eindeutig. Wird bei Trainer:innen als Kontakt im Kader angezeigt.',
+  photo_path     VARCHAR(255) DEFAULT NULL
+                 COMMENT 'Profilbild in backend/uploads/, z. B. "users/ab12.jpg". Ausgeliefert über /api/uploads/<pfad>. NULL = Initialen anzeigen.',
+  phone          VARCHAR(30) DEFAULT NULL
+                 COMMENT 'Freiwillige Telefonnummer aus den Kontoeinstellungen. Kontakt neben der E-Mail – bei Trainer:innen für alle sichtbar, bei Spieler:innen nur für das Trainerteam.',
   password_hash  VARCHAR(255) NOT NULL
                  COMMENT 'bcrypt-Hash des Passworts. Nie im Klartext, nie an den Client.',
 
-  is_approved    TINYINT(1) NOT NULL DEFAULT 0
-                 COMMENT 'Konto freigegeben (1) oder gesperrt bzw. noch nicht freigegeben (0). Neue Registrierungen starten mit 0 und warten auf die Verwaltung. Wird bei Login, Session (/me) und RBAC geprüft, damit eine Sperre sofort greift.',
-  approved_at    DATETIME DEFAULT NULL
-                 COMMENT 'Zeitpunkt der ERSTEN Freigabe (Ortszeit). Zusammen mit is_approved = 0 unterscheidbar: NULL = wartet auf Freigabe, gesetzt = wurde gesperrt.',
+  is_approved    TINYINT(1) NOT NULL DEFAULT 1
+                 COMMENT 'Konto aktiv (1) oder von einem Admin gesperrt (0). Standard 1 – es gibt KEINE Registrierungs-Freigabe. Wird bei Login, Session (/me) und RBAC geprüft, damit eine Sperre sofort greift.',
 
   role           ENUM('admin','sub_admin','trainer','spieler','zuschauer')
                  NOT NULL DEFAULT 'spieler'
@@ -422,5 +424,6 @@ INSERT INTO schema_migrations (filename) VALUES
   ('010_nuliga_games.sql'),
   ('011_event_cancellation.sql'),
   ('012_nuliga_key_cleanup.sql'),
-  ('013_onboarding_theme.sql')
+  ('013_onboarding_theme.sql'),
+  ('014_instant_signup_and_profile.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

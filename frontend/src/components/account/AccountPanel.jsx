@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { CalendarCheck, KeyRound, Palette, Users } from 'lucide-react';
+import { CalendarCheck, KeyRound, Palette, UserRound, Users } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { serviceLabel } from '../../lib/participation';
 import { formatDate } from '../../lib/format';
 import StatCard from '../ui/StatCard';
-import { ThemeChoice } from '../ThemeToggle';
+import Avatar from '../ui/Avatar';
+import ThemeChoice from '../ThemeChoice';
+import ProfileForm from './ProfileForm';
 import PreferencesForm from './PreferencesForm';
 import PasswordForm from './PasswordForm';
 
@@ -25,6 +27,14 @@ import PasswordForm from './PasswordForm';
  */
 
 const TABS = [
+  {
+    key: 'profil',
+    label: 'Profil',
+    title: 'Profilbild & Kontakt',
+    description:
+      'Dein Bild erscheint auf der Startseite und im Kader. Die Telefonnummer ist freiwillig.',
+    Icon: UserRound,
+  },
   {
     key: 'teams',
     label: 'Mannschaften',
@@ -61,11 +71,14 @@ export default function AccountPanel() {
   return (
     <section className="panel">
       <div className="panel__header">
-        <div className="min-w-0">
-          <h2 className="section-title text-base">Mein Konto</h2>
-          <p className="mt-0.5 truncate text-xs text-ink-muted">{user.email}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar person={user} size="sm" />
+          <div className="min-w-0">
+            <h2 className="section-title text-base">Mein Konto</h2>
+            <p className="mt-0.5 truncate text-xs text-ink-muted">{user.email}</p>
+          </div>
         </div>
-        <span className="badge badge-confirmed">Freigegeben</span>
+        <span className="badge badge-confirmed">Aktiv</span>
       </div>
 
       <div className="panel__body space-y-4">
@@ -93,13 +106,13 @@ export default function AccountPanel() {
             hint="Unten unter „Design“ änderbar"
           />
           <StatCard
-            icon={KeyRound}
-            label="Helferdienste"
-            value={services.length > 0 ? services.length : '—'}
+            icon={UserRound}
+            label="Kontakt"
+            value={user.phone ? 'Mit Nummer' : 'Nur E-Mail'}
             hint={
               services.length > 0
-                ? services.map(serviceLabel).join(', ')
-                : 'Von der Verwaltung eingetragen'
+                ? `Helferdienste: ${services.map(serviceLabel).join(', ')}`
+                : user.phone ?? 'Telefonnummer ist freiwillig'
             }
           />
         </div>
@@ -134,6 +147,7 @@ export default function AccountPanel() {
             <p className="mt-1 text-xs text-ink-muted">{active.description}</p>
 
             <div className="mt-4">
+              {active.key === 'profil' && <ProfileForm />}
               {active.key === 'teams' && <PreferencesForm />}
               {active.key === 'design' && <ThemeChoice />}
               {active.key === 'passwort' && <PasswordForm />}

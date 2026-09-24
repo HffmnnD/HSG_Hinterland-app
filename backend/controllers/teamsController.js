@@ -13,7 +13,6 @@
 //   POST /api/teams/:code/members                Zuordnung anlegen (Verwaltung)
 //   POST /api/teams/:code/members/:userId/confirm offene Anfrage bestätigen (Verwaltung)
 //   DEL  /api/teams/:code/members/:userId        Zuordnung entfernen / Anfrage ablehnen
-//   POST /api/teams/:code/callup                 Spieler:in hochrufen (Verwaltung)
 //
 // "Verwaltung" = Rolle admin/sub_admin ODER als bestätigte:r coach dieser
 // Mannschaft eingetragen.
@@ -36,8 +35,6 @@ const {
 
 const MANAGE_ROSTER_DENIED =
   'Nur Trainer:innen dieser Mannschaft dürfen den Kader ändern.';
-const CALLUP_DENIED =
-  'Nur Trainer:innen dieser Mannschaft dürfen Spieler hochrufen.';
 const TEAM_DATA_DENIED =
   'Nur Administrator:innen dürfen die Stammdaten der Mannschaft ändern.';
 
@@ -90,9 +87,11 @@ async function getTeam(req, res, next) {
       ADMIN_ROLES.includes(req.userRole) ||
       (await teamRepository.isCoachOf(req.userId, team.id));
 
-    // Öffentlich: nur bestätigte Mitglieder. E-Mails nur für Verwaltende.
+    // Öffentlich: nur bestätigte Mitglieder. Kontaktdaten der Spieler:innen
+    // nur für das Trainerteam; die der Trainer:innen stehen immer dabei, denn
+    // genau dafür ist der Kader da (siehe teamRepository.mapMember).
     const members = await teamRepository.getConfirmedRoster(team.id, {
-      includeEmail: canManage,
+      includeContact: canManage,
     });
 
     const sponsors = await teamRepository.getSponsors(team.id);
@@ -114,7 +113,7 @@ async function getTeam(req, res, next) {
     // Verwaltung sieht zusätzlich die offenen Beitrittsanfragen.
     if (canManage) {
       response.pendingMembers = await teamRepository.getPendingMembers(team.id, {
-        includeEmail: true,
+        includeContact: true,
       });
     }
 
@@ -307,59 +306,6 @@ async function removeMember(req, res, next) {
       return res.status(404).json({ message: 'Zuordnung nicht gefunden.' });
     }
     return res.json({ message: 'Zuordnung entfernt.' });
-  } catch (err) {
-    return next(err);
-  }
-}
-
-// POST /api/teams/:code/callup   Body: { userId, targetTeamCode }
-async function callUpPlayer(req, res, next) {
-  try {
-    const loaded = await loadManageableTeam(
-      req,
-      req.params.code,
-      CALLUP_DENIED
-    );
-    if (!loaded.ok) {
-      return res.status(loaded.status).json({ message: loaded.message });
-    }
-    const sourceTeam = loaded.team;
-
-    const { userId, targetTeamCode } = req.body || {};
-    const targetId = parseId(userId);
-    if (!targetId) {
-      return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
-    }
-
-    const targetTeam = await teamRepository.findByCode(targetTeamCode);
-    if (!targetTeam) {
-      return res.status(404).json({ message: 'Zielmannschaft nicht gefunden.' });
-    }
-    if (targetTeam.id === sourceTeam.id) {
-      return res
-        .status(400)
-        .json({ message: 'Quell- und Zielmannschaft sind identisch.' });
-    }
-
-    // Nur wer in dieser Mannschaft (bestätigt) spielt, kann hochgerufen werden.
-    const plays = await teamRepository.hasConfirmedRelation(
-      targetId,
-      sourceTeam.id,
-      'player'
-    );
-    if (!plays) {
-      return res
-        .status(400)
-        .json({ message: 'Die Person spielt nicht in dieser Mannschaft.' });
-    }
-
-    // Der Trainer der QUELLmannschaft darf nicht ungefragt einen bestätigten
-    // Eintrag in einer fremden Mannschaft erzeugen -> als offene Anfrage
-    // anlegen, die der/die Trainer:in der Zielmannschaft bestätigt.
-    await teamRepository.addRelation(targetId, targetTeam.id, 'player', 0);
-    return res.status(201).json({
-      message: `Anfrage an ${targetTeam.name} gesendet – der/die dortige Trainer:in muss sie noch bestätigen.`,
-    });
   } catch (err) {
     return next(err);
   }
@@ -613,5 +559,4 @@ module.exports = {
   addMember,
   confirmMember,
   removeMember,
-  callUpPlayer,
 };

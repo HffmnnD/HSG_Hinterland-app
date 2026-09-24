@@ -116,15 +116,9 @@ export function ThemeProvider({ children }) {
     [user, refresh]
   );
 
-  /** Kurzform für den Umschalter: hell <-> dunkel, ohne den Umweg 'system'. */
-  const toggleTheme = useCallback(
-    () => setTheme(resolved === 'dark' ? 'light' : 'dark'),
-    [resolved, setTheme]
-  );
-
   const value = useMemo(
-    () => ({ theme, resolved, isDark: resolved === 'dark', setTheme, toggleTheme }),
-    [theme, resolved, setTheme, toggleTheme]
+    () => ({ theme, resolved, setTheme }),
+    [theme, resolved, setTheme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

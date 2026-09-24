@@ -3,7 +3,7 @@ import { Moon, MonitorCog, Sun } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { THEMES } from '../lib/theme';
 
-/** Beschriftungen und Icons der drei Einstellungen – einmal für beide Bauteile. */
+/** Beschriftungen und Icons der drei Einstellungen. */
 const OPTIONS = {
   system: {
     label: 'System',
@@ -15,37 +15,11 @@ const OPTIONS = {
 };
 
 /**
- * Kleiner Umschalter für die Kopfzeile: ein Klick, hell <-> dunkel.
+ * Auswahl des Designs – im Onboarding-Assistenten und unter „Mein Konto".
  *
- * Bewusst KEIN Menü mit drei Einträgen – in der Kopfzeile will man das Licht
- * an- oder ausmachen, nicht eine Einstellung pflegen. Die dritte Möglichkeit
- * („System") steht unter „Mein Konto", wo Einstellungen hingehören.
- */
-export default function ThemeToggle({ className = '' }) {
-  const { isDark, toggleTheme } = useTheme();
-
-  return (
-    <button
-      type="button"
-      onClick={toggleTheme}
-      // `aria-pressed` wäre hier irreführend (der Knopf ist kein Schalter für
-      // sich selbst) – der Titel sagt, was passiert.
-      title={isDark ? 'Zum hellen Design wechseln' : 'Zum dunklen Design wechseln'}
-      aria-label={isDark ? 'Helles Design einschalten' : 'Dunkles Design einschalten'}
-      className={`btn btn-outline btn-sm ${className}`}
-    >
-      {isDark ? (
-        <Sun size={16} aria-hidden="true" />
-      ) : (
-        <Moon size={16} aria-hidden="true" />
-      )}
-    </button>
-  );
-}
-
-/**
- * Vollständige Auswahl aller drei Einstellungen – für den Onboarding-Assistenten
- * und den Bereich „Mein Konto".
+ * Es gibt bewusst KEINEN Ein-Klick-Umschalter in der Kopfzeile mehr: Das
+ * Design wird einmal eingestellt und dann selten geändert; ein Dauerknopf auf
+ * jeder Seite kostet Platz, den die Navigation besser braucht.
  *
  * @param {{ value?: string, onChange?: (theme:string) => void,
  *           disabled?: boolean }} props
@@ -53,7 +27,7 @@ export default function ThemeToggle({ className = '' }) {
  *   „Mein Konto"). Mit beidem verhält sie sich wie ein Formularfeld – der
  *   Assistent speichert erst am Ende, zeigt die Wahl aber sofort.
  */
-export function ThemeChoice({ value, onChange, disabled = false }) {
+export default function ThemeChoice({ value, onChange, disabled = false }) {
   const { theme, setTheme } = useTheme();
   const current = value ?? theme;
 

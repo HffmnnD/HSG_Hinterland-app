@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Mail, Phone } from 'lucide-react';
 
 import {
   POSITIONS,
@@ -6,19 +7,14 @@ import {
   positionLabelLong,
 } from '../../lib/participation';
 import { roleLabel } from '../../lib/roles';
-
-/** Initialen als Rückfallebene, wenn keine Rückennummer hinterlegt ist. */
-function initials(member) {
-  return `${member.firstName?.[0] ?? ''}${member.lastName?.[0] ?? ''}`.toUpperCase();
-}
+import Avatar from '../ui/Avatar';
 
 /**
- * Eine Spielerkarte: Rückennummer (oder Initialen), Name, Position.
+ * Eine Spielerkarte: Profilbild (oder Trikot-Kreis), Name, Position.
  *
- * Ein Profilbild gibt es bewusst noch nicht – dafür fehlt bislang sowohl die
- * Spalte als auch ein Upload. Der Trikot-Kreis mit der Rückennummer ist die
- * Rückfallebene und für eine Handball-Mannschaft ohnehin die Information,
- * nach der auf der Tribüne gesucht wird.
+ * Mit Foto steht die Rückennummer als kleines Abzeichen am Bild – sie ist die
+ * Information, nach der auf der Tribüne gesucht wird, und darf durch das Bild
+ * nicht verschwinden. Ohne Foto bleibt es beim Trikot-Kreis wie bisher.
  *
  * @param {{ member: object }} props
  */
@@ -28,24 +24,78 @@ function PlayerCard({ member }) {
 
   return (
     <li className="player-card">
-      <span
-        className={`jersey ${number === null ? 'jersey--empty' : ''}`}
-        aria-hidden="true"
-      >
-        {number ?? initials(member)}
-      </span>
+      {member.photoUrl ? (
+        <span className="relative shrink-0">
+          <Avatar person={member} size="md" />
+          {number !== null && (
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-paper bg-hsg-green px-1 font-display text-[0.625rem] font-bold leading-none text-white"
+            >
+              {number}
+            </span>
+          )}
+        </span>
+      ) : (
+        <span
+          className={`jersey ${number === null ? 'jersey--empty' : ''}`}
+          aria-hidden="true"
+        >
+          {number ?? initials(member)}
+        </span>
+      )}
 
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-bold text-ink">
           {member.firstName} {member.lastName}
         </span>
         <span className="block truncate text-xs text-ink-muted">
-          {/* Nummer für Vorlesehilfen: der Trikot-Kreis ist aria-hidden. */}
+          {/* Nummer für Vorlesehilfen: Bild und Trikot-Kreis sind aria-hidden. */}
           {number !== null && <span className="sr-only">Rückennummer {number}. </span>}
           {position ?? 'Position offen'}
         </span>
       </span>
     </li>
+  );
+}
+
+/** Initialen als Rückfallebene, wenn weder Foto noch Rückennummer da sind. */
+function initials(member) {
+  return `${member.firstName?.[0] ?? ''}${member.lastName?.[0] ?? ''}`.toUpperCase();
+}
+
+/**
+ * Kontaktzeile einer Person: E-Mail und – falls hinterlegt – Telefonnummer.
+ *
+ * Beides sind Links (`mailto:` / `tel:`), denn am Handy ist genau das der
+ * Zweck: Wer im Kader auf die Nummer der Trainerin tippt, will anrufen und
+ * nicht die Ziffern abschreiben.
+ */
+function ContactLinks({ member }) {
+  if (!member.email && !member.phone) return null;
+
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {member.email && (
+        <a
+          href={`mailto:${member.email}`}
+          className="link inline-flex items-center gap-1 text-xs"
+          title={member.email}
+        >
+          <Mail size={12} aria-hidden="true" />
+          E-Mail
+        </a>
+      )}
+      {member.phone && (
+        <a
+          href={`tel:${member.phone.replace(/[^0-9+]/g, '')}`}
+          className="link inline-flex items-center gap-1 text-xs"
+        >
+          <Phone size={12} aria-hidden="true" />
+          {member.phone}
+        </a>
+      )}
+    </span>
   );
 }
 
@@ -233,9 +283,7 @@ export default function RosterSection({
                     key={`staff-${member.id}`}
                     className="flex items-center gap-3 px-4 py-3"
                   >
-                    <span className="avatar h-10 w-10 text-sm" aria-hidden="true">
-                      {initials(member)}
-                    </span>
+                    <Avatar person={member} size="md" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-bold text-ink">
                         {member.firstName} {member.lastName}
@@ -243,15 +291,11 @@ export default function RosterSection({
                       <span className="block truncate text-xs text-ink-muted">
                         {member.staffTitle ?? 'Trainer:in'}
                       </span>
+                      {/* Kontakt unter dem Namen statt als Knopf am rechten
+                          Rand: Auf dem Handy war dort nur Platz für das Wort
+                          „E-Mail", die Nummer hätte daneben nicht gepasst. */}
+                      <ContactLinks member={member} />
                     </span>
-                    {member.email && (
-                      <a
-                        href={`mailto:${member.email}`}
-                        className="link shrink-0 text-xs"
-                      >
-                        E-Mail
-                      </a>
-                    )}
                   </li>
                 ))}
           </ul>

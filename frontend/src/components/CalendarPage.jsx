@@ -35,7 +35,13 @@ export default function CalendarPage() {
 
   const [teamFilter, setTeamFilter] = useState(null);
   const [category, setCategory] = useState(null);
-  const [lookback, setLookback] = useState(false);
+  // Zeitraum: 'upcoming' = ab heute | 'lookback' = zusätzlich 30 Tage zurück |
+  // 'custom' = die beiden Datumsfelder in `range`.
+  const [rangeMode, setRangeMode] = useState('upcoming');
+  const [range, setRange] = useState(() => ({
+    from: toDateInput(),
+    to: shiftIsoDate(toDateInput(), 30),
+  }));
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -46,18 +52,29 @@ export default function CalendarPage() {
   const [deleting, setDeleting] = useState(null);
   const [cancelling, setCancelling] = useState(null);
 
+  // Aus der Zeitraum-Wahl werden die beiden Parameter der Abfrage. Ein
+  // eigener Zeitraum wird nur benutzt, wenn beide Daten gesetzt sind und
+  // „von" nicht hinter „bis" liegt – sonst bliebe die Liste ohne Erklärung
+  // leer, während jemand noch am Tippen ist.
   const today = toDateInput();
+  const customUsable =
+    rangeMode === 'custom' && range.from && range.to && range.from <= range.to;
+  const query = customUsable
+    ? { from: range.from, to: range.to }
+    : {
+        from:
+          rangeMode === 'lookback'
+            ? shiftIsoDate(today, -LOOKBACK_DAYS)
+            : today,
+      };
+
   const {
     events,
     teams,
     loading,
     error: loadError,
     reload,
-  } = useEvents({
-    teamId: teamFilter,
-    category,
-    from: lookback ? shiftIsoDate(today, -LOOKBACK_DAYS) : today,
-  });
+  } = useEvents({ teamId: teamFilter, category, ...query });
 
   const playerTeams = useMemo(
     () => teams.filter((team) => team.isPlayer),
@@ -223,8 +240,10 @@ export default function CalendarPage() {
                   onTeamChange={setTeamFilter}
                   category={category}
                   onCategoryChange={setCategory}
-                  lookback={lookback}
-                  onLookbackChange={setLookback}
+                  rangeMode={rangeMode}
+                  onRangeModeChange={setRangeMode}
+                  range={range}
+                  onRangeChange={setRange}
                   lookbackDays={LOOKBACK_DAYS}
                 />
 

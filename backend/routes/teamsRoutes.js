@@ -13,7 +13,6 @@ const {
   confirmMember,
   updateMemberDetails,
   removeMember,
-  callUpPlayer,
 } = require('../controllers/teamsController');
 const { authenticate, checkRole } = require('../middleware/authMiddleware');
 const { ROLES } = require('../utils/roles');
@@ -62,6 +61,5 @@ router.post('/:code/members/:userId/confirm', requireAuth, confirmMember);
 // Kaderangaben: Rückennummer, Position, Bezeichnung im Betreuerstab.
 router.patch('/:code/members/:userId', requireAuth, updateMemberDetails);
 router.delete('/:code/members/:userId', requireAuth, removeMember);
-router.post('/:code/callup', requireAuth, callUpPlayer);
 
 module.exports = router;

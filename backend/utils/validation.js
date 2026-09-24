@@ -386,6 +386,45 @@ function checkPassword(password, label = 'Das Passwort') {
   return { ok: true, password };
 }
 
+// Telefonnummer: Ziffern, Leerzeichen, +, /, -, Klammern. Bewusst KEINE
+// strenge Formatprüfung – eine Vereins-App ist nicht die Stelle, an der jemand
+// erklärt bekommt, dass „0170 / 123 45 67" falsch geschrieben sei. Geprüft
+// wird nur, dass nichts anderes als eine Nummer im Feld landet.
+const PHONE_PATTERN = /^[0-9+()/\s.-]+$/;
+const MIN_PHONE_LENGTH = 5;
+const MAX_PHONE_LENGTH = 30;
+
+/**
+ * Freiwillige Telefonnummer. Leerstring/null löscht sie.
+ * @returns {{ ok:true, phone:string|null } | { ok:false, ... }}
+ */
+function validatePhone(phone) {
+  if (phone === undefined || phone === null || phone === '') {
+    return { ok: true, phone: null };
+  }
+  if (typeof phone !== 'string') {
+    return fail('Die Telefonnummer muss eine Zeichenkette sein.');
+  }
+  const clean = phone.trim();
+  if (clean.length === 0) return { ok: true, phone: null };
+  if (clean.length > MAX_PHONE_LENGTH) {
+    return fail(
+      `Die Telefonnummer darf höchstens ${MAX_PHONE_LENGTH} Zeichen lang sein.`
+    );
+  }
+  if (!PHONE_PATTERN.test(clean)) {
+    return fail(
+      'Die Telefonnummer darf nur Ziffern, Leerzeichen und die Zeichen + ( ) / - enthalten.'
+    );
+  }
+  // Nach der Zeichenprüfung: „12" ist keine Telefonnummer, aber auch kein
+  // Tippfehler im Zeichensatz – dafür braucht es eine eigene Meldung.
+  if (clean.replace(/\D/g, '').length < MIN_PHONE_LENGTH) {
+    return fail('Die Telefonnummer sieht zu kurz aus.');
+  }
+  return { ok: true, phone: clean };
+}
+
 /**
  * Design-Vorliebe („system" | „light" | „dark").
  * @returns {{ ok:true, theme:string } | { ok:false, ... }}
@@ -451,15 +490,18 @@ async function validateSelfRelations(teams) {
  * Prüft den Body des Onboarding-Abschlusses bzw. der späteren Änderung unter
  * „Mein Konto": gewählte Beteiligungen, Mannschaften und Design.
  *
- * @returns {Promise<{ ok:true, theme:string,
+ * @returns {Promise<{ ok:true, theme:string, phone:string|null,
  *                     relations:{teamId:number, relationType:string}[] }
  *                  | { ok:false, ... }>}
  */
 async function validateOnboarding(body) {
-  const { theme = 'system', teams } = body || {};
+  const { theme = 'system', phone, teams } = body || {};
 
   const themeCheck = validateTheme(theme);
   if (!themeCheck.ok) return themeCheck;
+
+  const phoneCheck = validatePhone(phone);
+  if (!phoneCheck.ok) return phoneCheck;
 
   const relationCheck = await validateSelfRelations(teams);
   if (!relationCheck.ok) return relationCheck;
@@ -467,6 +509,7 @@ async function validateOnboarding(body) {
   return {
     ok: true,
     theme: themeCheck.theme,
+    phone: phoneCheck.phone,
     relations: relationCheck.relations,
   };
 }
@@ -659,6 +702,7 @@ module.exports = {
   MAX_PASSWORD_LENGTH,
   MIN_PHOTO_ZOOM,
   MAX_PHOTO_ZOOM,
+  MAX_PHONE_LENGTH,
   parseId,
   isRelationType,
   validateTeamCreate,
@@ -669,6 +713,7 @@ module.exports = {
   validateTeamIdList,
   validateRegistration,
   validateTheme,
+  validatePhone,
   validateSelfRelations,
   validateOnboarding,
   validatePasswordChange,

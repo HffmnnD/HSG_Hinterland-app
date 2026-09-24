@@ -95,10 +95,10 @@ frontend/src/
     ScrollToTop.jsx            setzt den Scroll-Stand bei Seitenwechsel zurück
     Badge.jsx                  Badge (Status-Chips; die Rolle einer Person
                                steht bewusst nirgends im Kopfbereich)
-    ThemeToggle.jsx            Umschalter Hell/Dunkel für die Kopfzeile +
-                               <ThemeChoice> (alle drei Einstellungen)
+    ThemeChoice.jsx            Auswahl Hell/Dunkel/System (Onboarding + Konto)
     ui/                        geteilte Bausteine: Modal.jsx (DER Dialog der
-                               App), StatCard.jsx (Kennzahl-Kachel)
+                               App), StatCard.jsx (Kennzahl-Kachel),
+                               Avatar.jsx (Profilbild, sonst Initialen)
     FullScreenLoader.jsx
     ErrorBoundary.jsx          fängt Render-Fehler ab (keine weisse Seite)
     ProtectedRoute.jsx         Routen-Schutz nach Login-Status, Rolle und
@@ -114,15 +114,18 @@ frontend/src/
     dashboard/
       NextUpPanel.jsx          die nächsten Trainings und Spiele als Kurzliste
     onboarding/
-      OnboardingWizard.jsx     Einrichtung beim ersten Login (drei Schritte)
+      OnboardingWizard.jsx     Einrichtung nach der Registrierung (vier
+                               Schritte: Rolle, Mannschaften, Profil, Design)
       TeamChoice.jsx           Mannschaftsauswahl als Karten, nach Senioren /
                                Jugend gruppiert (Onboarding + „Mein Konto")
     account/
-      AccountPanel.jsx         „Mein Konto": Kennzahlen + drei Bereiche
+      AccountPanel.jsx         „Mein Konto": Kennzahlen + vier Bereiche
+      ProfileForm.jsx          Profilbild und Telefonnummer (auch im Onboarding)
       PreferencesForm.jsx      Rolle & Mannschaften nachträglich ändern
       PasswordForm.jsx         Passwortwechsel (aktuelles Passwort nötig)
-    TeamsPage.jsx              /teams: eigene + alle Mannschaften als Karten,
-                               gruppiert nach Senioren / Jugend
+    TeamsPage.jsx              /teams: zwei Reiter („Meine" / „Alle") mit
+                               denselben Karten, gruppiert nach eigener Rolle
+                               bzw. nach Senioren / Jugend
     AdminPage.jsx              /admin: Gerüst der Verwaltung – Reiterleiste
                                (wie TeamPage) + genau EIN Bereich
     admin/
@@ -149,6 +152,8 @@ frontend/src/
       TeamHero.jsx             Kopfbereich: Foto/Verlauf, Name, Liga
       PhotoFrameDialog.jsx     Bildausschnitt des Kopfbereichs: ziehen,
                                zoomen, Vorschau in Originaloptik
+      RosterSection.jsx        Kader mit Profilbildern; Trainer:innen mit
+                               E-Mail und (falls hinterlegt) Telefonnummer
       NextGameCard.jsx         Karte „Nächstes Spiel" (Reiter Übersicht)
       RosterSection.jsx        Kader: Trainerstab, Spielerkarten, Positionsfilter
       TeamManagePanel.jsx      Verwaltung: Anfragen, Zuordnungen, Stammdaten
@@ -174,11 +179,16 @@ frontend/src/
       AuthScreen.jsx           Umschalter Login <-> Registrierung
       AuthLayout.jsx           mobile-first zentriertes Karten-Layout
       LoginForm.jsx            E-Mail/Passwort
-      RegisterForm.jsx         genau vier Felder: Vor-/Nachname, E-Mail, Passwort
+      RegisterForm.jsx         genau vier Felder: Vor-/Nachname, E-Mail,
+                               Passwort – meldet direkt an
       TextField.jsx / Alert.jsx
 ```
 
 ## Mannschaftsseite (`/teams/:code`)
+
+In der Kopfzeile steht links der Mannschaftsname als Weg zurück zur Übersicht –
+ohne das frühere Kürzel-Abzeichen davor, das neben dem ausgeschriebenen Namen
+nichts hinzufügte.
 
 Vier Reiter, damit die Seite nicht überläuft. Der aktive Reiter steht im
 Adressfeld (`?tab=kader`) – ein Link auf den Kader geht auch als Kader wieder
@@ -231,7 +241,8 @@ Terminliste zurückgibt (`teams: [{ id, code, name, canManage, isPlayer, … }]`
 
 | Reiter | sichtbar für | Inhalt |
 | ------ | ------------ | ------ |
-| **Anstehend** | alle | Terminliste nach Datum, nach Monat gruppiert. Darüber eine Filterleiste (`FilterBar`) mit drei benannten Feldern: **Mannschaft** („Alle meine Teams" oder eine bestimmte, als Auswahlfeld), **Terminart** (Alles / Training / Spiele / Sonstiges als Segmentumschalter) und **Zeitraum** (Rückblick 30 Tage). Vorher waren das bis zu zwölf gleich aussehende Chips in zwei Reihen, von denen einer nicht filterte, sondern den Zeitraum verschob |
+| **Anstehend** | alle | Terminliste nach Datum, nach Monat gruppiert. Darüber eine Filterleiste (`FilterBar`) mit drei benannten Feldern: **Mannschaft** („Alle meine Teams" oder eine bestimmte, als Auswahlfeld), **Terminart** (Alles / Training / Spiele / Sonstiges als Segmentumschalter) und **Zeitraum** (Nur anstehende / Rückblick 30 Tage / eigener Zeitraum mit
+zwei Datumsfeldern, die erst beim Auswählen erscheinen). Vorher waren das bis zu zwölf gleich aussehende Chips in zwei Reihen, von denen einer nicht filterte, sondern den Zeitraum verschob |
 | **Meine Abwesenheiten** | wer irgendwo `player` ist | Urlaub/Verletzung mit Zeitraum eintragen und entfernen |
 | **Beteiligung** | alle | Zeitraum + Kategorie, dann je Person der Anteil in Prozent. Ein Klick öffnet die Termine dahinter. **Jedes Mitglied** sieht die ganze Mannschaft, nicht nur das Trainerteam; die eigene Zeile ist grün hinterlegt |
 | **Planung** | wer irgendwo `coach` ist (oder Admin) | **Erst die Mannschaft wählen**, dann Trainingszeiten, Einzeltermine, Ligaspiele aus nuLiga und längerfristige Ausfälle für genau diese Mannschaft |
@@ -490,16 +501,14 @@ und die **Mitgliedsnummer** (= die Konto-ID, erste Tabellenspalte).
 - Die Rolle „Admin“ fehlt in der Auswahlliste (die aktuelle Rolle einer Zeile
   wird trotzdem korrekt angezeigt).
 
-## Registrierung, Freigabe & Onboarding
+## Registrierung & Onboarding
 
-Der Weg in die App hat drei Stationen – bewusst getrennt, weil sie
-verschiedene Fragen beantworten:
+Der Weg in die App hat zwei Stationen:
 
 | Station | Wo | Was passiert |
 | ------- | -- | ------------ |
-| **Registrierung** | `RegisterForm` | Vorname, Nachname, E-Mail, Passwort. Mehr nicht. Danach wartet das Konto auf die Freigabe – die Erfolgsansicht zeigt die drei Schritte bis zum ersten Login. |
-| **Freigabe** | Verwaltung → Mitglieder | Die Kennzahl „Wartet auf Freigabe" führt mit einem Klick in die gefilterte Liste; der Knopf heißt dort **Freigeben** (ein gesperrtes Konto dagegen **Entsperren**). |
-| **Onboarding** | `/willkommen` | Drei Schritte beim ersten Login: Beteiligung (Spieler:in / Trainer:in / Zuschauer:in), Mannschaften je Beteiligung, Design. Am Ende EIN Aufruf `POST /api/auth/me/onboarding`. |
+| **Registrierung** | `RegisterForm` | Vorname, Nachname, E-Mail, Passwort. Der Server legt das Konto an **und meldet an** – `register()` setzt `user` im Context, die App wechselt sofort weiter. |
+| **Onboarding** | `/willkommen` | Vier Schritte: Beteiligung (Spieler:in / Trainer:in / Zuschauer:in), Mannschaften je Beteiligung, Profil (Bild + Telefon), Design. Am Ende EIN Aufruf `POST /api/auth/me/onboarding`. |
 
 Warum das Formular geschrumpft ist: Vorher standen Beteiligung, Helferdienste
 und drei Mannschaftsauswahlen direkt unter dem Passwortfeld – also an der
@@ -508,12 +517,14 @@ Mannschaften es gibt, noch was „Mitwirkende:r" bedeutet. Diese Angaben stehen
 jetzt im Assistenten, mit einer Frage je Schritt und der Möglichkeit, sie
 später unter „Mein Konto" zu ändern.
 
-`ProtectedRoute` leitet auf `/willkommen` um, solange
-`user.onboardingCompleted` `false` ist – und merkt sich das ursprüngliche
-Ziel, sodass es nach der Einrichtung dort weitergeht.
+Es gibt **keine Freigabe durch die Verwaltung**: Zwischen „Konto erstellen" und
+der fertig eingerichteten App liegt kein Warten und kein zweites
+Anmeldeformular. `ProtectedRoute` leitet auf `/willkommen` um, solange
+`user.onboardingCompleted` `false` ist – und merkt sich das ursprüngliche Ziel,
+sodass es nach der Einrichtung dort weitergeht.
 
-**Bestätigung durch das Trainerteam** (unverändert): Was jemand für sich
-selbst wählt, ist bei `player`/`coach` eine Anfrage.
+**Bestätigung durch das Trainerteam** (unverändert): Was jemand für sich selbst
+wählt, ist bei `player`/`coach` eine Anfrage.
 
 - „Meine Mannschaften" zeigt Zuordnungen mit `isConfirmed === false` als
   „ausstehend".
@@ -525,13 +536,32 @@ selbst wählt, ist bei `player`/`coach` eine Anfrage.
   sehen will, und wird **nirgends gezählt** – weder auf der Mannschaftsseite
   noch in der Verwaltung.
 
+## Profilbild & Kontakt
+
+Das Profilbild wird sofort hochgeladen (`POST /api/auth/me/photo`), die
+Telefonnummer ist ein normales Formularfeld. Beides steckt in einer
+Komponente (`account/ProfileForm.jsx`), die an zwei Stellen erscheint: im
+Onboarding-Schritt „Profil" und unter „Mein Konto".
+
+Angezeigt wird das Bild über `<Avatar>`: auf der Startseite statt der
+Initialen, im Kader auf den Spielerkarten (die Rückennummer wandert dann als
+kleines Abzeichen an den Bildrand) und in der Mannschaftsverwaltung. Ohne Bild
+bleibt es beim getönten Kreis mit den Initialen.
+
+Die **Kontaktzeile im Kader** zeigt E-Mail und Telefonnummer als `mailto:`-
+bzw. `tel:`-Link – am Handy ist genau das der Zweck. Wer was sieht, entscheidet
+das Backend (siehe `backend/README.md` → „Kontaktdaten im Kader"):
+Trainer:innen sind für alle erreichbar, die Daten der Spieler:innen sieht nur
+das Trainerteam.
+
 ## Mein Konto (Startseite, unten)
 
-Ein eigenes Segment am Fuß der Startseite mit vier Kennzahl-Kacheln und drei
+Ein eigenes Segment am Fuß der Startseite mit vier Kennzahl-Kacheln und vier
 aufklappbaren Bereichen:
 
 | Bereich | Inhalt |
 | ------- | ------ |
+| **Profil** | Profilbild und Telefonnummer |
 | **Mannschaften** | dieselbe Auswahl wie im Onboarding. Gesendet wird die vollständige neue Wahl (`PATCH /api/auth/me/preferences`); der Server gleicht sie ab, statt neu anzulegen – Bestätigungen und Rückennummern bleiben erhalten. |
 | **Design** | Hell / Dunkel / System |
 | **Passwort** | aktuelles Passwort + neues Passwort mit Wiederholung |
@@ -557,6 +587,11 @@ Navigation, **ohne** an jeder Komponente ein `dark:`-Gegenstück zu pflegen.
 `dark:` bleibt für die wenigen Stellen, an denen im Dunkeln etwas anderes gilt
 als eine andere Farbe (Verlauf des Mannschafts-Kopfbereichs, aktiver Knopf im
 Umschalter).
+
+Gewählt wird das Design an genau zwei Stellen: im Onboarding und unter „Mein
+Konto". Einen Ein-Klick-Umschalter in der Kopfzeile gibt es bewusst nicht mehr –
+eine Einstellung, die man einmal trifft und dann selten ändert, braucht keinen
+Dauerplatz auf jeder Seite.
 
 Drei Dinge, die dabei wichtig sind:
 
@@ -617,11 +652,11 @@ nicht als Sitzungsabbruch behandelt wird.
 1. Beim Laden fragt der `AuthProvider` `GET /api/auth/me` ab (Cookie-Check).
 2. `login()` → `POST /api/auth/login`; das Backend setzt ein HttpOnly-Cookie
    (für JS nicht lesbar). Bei Erfolg wird `user` gesetzt → die App zeigt die
-   Startseite, oder zuerst den Onboarding-Assistenten. Ohne Freigabe antwortet
-   das Backend `403` mit dem Grund (wartet / gesperrt) – das Formular zeigt ihn an.
-3. `register()` → `POST /api/auth/register` (vier Felder); danach die
-   Erfolgsansicht mit den drei Schritten bis zum ersten Login. **Keine**
-   Sitzung: das Konto wartet auf die Freigabe.
+   Startseite, oder zuerst den Onboarding-Assistenten. Ein gesperrtes Konto
+   bekommt `403` mit Begründung – das Formular zeigt sie an.
+3. `register()` → `POST /api/auth/register` (vier Felder). Die Antwort enthält
+   Cookie **und** Profil; `user` wird direkt gesetzt, die App springt in den
+   Assistenten.
 4. `logout()` → `POST /api/auth/logout` löscht das Cookie; `user` wird `null`.
 
 `useAuth()` liefert zusätzlich `teams`

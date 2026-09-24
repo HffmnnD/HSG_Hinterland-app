@@ -19,7 +19,8 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/011_event_cancellation.sql` | `events.cancelled_at` / `cancel_reason`: Termine absagen statt löschen. |
 | `migrations/010_nuliga_games.sql` | Ligaspiele aus nuLiga als Termine (`events.nuliga_game_id`, Schalter je Mannschaft). |
 | `migrations/009_schedule_module.sql` | Termin-Modul: `event_series`, `events`, `attendances`, `long_term_absences`. |
-| `migrations/013_onboarding_theme.sql` | Schlanke Registrierung: neue Konten warten auf die Freigabe (`is_approved` Default `0`, `approved_at`), Onboarding (`onboarding_completed_at`), Design (`theme`) und der Bildausschnitt des Mannschaftsfotos (`photo_focus_x/y`, `photo_zoom`). |
+| `migrations/013_onboarding_theme.sql` | Schlanke Registrierung, Onboarding (`onboarding_completed_at`), Design (`theme`) und der Bildausschnitt des Mannschaftsfotos (`photo_focus_x/y`, `photo_zoom`). |
+| `migrations/014_instant_signup_and_profile.sql` | Registrierung ohne Freigabe: `is_approved` wieder Default `1`, `approved_at` entfällt. Dazu Profilbild (`users.photo_path`) und freiwillige Telefonnummer (`users.phone`). |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
@@ -33,8 +34,8 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 │ email (uq)  │        │  |fan          │        │ code (uq)    │
 │ role        │        │  is_confirmed  │        │ name         │
 │ is_approved │        └────────────────┘        │ photo_*      │
-│ approved_at │                                  └──────────────┘
-│ theme       │
+│ theme       │                                  └──────────────┘
+│ photo_path  │
 │ ...         │───1:n──┐
 └─────────────┘        │   ┌────────────────┐
       │                └───│  user_services │
@@ -65,10 +66,11 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | ------ | --------- |
 | `id` | Primärschlüssel, überall als `user_id` referenziert |
 | `first_name`, `last_name` | Name |
-| `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert |
+| `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert. Steht bei Trainer:innen als Kontakt im Kader |
+| `photo_path` | Profilbild in `backend/uploads/`, z. B. `users/ab12.jpg`. `NULL` = Initialen anzeigen |
+| `phone` | Freiwillige Telefonnummer aus den Kontoeinstellungen. Im Kader sichtbar: bei Trainer:innen für alle, bei Spieler:innen nur für das Trainerteam |
 | `password_hash` | bcrypt-Hash – nie im Klartext, nie an den Client |
-| `is_approved` | `1` = freigegeben, `0` = gesperrt **oder noch nicht freigegeben** (Standard). Wird bei Login, `/api/auth/me` und in `checkRole` geprüft, damit eine Sperre sofort wirkt |
-| `approved_at` | Zeitpunkt der **ersten** Freigabe. Zusammen mit `is_approved = 0` unterscheidbar: `NULL` = wartet auf Freigabe (neue Registrierung), gesetzt = wurde gesperrt. Eine spätere Sperre lässt den Wert stehen |
+| `is_approved` | `1` = aktiv (Standard), `0` = von einem Admin gesperrt. **Keine** Registrierungs-Freigabe: Wer sich registriert, ist sofort angemeldet. Wird bei Login, `/api/auth/me` und in `checkRole` geprüft, damit eine Sperre sofort wirkt |
 | `role` | RBAC-Rolle, siehe unten. Wird **nicht** bei der Registrierung gesetzt (sondern im Onboarding bzw. von der Verwaltung) |
 | `theme` | Design-Vorliebe: `system` (Standard, folgt dem Gerät), `light`, `dark`. Am Konto und nicht im Browser, damit das Design auf allen Geräten gleich ist |
 | `onboarding_completed_at` | Wann der Einrichtungs-Assistent abgeschlossen wurde. `NULL` = steht beim nächsten Login an |

@@ -17,22 +17,24 @@ const userRepository = require('../repositories/userRepository');
 const {
   validateRegistration,
   validateTheme,
+  validatePhone,
   validateOnboarding,
   validateSelfRelations,
   validatePasswordChange,
 } = require('../utils/validation');
+const {
+  userPhotoPathFor,
+  hasValidImageSignature,
+  removeUpload,
+} = require('../config/uploads');
 
-// Die Registrierung legt das Konto an, gibt aber KEINE Sitzung aus: bis zur
-// Freigabe durch die Verwaltung gibt es nichts zu sehen. Die Meldung sagt das
-// deutlich, damit niemand vergeblich auf der Anmeldeseite herumprobiert.
-const REGISTER_OK_MESSAGE =
-  'Konto angelegt. Sobald die Vereinsverwaltung es freigegeben hat, kannst du dich anmelden – du wirst dann durch die Einrichtung geführt.';
+// Nach der Registrierung ist das Konto sofort aktiv UND angemeldet: Der
+// Endpunkt setzt dieselbe Sitzung wie der Login. Eine Freigabe durch die
+// Verwaltung gibt es nicht – wer sich registriert, landet direkt im
+// Onboarding-Assistenten.
+const REGISTER_OK_MESSAGE = 'Willkommen! Dein Konto ist angelegt.';
 const BAD_CREDENTIALS_MESSAGE = 'E-Mail-Adresse oder Passwort ist falsch.';
-// `is_approved = 0` heißt entweder „noch nicht freigegeben" (neu registriert)
-// oder „gesperrt". `approved_at` unterscheidet beides – und damit auch die
-// Meldung, denn die beiden Fälle brauchen verschiedene nächste Schritte.
-const AWAITING_APPROVAL_MESSAGE =
-  'Dein Konto wartet noch auf die Freigabe durch die Vereinsverwaltung. Du wirst benachrichtigt, sobald es freigeschaltet ist.';
+// `is_approved = 0` bedeutet ausschliesslich „von einem Admin gesperrt".
 const ACCOUNT_LOCKED_MESSAGE =
   'Dieses Konto wurde gesperrt. Bitte wende dich an einen Admin.';
 
@@ -43,11 +45,6 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
   'timing-attack-dummy-password',
   SALT_ROUNDS
 );
-
-/** Passende Meldung für ein Konto ohne Freigabe. */
-function blockedMessage(user) {
-  return user.approved_at ? ACCOUNT_LOCKED_MESSAGE : AWAITING_APPROVAL_MESSAGE;
-}
 
 // --- Cookie / Session --------------------------------------------------------
 
@@ -80,17 +77,21 @@ async function register(req, res, next) {
 
     const passwordHash = await bcrypt.hash(input.account.password, SALT_ROUNDS);
 
-    await userRepository.createAccount({
+    const userId = await userRepository.createAccount({
       firstName: input.account.firstName,
       lastName: input.account.lastName,
       email: input.account.email,
       passwordHash,
     });
 
-    // Bewusst OHNE Profil in der Antwort: Das Konto ist noch nicht
-    // freigegeben, es gibt also keine Sitzung und nichts, was der Client damit
-    // anfangen könnte.
-    return res.status(201).json({ message: REGISTER_OK_MESSAGE });
+    // Sofort anmelden. Ein zweites Formular direkt nach dem ersten wäre eine
+    // Hürde ohne Zweck: Die Zugangsdaten sind gerade eingegeben worden, und
+    // der Onboarding-Assistent braucht ohnehin eine Sitzung.
+    const user = await userRepository.findById(userId);
+    setSessionCookie(res, user);
+
+    const profile = await userRepository.buildProfile(user);
+    return res.status(201).json({ message: REGISTER_OK_MESSAGE, user: profile });
   } catch (err) {
     // Der UNIQUE-Index auf email ist die einzige Quelle der Wahrheit
     // (kein SELECT-dann-INSERT -> keine Race Condition).
@@ -128,9 +129,9 @@ async function login(req, res, next) {
     if (!(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ message: BAD_CREDENTIALS_MESSAGE });
     }
-    // Keine neue Sitzung ohne Freigabe – egal ob noch offen oder gesperrt.
+    // Admin-Sperre: keine neue Sitzung für gesperrte Konten.
     if (!user.is_approved) {
-      return res.status(403).json({ message: blockedMessage(user) });
+      return res.status(403).json({ message: ACCOUNT_LOCKED_MESSAGE });
     }
 
     setSessionCookie(res, user);
@@ -158,7 +159,7 @@ async function me(req, res, next) {
     }
     if (!user.is_approved) {
       clearSessionCookie(res); // nachträglich gesperrt -> Sitzung beenden
-      return res.status(403).json({ message: blockedMessage(user) });
+      return res.status(403).json({ message: ACCOUNT_LOCKED_MESSAGE });
     }
 
     const profile = await userRepository.buildProfile(user);
@@ -215,6 +216,7 @@ async function completeOnboarding(req, res, next) {
 
     await userRepository.completeOnboarding(req.userId, {
       theme: check.theme,
+      phone: check.phone,
       relations: check.relations,
     });
 
@@ -232,18 +234,19 @@ async function completeOnboarding(req, res, next) {
 }
 
 // PATCH /api/auth/me/preferences
-//   Body: { theme?, teams?: [{ teamId, relationType }] }
+//   Body: { theme?, phone?, teams?: [{ teamId, relationType }] }
 //
 // Dieselben Angaben wie im Onboarding, später unter „Mein Konto" änderbar.
 // `teams` ist die VOLLSTÄNDIGE neue Wahl – nicht mitgeschickt heißt
 // „unverändert lassen", eine leere Liste heißt „alle Zuordnungen aufheben".
+// `phone: ''` oder `null` löscht die Telefonnummer.
 async function updatePreferences(req, res, next) {
   try {
-    const { theme, teams } = req.body || {};
-    if (theme === undefined && teams === undefined) {
-      return res
-        .status(400)
-        .json({ message: 'Keine Änderungen übergeben (theme oder teams).' });
+    const { theme, phone, teams } = req.body || {};
+    if (theme === undefined && phone === undefined && teams === undefined) {
+      return res.status(400).json({
+        message: 'Keine Änderungen übergeben (theme, phone oder teams).',
+      });
     }
 
     const patch = {};
@@ -254,6 +257,14 @@ async function updatePreferences(req, res, next) {
         return res.status(themeCheck.status).json({ message: themeCheck.message });
       }
       patch.theme = themeCheck.theme;
+    }
+
+    if (phone !== undefined) {
+      const phoneCheck = validatePhone(phone);
+      if (!phoneCheck.ok) {
+        return res.status(phoneCheck.status).json({ message: phoneCheck.message });
+      }
+      patch.phone = phoneCheck.phone;
     }
 
     if (teams !== undefined) {
@@ -268,6 +279,55 @@ async function updatePreferences(req, res, next) {
 
     await userRepository.updateOwnPreferences(req.userId, patch);
     return respondWithProfile(res, req.userId, 'Einstellungen gespeichert.');
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// POST /api/auth/me/photo   multipart/form-data, Feld `photo`
+//
+// Dasselbe Vorgehen wie beim Mannschaftsfoto (siehe teamsController): Die
+// Datei liegt ab hier bereits auf der Platte, jeder Fehlerpfad räumt sie
+// selbst wieder weg, und der Inhalt muss wirklich ein Bild sein – der
+// MIME-Typ allein kommt vom Client.
+async function setProfilePhoto(req, res, next) {
+  const cleanup = async () => {
+    if (req.file) await removeUpload(userPhotoPathFor(req.file));
+  };
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Bitte ein Bild auswählen.' });
+    }
+
+    const storedPath = userPhotoPathFor(req.file);
+    if (!(await hasValidImageSignature(storedPath, req.file.mimetype))) {
+      await cleanup();
+      return res
+        .status(400)
+        .json({ message: 'Die Datei ist kein gültiges Bild.' });
+    }
+
+    const previousPath = await userRepository.setPhotoPath(req.userId, storedPath);
+    // Erst nach dem erfolgreichen Speichern das alte Bild löschen.
+    if (previousPath) await removeUpload(previousPath);
+
+    return respondWithProfile(res, req.userId, 'Profilbild gespeichert.', 201);
+  } catch (err) {
+    await cleanup();
+    return next(err);
+  }
+}
+
+// DELETE /api/auth/me/photo
+async function deleteProfilePhoto(req, res, next) {
+  try {
+    const previousPath = await userRepository.setPhotoPath(req.userId, null);
+    if (!previousPath) {
+      return res.status(404).json({ message: 'Kein Profilbild hinterlegt.' });
+    }
+    await removeUpload(previousPath);
+    return respondWithProfile(res, req.userId, 'Profilbild entfernt.');
   } catch (err) {
     return next(err);
   }
@@ -315,5 +375,7 @@ module.exports = {
   setTheme,
   completeOnboarding,
   updatePreferences,
+  setProfilePhoto,
+  deleteProfilePhoto,
   changePassword,
 };

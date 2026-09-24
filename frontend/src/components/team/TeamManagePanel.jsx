@@ -1,9 +1,10 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Crop, Trash2 } from 'lucide-react';
+import { Crop, Mail, Phone, Trash2, UserMinus } from 'lucide-react';
 
 import { apiFetch } from '../../lib/api';
 import { relationLabel, relationLabelPlural } from '../../lib/participation';
 import { roleLabel } from '../../lib/roles';
+import Avatar from '../ui/Avatar';
 // Der Ausschnitt-Dialog wird selten gebraucht (nur Administration, nur beim
 // Wechsel eines Fotos) – deshalb erst beim Öffnen nachladen.
 const PhotoFrameDialog = lazy(() => import('./PhotoFrameDialog'));
@@ -32,7 +33,6 @@ const SECTIONS = ['coach', 'player'];
  *           isAdmin?: boolean,
  *           pendingMembers?: object[],
  *           members?: { player:object[], coach:object[] },
- *           otherTeams?: object[],
  *           busy?: boolean,
  *           onRun: (action: () => Promise<any>, fallback?: string) => Promise<void>,
  *           reloadToken?: unknown }} props
@@ -45,7 +45,6 @@ export default function TeamManagePanel({
   isAdmin = false,
   pendingMembers = [],
   members = { player: [], coach: [] },
-  otherTeams = [],
   busy = false,
   onRun,
   reloadToken,
@@ -116,16 +115,6 @@ export default function TeamManagePanel({
           { method: 'DELETE' }
         ),
       rejected ? `Anfrage von ${name} abgelehnt.` : `${name} entfernt.`
-    );
-
-  const handleCallUp = (userId, targetTeamCode, name) =>
-    onRun(
-      () =>
-        apiFetch(`/api/teams/${encodeURIComponent(code)}/callup`, {
-          method: 'POST',
-          body: JSON.stringify({ userId, targetTeamCode }),
-        }),
-      `Anfrage für ${name} an ${targetTeamCode} gesendet.`
     );
 
   const handleSaveTeamData = (event) => {
@@ -280,65 +269,74 @@ export default function TeamManagePanel({
       </form>
 
       {/* --------------------------------------------- Zuordnungen verwalten */}
+      {/* Eine Zeile je Person: Bild, Name mit Rückennummer, darunter die
+          Kontaktdaten. Das Auswahlfeld „Hochrufen zu …" stand früher hier und
+          ist ersatzlos entfallen – es war ein Sonderweg, den kaum jemand
+          benutzt hat, und hat jede Zeile zu einem Formular gemacht. Wer eine
+          Person in einer zweiten Mannschaft braucht, fügt sie dort über
+          „Mitglied hinzufügen" hinzu. */}
       {SECTIONS.map((relation) =>
         members[relation].length === 0 ? null : (
           <section key={relation}>
-            <h2 className="eyebrow">{relationLabelPlural(relation)}</h2>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="eyebrow">{relationLabelPlural(relation)}</h2>
+              <span className="text-xs text-ink-muted">
+                {members[relation].length}
+              </span>
+            </div>
+
             <ul className="list-panel mt-2">
               {members[relation].map((member) => {
                 const name = `${member.firstName} ${member.lastName}`;
                 return (
                   <li
                     key={`${relation}-${member.id}`}
-                    className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex items-center gap-3 px-4 py-3"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-ink">
+                    <Avatar person={member} size="md" />
+
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-center gap-2 text-sm font-bold text-ink">
                         {member.jerseyNumber !== null && (
-                          <span className="tag mr-2 font-semibold tabular-nums">
+                          <span className="tag shrink-0 tabular-nums">
                             {member.jerseyNumber}
                           </span>
                         )}
-                        {name}
+                        <span className="truncate">{name}</span>
                       </p>
-                      {member.email && (
-                        <p className="truncate text-xs text-ink-muted">
-                          {member.email}
-                        </p>
-                      )}
+
+                      <div className="mt-0.5 space-y-0.5 text-xs text-ink-muted">
+                        {member.email && (
+                          <a
+                            href={`mailto:${member.email}`}
+                            className="flex items-center gap-1.5 truncate hover:text-hsg-green-dark"
+                          >
+                            <Mail size={12} aria-hidden="true" className="shrink-0" />
+                            <span className="truncate">{member.email}</span>
+                          </a>
+                        )}
+                        {member.phone && (
+                          <a
+                            href={`tel:${member.phone.replace(/[^0-9+]/g, '')}`}
+                            className="flex items-center gap-1.5 truncate hover:text-hsg-green-dark"
+                          >
+                            <Phone size={12} aria-hidden="true" className="shrink-0" />
+                            <span className="truncate">{member.phone}</span>
+                          </a>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2">
-                      {relation === 'player' && otherTeams.length > 0 && (
-                        <select
-                          value=""
-                          disabled={busy}
-                          aria-label={`${name} hochrufen`}
-                          onChange={(event) => {
-                            if (event.target.value) {
-                              handleCallUp(member.id, event.target.value, name);
-                            }
-                          }}
-                          className="field-control-sm"
-                          title="Sendet eine Anfrage an die Zielmannschaft – deren Trainer:in bestätigt sie."
-                        >
-                          <option value="">Hochrufen zu …</option>
-                          {otherTeams.map((target) => (
-                            <option key={target.id} value={target.code}>
-                              {target.code}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => handleRemove(member.id, relation, name)}
-                        className="btn btn-danger btn-sm"
-                      >
-                        Entfernen
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => handleRemove(member.id, relation, name)}
+                      className="btn btn-danger btn-sm shrink-0"
+                      title={`${name} aus der Mannschaft entfernen`}
+                    >
+                      <UserMinus size={14} aria-hidden="true" />
+                      <span className="sr-only sm:not-sr-only">Entfernen</span>
+                    </button>
                   </li>
                 );
               })}

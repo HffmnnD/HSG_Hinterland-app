@@ -8,6 +8,7 @@ import { useEvents } from '../hooks/useSchedule';
 import { MANAGEMENT_ROLES } from '../lib/roles';
 import { toDateInput } from '../lib/schedule';
 import AppLayout from './AppLayout';
+import Avatar from './ui/Avatar';
 import MyTeams from './MyTeams';
 import NewsCard from './NewsCard';
 import NextUpPanel from './dashboard/NextUpPanel';
@@ -53,10 +54,6 @@ export default function Dashboard() {
   // einen Absturz, falls die Sitzung während des Renderns wegfällt.
   if (!user) return null;
 
-  const initials = `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`
-    .toUpperCase()
-    .trim();
-
   const isAdmin = role === 'admin';
   const isSubAdmin = role === 'sub_admin';
   const canManageMembers = MANAGEMENT_ROLES.includes(role);
@@ -70,7 +67,7 @@ export default function Dashboard() {
     <AppLayout width="max-w-5xl">
       {/* ------------------------------------------------------- Begrüßung */}
       <header className="flex items-center gap-4">
-        <span className="avatar h-12 w-12 text-base">{initials || '?'}</span>
+        <Avatar person={user} size="lg" />
         <div className="min-w-0">
           <h1 className="page-title">Hallo, {user.firstName}!</h1>
           <p className="mt-0.5 text-sm text-ink-muted">
@@ -133,8 +130,15 @@ export default function Dashboard() {
       </section>
 
       {/* ------------------------- Meine Mannschaften & nächste Termine */}
+      {/* `min-w-0` an den beiden Karten ist kein Feinschliff, sondern der
+          Grund, warum die Startseite auf dem Handy nicht mehr waagerecht
+          scrollt: Ein Grid-Element hat von sich aus `min-width: auto` und
+          wächst damit bis zur kleinstmöglichen Breite seines Inhalts. Ein
+          langer Mannschaftsname („HSG Hinterland – TV Hüttenberg II") schob
+          so die ganze Karte über den Bildschirmrand hinaus – und mit ihr die
+          Seite. */}
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <section className="panel">
+        <section className="panel min-w-0">
           <div className="panel__header">
             <h2 className="section-title flex items-center gap-2 text-base">
               <Users size={16} aria-hidden="true" className="text-ink-muted" />
@@ -157,6 +161,7 @@ export default function Dashboard() {
           loading={eventsLoading}
           error={eventsError}
           hasTeams={scheduleTeams.length > 0}
+          className="min-w-0"
         />
       </div>
 
@@ -177,9 +182,9 @@ export default function Dashboard() {
           <div className="panel__body flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-xl text-sm text-ink-soft">
               {isAdmin &&
-                'Mitglieder freigeben, Rollen und Mannschaften pflegen, News veröffentlichen und den Systemzustand prüfen.'}
+                'Rollen und Mannschaften pflegen, News veröffentlichen und den Systemzustand prüfen.'}
               {isSubAdmin &&
-                'Mitglieder freigeben, Rollen und Mannschaften pflegen sowie News veröffentlichen. Admin-Konten sind für dich gesperrt.'}
+                'Rollen und Mannschaften pflegen sowie News veröffentlichen. Admin-Konten sind für dich gesperrt.'}
               {!isAdmin &&
                 !isSubAdmin &&
                 'Mannschaftszuordnungen der Mitglieder verwalten.'}

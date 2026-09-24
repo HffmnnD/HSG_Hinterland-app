@@ -25,9 +25,10 @@ const MAX_PASSWORD_LENGTH = 72;
  * der Stelle, an der niemand die App kennt: Wer sich anmeldet, weiß noch
  * nicht, welche Mannschaften es gibt oder was „Mitwirkende:r" bedeutet.
  *
- * Diese Angaben fragt jetzt der Onboarding-Assistent beim ersten Login ab
- * (components/onboarding/) – dort mit Erklärung, einer Frage je Schritt und
- * der Möglichkeit, später alles unter „Mein Konto" zu ändern.
+ * Diese Angaben fragt der Onboarding-Assistent ab, der direkt im Anschluss
+ * läuft (components/onboarding/): Der Server meldet mit der Registrierung
+ * sofort an, deshalb gibt es hier keine Erfolgsansicht und kein zweites
+ * Anmeldeformular – nach dem Klick geht es in die App.
  */
 export default function RegisterForm({ onSwitchToLogin }) {
   const { register, error, clearError } = useAuth();
@@ -36,7 +37,6 @@ export default function RegisterForm({ onSwitchToLogin }) {
   const [submitting, setSubmitting] = useState(false);
   // Client-seitige Validierung, getrennt vom Server-Fehler aus dem Context.
   const [validationError, setValidationError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -64,11 +64,9 @@ export default function RegisterForm({ onSwitchToLogin }) {
 
     setSubmitting(true);
     try {
-      const res = await register(form);
-      if (res.success) {
-        setSuccessMessage(res.message);
-        setForm(EMPTY_FORM);
-      }
+      await register(form);
+      // Bei Erfolg setzt der Context `user` – die App wechselt von selbst in
+      // den Onboarding-Assistenten, diese Komponente verschwindet dabei.
       // Fehlerfall: Meldung steht in `error` aus dem AuthContext.
     } finally {
       setSubmitting(false);
@@ -77,50 +75,13 @@ export default function RegisterForm({ onSwitchToLogin }) {
 
   const shownError = validationError || error?.message;
 
-  // Erfolgs-Ansicht: Das Konto ist angelegt, wartet aber auf die Freigabe.
-  // Deshalb hier kein „jetzt anmelden" als Hauptaktion – das würde in die
-  // Fehlermeldung „wartet auf Freigabe" laufen.
-  if (successMessage) {
-    return (
-      <div className="space-y-4">
-        <Alert variant="success">
-          <p className="font-display font-semibold uppercase tracking-[0.04em]">
-            Konto angelegt
-          </p>
-          <p className="mt-1">{successMessage}</p>
-        </Alert>
-
-        <ol className="space-y-2 text-sm text-ink-soft">
-          <Step number={1} done>
-            Konto angelegt
-          </Step>
-          <Step number={2}>
-            Die Vereinsverwaltung gibt dein Konto frei
-          </Step>
-          <Step number={3}>
-            Beim ersten Login richtest du in zwei Minuten ein, was du im Verein
-            machst und welche Mannschaften dich betreffen
-          </Step>
-        </ol>
-
-        <button
-          type="button"
-          onClick={onSwitchToLogin}
-          className="btn btn-outline btn-block"
-        >
-          Zurück zur Anmeldung
-        </button>
-      </div>
-    );
-  }
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       <div>
         <h2 className="section-title">Registrieren</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Vier Angaben genügen. Mannschaften und Design stellst du nach der
-          Freigabe in der App ein.
+          Vier Angaben genügen – Mannschaften und Design richtest du gleich
+          danach in der App ein.
         </p>
       </div>
 
@@ -183,8 +144,8 @@ export default function RegisterForm({ onSwitchToLogin }) {
       />
 
       <p className="field-hint">
-        Neue Konten werden von der Vereinsverwaltung freigegeben. Sobald das
-        erledigt ist, kannst du dich anmelden.
+        Nach dem Anlegen bist du angemeldet und wirst in zwei Minuten durch die
+        Einrichtung geführt.
       </p>
 
       <button
@@ -192,7 +153,7 @@ export default function RegisterForm({ onSwitchToLogin }) {
         disabled={submitting}
         className="btn btn-primary btn-block"
       >
-        {submitting ? 'Konto wird erstellt …' : 'Konto erstellen'}
+        {submitting ? 'Konto wird erstellt …' : 'Konto erstellen & loslegen'}
       </button>
 
       <p className="text-center text-sm text-ink-muted">
@@ -202,26 +163,5 @@ export default function RegisterForm({ onSwitchToLogin }) {
         </button>
       </p>
     </form>
-  );
-}
-
-/** Ein Schritt der Ablaufübersicht nach der Registrierung. */
-function Step({ number, done = false, children }) {
-  return (
-    <li className="flex gap-2.5">
-      <span
-        aria-hidden="true"
-        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-display text-[0.6875rem] font-bold leading-none ${
-          done
-            ? 'bg-hsg-green text-white'
-            : 'border border-line-strong bg-surface text-ink-muted'
-        }`}
-      >
-        {done ? '✓' : number}
-      </span>
-      <span className={done ? 'text-ink-muted line-through' : undefined}>
-        {children}
-      </span>
-    </li>
   );
 }

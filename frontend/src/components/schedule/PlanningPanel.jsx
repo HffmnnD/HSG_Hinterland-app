@@ -201,12 +201,29 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
             danach lassen sich die Ligaspiele hier übernehmen.
           </p>
         ) : (
-          <div className="card mt-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-ink-soft">
-                Spiele automatisch in den Kalender übernehmen. Sie zählen dann
-                wie jeder andere Termin: Der Kader kann sich abmelden, und die
-                Beteiligung lässt sich getrennt auswerten.
+          /* Auf dem Handy untereinander, ab `sm` nebeneinander.
+             Vorher stand hier eine einzige Reihe mit `flex-wrap`: Der Text
+             hatte `flex-1 min-w-0` und konnte deshalb beliebig schmal werden,
+             die Knöpfe daneben `shrink-0`. Die Reihe brach also nie um – der
+             Erklärtext quetschte sich links neben den Knöpfen zu einer
+             zeichenbreiten Spalte zusammen. */
+          <div className="card mt-3 space-y-4 sm:flex sm:items-start sm:justify-between sm:gap-5 sm:space-y-0">
+            <div className="min-w-0 sm:max-w-md">
+              <p className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={`status-dot ${
+                    team.nuligaSyncEnabled ? 'bg-hsg-green' : 'bg-ink-muted'
+                  }`}
+                />
+                <span className="font-display text-sm font-bold uppercase tracking-[0.04em] text-ink">
+                  {team.nuligaSyncEnabled ? 'Übernahme läuft' : 'Übernahme aus'}
+                </span>
+              </p>
+              <p className="mt-1.5 text-sm text-ink-soft">
+                Ligaspiele automatisch in den Kalender übernehmen. Sie zählen
+                dann wie jeder andere Termin: Der Kader kann sich abmelden, und
+                die Beteiligung lässt sich getrennt auswerten.
               </p>
               {team.nuligaSyncEnabled && team.nuligaSyncedAt && (
                 <p className="field-hint">
@@ -222,7 +239,7 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
               )}
             </div>
 
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
               {team.nuligaSyncEnabled && (
                 <button
                   type="button"

@@ -6,6 +6,7 @@
 //   0 = offene Beitrittsanfrage (nur der Trainer sieht sie)
 //   1 = bestätigt (taucht im öffentlichen Kader auf)
 const pool = require('../config/db');
+const { publicUrlFor } = require('../config/uploads');
 
 const RELATION_GROUPS = ['player', 'coach', 'fan'];
 
@@ -363,28 +364,53 @@ async function hasConfirmedRelation(userId, teamId, relationType, runner = pool)
 
 // --- Kader einer Mannschaft ------------------------------------------------
 
-function mapMember(row, includeEmail) {
+/**
+ * Eine Kaderzeile für das Frontend.
+ *
+ * ── Wer sieht die Kontaktdaten? ─────────────────────────────────────────────
+ * Das Profilbild sehen alle Mitglieder – dafür ist es da.
+ *
+ * E-Mail und Telefonnummer dagegen sind Kontaktdaten, und die Regel ist:
+ *
+ *   coach   immer sichtbar. Trainer:innen sind die Ansprechpartner:innen
+ *           einer Mannschaft; genau dafür steht der Kontakt im Kader.
+ *   player  nur für das Trainerteam (`includeContact`). Die Nummer eines
+ *           Mitglieds gehört nicht in eine Liste, die jedes Konto des Vereins
+ *           öffnen kann.
+ *
+ * Die Telefonnummer ist zusätzlich freiwillig: Sie steht nur dort, wo sie
+ * jemand selbst in den Kontoeinstellungen hinterlegt hat.
+ */
+function mapMember(row, includeContact) {
+  const isCoach = row.relation_type === 'coach';
+  const showContact = includeContact || isCoach;
+
   return {
     id: row.id,
     firstName: row.first_name,
     lastName: row.last_name,
     role: row.role,
+    photoUrl: publicUrlFor(row.photo_path),
     // Kaderangaben gelten je Mannschaft (siehe Migration 005).
     jerseyNumber: row.jersey_number ?? null,
     position: row.position ?? null,
     staffTitle: row.staff_title ?? null,
-    ...(includeEmail ? { email: row.email } : {}),
+    ...(showContact
+      ? { email: row.email, phone: row.phone ?? null }
+      : {}),
   };
 }
 
 /**
  * BESTÄTIGTER Kader einer Mannschaft, gruppiert nach player / coach / fan.
- * @param {{ includeEmail?: boolean }} [opts] E-Mail nur für Verwaltende ausgeben.
+ * @param {{ includeContact?: boolean }} [opts] Kontaktdaten der SPIELER:INNEN
+ *   mitgeben (nur für das Trainerteam). Bei Trainer:innen stehen sie ohnehin
+ *   immer dabei – siehe mapMember.
  */
-async function getConfirmedRoster(teamId, { includeEmail = false } = {}, runner = pool) {
+async function getConfirmedRoster(teamId, { includeContact = false } = {}, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
-            ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
+    `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.photo_path,
+            u.role, ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
        FROM user_teams ut
        JOIN users u ON u.id = ut.user_id
       WHERE ut.team_id = ? AND ut.is_confirmed = 1
@@ -397,7 +423,7 @@ async function getConfirmedRoster(teamId, { includeEmail = false } = {}, runner 
   const roster = { player: [], coach: [], fan: [] };
   for (const row of rows) {
     if (roster[row.relation_type]) {
-      roster[row.relation_type].push(mapMember(row, includeEmail));
+      roster[row.relation_type].push(mapMember(row, includeContact));
     }
   }
   return roster;
@@ -407,10 +433,10 @@ async function getConfirmedRoster(teamId, { includeEmail = false } = {}, runner 
  * OFFENE Beitrittsanfragen einer Mannschaft (is_confirmed = 0) als flache
  * Liste – eine Zeile pro (Nutzer, Beziehungstyp).
  */
-async function getPendingMembers(teamId, { includeEmail = false } = {}, runner = pool) {
+async function getPendingMembers(teamId, { includeContact = false } = {}, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
-            ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
+    `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.photo_path,
+            u.role, ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
        FROM user_teams ut
        JOIN users u ON u.id = ut.user_id
       WHERE ut.team_id = ? AND ut.is_confirmed = 0
@@ -418,7 +444,7 @@ async function getPendingMembers(teamId, { includeEmail = false } = {}, runner =
     [teamId]
   );
   return rows.map((row) => ({
-    ...mapMember(row, includeEmail),
+    ...mapMember(row, includeContact),
     relationType: row.relation_type,
   }));
 }

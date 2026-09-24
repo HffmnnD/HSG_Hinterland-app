@@ -35,9 +35,9 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  // Erstes Anmelden nach der Freigabe: zuerst einrichten. Ohne die
-  // Mannschaftswahl wären Kalender und Startseite leer, und niemand wüsste,
-  // warum. Das Ziel wird gemerkt – nach dem Assistenten geht es dorthin.
+  // Direkt nach der Registrierung: zuerst einrichten. Ohne die Mannschaftswahl
+  // wären Kalender und Startseite leer, und niemand wüsste, warum. Das Ziel
+  // wird gemerkt – nach dem Assistenten geht es dorthin.
   if (needsOnboarding && location.pathname !== ONBOARDING_PATH) {
     return (
       <Navigate to={ONBOARDING_PATH} replace state={{ from: location }} />

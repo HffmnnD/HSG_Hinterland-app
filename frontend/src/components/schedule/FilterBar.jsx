@@ -3,7 +3,7 @@ import { CalendarRange, History, Users } from 'lucide-react';
 import { EVENT_CATEGORIES } from '../../lib/schedule';
 
 /**
- * Filterleiste über der Terminliste: Mannschaft, Terminart, Rückblick.
+ * Filterleiste über der Terminliste: Mannschaft, Terminart, Zeitraum.
  *
  * ── Warum das umgebaut wurde ────────────────────────────────────────────────
  * Vorher standen hier zwei Reihen gleich aussehender Chips, dazu ein dritter
@@ -20,10 +20,11 @@ import { EVENT_CATEGORIES } from '../../lib/schedule';
  *   Terminart    Alles / Training / Spiele / Sonstiges – vier feste
  *                Möglichkeiten, also ein Segmentumschalter: alle Antworten
  *                sind gleichzeitig sichtbar, ein Klick genügt.
- *   Zeitraum     Der Rückblick ist ein Schalter und steht abgesetzt, weil er
- *                den Zeitraum ändert und nicht die Auswahl einschränkt.
+ *   Zeitraum     Nur anstehende / Rückblick / eigener Zeitraum. Der eigene
+ *                Zeitraum klappt zwei Datumsfelder auf – für „was war
+ *                eigentlich im September?" oder die Planung der Hinrunde.
  *
- * Alle drei Werte hält die Seite (CalendarPage) – die Leiste ist bewusst ohne
+ * Alle Werte hält die Seite (CalendarPage) – die Leiste ist bewusst ohne
  * eigenen Zustand, damit es nur eine Wahrheit gibt.
  *
  * @param {{ teams: {id:number, name:string, code:string}[],
@@ -31,8 +32,10 @@ import { EVENT_CATEGORIES } from '../../lib/schedule';
  *           onTeamChange: (id:number|null) => void,
  *           category: string|null,
  *           onCategoryChange: (key:string|null) => void,
- *           lookback: boolean,
- *           onLookbackChange: (value:boolean) => void,
+ *           rangeMode: 'upcoming'|'lookback'|'custom',
+ *           onRangeModeChange: (mode:string) => void,
+ *           range: { from:string, to:string },
+ *           onRangeChange: (range:{from:string, to:string}) => void,
  *           lookbackDays: number }} props
  */
 export default function FilterBar({
@@ -41,11 +44,24 @@ export default function FilterBar({
   onTeamChange,
   category,
   onCategoryChange,
-  lookback,
-  onLookbackChange,
+  rangeMode,
+  onRangeModeChange,
+  range,
+  onRangeChange,
   lookbackDays,
 }) {
   const categories = [{ key: null, label: 'Alles' }, ...EVENT_CATEGORIES];
+
+  const RANGE_MODES = [
+    { key: 'upcoming', label: 'Nur anstehende' },
+    { key: 'lookback', label: `Rückblick ${lookbackDays} Tage` },
+    { key: 'custom', label: 'Eigener Zeitraum' },
+  ];
+
+  // Ein Zeitraum, dessen Ende vor seinem Anfang liegt, ist ein Tippfehler –
+  // und würde eine leere Liste ohne Erklärung erzeugen.
+  const invalidRange =
+    rangeMode === 'custom' && range.from && range.to && range.from > range.to;
 
   return (
     <section
@@ -55,8 +71,11 @@ export default function FilterBar({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
         {/* ------------------------------------------------- Mannschaft */}
         {teams.length > 1 && (
-          <div className="min-w-0 lg:w-64">
-            <label htmlFor="filter-team" className="eyebrow mb-1.5 flex items-center gap-1.5">
+          <div className="min-w-0 lg:w-56">
+            <label
+              htmlFor="filter-team"
+              className="eyebrow mb-1.5 flex items-center gap-1.5"
+            >
               <Users size={12} aria-hidden="true" />
               Mannschaft
             </label>
@@ -111,28 +130,73 @@ export default function FilterBar({
         </div>
 
         {/* --------------------------------------------------- Zeitraum */}
-        <div className="shrink-0">
-          <span className="eyebrow mb-1.5 flex items-center gap-1.5">
+        <div className="min-w-0 lg:w-52">
+          <label
+            htmlFor="filter-range"
+            className="eyebrow mb-1.5 flex items-center gap-1.5"
+          >
             <History size={12} aria-hidden="true" />
             Zeitraum
-          </span>
-          <button
-            type="button"
-            onClick={() => onLookbackChange(!lookback)}
-            aria-pressed={lookback}
-            className={`chip w-full justify-center lg:w-auto ${
-              lookback ? 'chip-active' : ''
-            }`}
-            title={
-              lookback
-                ? 'Nur noch anstehende Termine zeigen'
-                : `Auch die letzten ${lookbackDays} Tage zeigen`
-            }
+          </label>
+          <select
+            id="filter-range"
+            value={rangeMode}
+            onChange={(event) => onRangeModeChange(event.target.value)}
+            className="field-control"
           >
-            {lookback ? `Mit Rückblick (${lookbackDays} Tage)` : 'Nur anstehende'}
-          </button>
+            {RANGE_MODES.map((mode) => (
+              <option key={mode.key} value={mode.key}>
+                {mode.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
+
+      {/* Eigener Zeitraum: erscheint erst, wenn er gewählt ist. Zwei
+          Datumsfelder stünden sonst dauerhaft in der Leiste herum, obwohl sie
+          die meiste Zeit niemand braucht. */}
+      {rangeMode === 'custom' && (
+        <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-end">
+          <div className="min-w-0 flex-1">
+            <label htmlFor="filter-from" className="field-label">
+              Von
+            </label>
+            <input
+              id="filter-from"
+              type="date"
+              value={range.from}
+              max={range.to || undefined}
+              onChange={(event) =>
+                onRangeChange({ ...range, from: event.target.value })
+              }
+              className="field-control"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <label htmlFor="filter-to" className="field-label">
+              Bis
+            </label>
+            <input
+              id="filter-to"
+              type="date"
+              value={range.to}
+              min={range.from || undefined}
+              onChange={(event) =>
+                onRangeChange({ ...range, to: event.target.value })
+              }
+              className="field-control"
+            />
+          </div>
+        </div>
+      )}
+
+      {invalidRange && (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          „Bis" liegt vor „Von" – bis dahin zeigt die Liste die anstehenden
+          Termine.
+        </p>
+      )}
     </section>
   );
 }

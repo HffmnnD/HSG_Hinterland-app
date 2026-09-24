@@ -81,9 +81,11 @@ export function AuthProvider({ children }) {
   /**
    * Registrierung – bewusst nur Name, E-Mail und Passwort.
    *
-   * Mannschaften, Beteiligung und Design fragt der Onboarding-Assistent beim
-   * ersten Login ab (siehe components/onboarding/). Das Konto wartet bis dahin
-   * auf die Freigabe durch die Verwaltung, es gibt also noch keine Sitzung.
+   * Der Server legt das Konto an und meldet in derselben Antwort an (Cookie +
+   * Profil). Deshalb wird `user` hier direkt gesetzt: Die App zeigt danach von
+   * selbst den Onboarding-Assistenten, in dem Beteiligung, Mannschaften und
+   * Design abgefragt werden. Ein zweites Anmeldeformular direkt nach dem
+   * ersten gibt es nicht.
    */
   const register = useCallback(
     async ({ firstName, lastName, email, password }) => {
@@ -93,7 +95,8 @@ export function AuthProvider({ children }) {
           method: 'POST',
           body: JSON.stringify({ firstName, lastName, email, password }),
         });
-        return { success: true, message: data.message };
+        setUser(data.user);
+        return { success: true, message: data.message, user: data.user };
       } catch (err) {
         setError({ message: err.message, status: err.status });
         return { success: false, message: err.message, status: err.status };
@@ -150,6 +153,36 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  /**
+   * Profilbild hochladen. `FormData` statt JSON – apiFetch setzt dafür
+   * bewusst keinen Content-Type, den ergänzt der Browser samt Grenzmarke.
+   */
+  const uploadPhoto = useCallback(async (file) => {
+    const form = new FormData();
+    form.append('photo', file);
+    try {
+      const data = await apiFetch('/api/auth/me/photo', {
+        method: 'POST',
+        body: form,
+      });
+      if (data?.user) setUser(data.user);
+      return { success: true, message: data?.message };
+    } catch (err) {
+      return { success: false, message: err.message, status: err.status };
+    }
+  }, []);
+
+  /** Profilbild entfernen – danach stehen wieder die Initialen. */
+  const removePhoto = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/auth/me/photo', { method: 'DELETE' });
+      if (data?.user) setUser(data.user);
+      return { success: true, message: data?.message };
+    } catch (err) {
+      return { success: false, message: err.message, status: err.status };
+    }
+  }, []);
+
   /** Eigenes Passwort ändern. Die Sitzung bleibt bestehen. */
   const changePassword = useCallback(async ({ currentPassword, newPassword }) => {
     try {
@@ -189,6 +222,8 @@ export function AuthProvider({ children }) {
       refresh,
       completeOnboarding,
       updatePreferences,
+      uploadPhoto,
+      removePhoto,
       changePassword,
     }),
     [
@@ -202,6 +237,8 @@ export function AuthProvider({ children }) {
       refresh,
       completeOnboarding,
       updatePreferences,
+      uploadPhoto,
+      removePhoto,
       changePassword,
     ]
   );

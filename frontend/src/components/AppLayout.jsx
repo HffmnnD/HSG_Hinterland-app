@@ -5,7 +5,6 @@ import AppHeader from './AppHeader';
 import BottomNav from './BottomNav';
 import Brand from './Brand';
 import MainNav from './MainNav';
-import ThemeToggle from './ThemeToggle';
 
 /**
  * Gemeinsames Gerüst aller geschützten Seiten:
@@ -17,11 +16,10 @@ import ThemeToggle from './ThemeToggle';
  * Navigiert wird ab `md` über <MainNav> in der Kopfzeile, darunter über
  * <BottomNav> am unteren Rand – beide speisen sich aus lib/navigation.js.
  *
- * Rechts stehen immer dieselben zwei Knöpfe: der Umschalter für Hell/Dunkel
- * und „Abmelden". Der Umschalter gehört in die Kopfzeile und nicht nur in die
- * Einstellungen – wer abends in der Halle sitzt, will das Licht in einem Griff
- * ausmachen können. Die dritte Möglichkeit („dem Gerät folgen") steht unter
- * „Mein Konto".
+ * Rechts steht nur „Abmelden". Das Design gehört bewusst NICHT hierher: Es
+ * wird einmal im Onboarding gewählt und danach unter „Mein Konto" geändert –
+ * eine Einstellung, die man selten anfasst, braucht keinen Dauerplatz in der
+ * Kopfzeile jeder Seite.
  *
  * @param {string}          [width]   Tailwind max-width der Inhaltsspalte
  * @param {React.ReactNode} [header]  Ersetzt die Marke links (z. B. Mannschaftsname)
@@ -50,7 +48,6 @@ export default function AppLayout({
         <div className="flex shrink-0 items-center gap-1.5">
           <MainNav />
           {actions}
-          <ThemeToggle />
           <button
             type="button"
             onClick={handleLogout}
