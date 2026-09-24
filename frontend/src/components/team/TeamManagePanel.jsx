@@ -1,13 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Crop, Trash2 } from 'lucide-react';
 
 import { apiFetch } from '../../lib/api';
 import { relationLabel, relationLabelPlural } from '../../lib/participation';
 import { roleLabel } from '../../lib/roles';
+// Der Ausschnitt-Dialog wird selten gebraucht (nur Administration, nur beim
+// Wechsel eines Fotos) – deshalb erst beim Öffnen nachladen.
+const PhotoFrameDialog = lazy(() => import('./PhotoFrameDialog'));
 
-// Reihenfolge im Auswahlfeld „Mitglied hinzufügen" (häufigster Fall zuerst)
-const ADD_RELATIONS = ['player', 'coach', 'fan'];
-// Kader-Abschnitte in der Entfernen-Liste
-const SECTIONS = ['coach', 'player', 'fan'];
+// Reihenfolge im Auswahlfeld „Mitglied hinzufügen" (häufigster Fall zuerst).
+//
+// `fan` steht hier BEWUSST nicht mehr: Wer eine Mannschaft verfolgen möchte,
+// stellt das selbst unter „Mein Konto" ein. Die Zuordnung steuert nur, wessen
+// Spieltermine jemand angezeigt bekommt – sie ist keine Kadereigenschaft und
+// nichts, was ein Trainerteam pflegen müsste.
+const ADD_RELATIONS = ['player', 'coach'];
+// Kader-Abschnitte in der Entfernen-Liste (aus demselben Grund ohne `fan`).
+const SECTIONS = ['coach', 'player'];
 
 /**
  * Verwaltungsbereich der Mannschaftsseite – nur für Trainer:innen dieser
@@ -22,7 +31,7 @@ const SECTIONS = ['coach', 'player', 'fan'];
  *           team: object,
  *           isAdmin?: boolean,
  *           pendingMembers?: object[],
- *           members?: { player:object[], coach:object[], fan:object[] },
+ *           members?: { player:object[], coach:object[] },
  *           otherTeams?: object[],
  *           busy?: boolean,
  *           onRun: (action: () => Promise<any>, fallback?: string) => Promise<void>,
@@ -35,7 +44,7 @@ export default function TeamManagePanel({
   team,
   isAdmin = false,
   pendingMembers = [],
-  members = { player: [], coach: [], fan: [] },
+  members = { player: [], coach: [] },
   otherTeams = [],
   busy = false,
   onRun,
@@ -49,6 +58,8 @@ export default function TeamManagePanel({
   // Stammdaten (nur Administration)
   const [handballTeamId, setHandballTeamId] = useState(team.handballTeamId ?? '');
   const photoInputRef = useRef(null);
+  // Dialog für den Bildausschnitt des Kopfbereichs.
+  const [frameOpen, setFrameOpen] = useState(false);
 
   // Kandidatenliste für den gewählten Beziehungstyp nachladen.
   useEffect(() => {
@@ -129,13 +140,13 @@ export default function TeamManagePanel({
     );
   };
 
-  const handlePhotoChange = (event) => {
+  const handlePhotoChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const form = new FormData();
     form.append('photo', file);
-    onRun(
+    const result = await onRun(
       () =>
         apiFetch(`/api/teams/${encodeURIComponent(code)}/photo`, {
           method: 'POST',
@@ -145,6 +156,11 @@ export default function TeamManagePanel({
     );
     // Damit dieselbe Datei erneut gewählt werden kann.
     if (photoInputRef.current) photoInputRef.current.value = '';
+
+    // Direkt nach dem Hochladen den Ausschnitt anbieten: Ein frisches Foto
+    // sitzt mittig, und genau dabei fehlen auf einem breiten Streifen fast
+    // immer die Köpfe. Wer nichts ändern will, schließt den Dialog.
+    if (result) setFrameOpen(true);
   };
 
   const handlePhotoDelete = () =>
@@ -380,22 +396,54 @@ export default function TeamManagePanel({
                 className="field-control-sm min-w-0 flex-1 py-2"
               />
               {team.photoUrl && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={handlePhotoDelete}
-                  className="btn btn-danger btn-sm sm:w-auto"
-                >
-                  Foto entfernen
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setFrameOpen(true)}
+                    className="btn btn-outline btn-sm"
+                  >
+                    <Crop size={14} aria-hidden="true" />
+                    Ausschnitt
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={handlePhotoDelete}
+                    className="btn btn-danger btn-sm"
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    Entfernen
+                  </button>
+                </div>
               )}
             </div>
             <p className="field-hint">
               Querformat wirkt im Kopfbereich am besten. JPG, PNG, WEBP oder
-              GIF, höchstens 5 MB.
+              GIF, höchstens 5 MB. Nach dem Hochladen lässt sich der Ausschnitt
+              verschieben und heranzoomen, damit keine Köpfe abgeschnitten
+              werden.
             </p>
           </div>
         </section>
+      )}
+
+      {frameOpen && team.photoUrl && (
+        <Suspense fallback={null}>
+          <PhotoFrameDialog
+            code={code}
+            team={team}
+            onClose={() => setFrameOpen(false)}
+            onSaved={(_, message) => {
+              setFrameOpen(false);
+              // Über onRun statt eines eigenen Zustands: So lädt die
+              // Mannschaftsseite neu und zeigt den neuen Ausschnitt sofort im
+              // echten Kopfbereich – mit derselben Erfolgsmeldung wie jede
+              // andere Verwaltungsaktion.
+              onRun(async () => ({ message }), message);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

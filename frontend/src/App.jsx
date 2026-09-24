@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useAuth } from './context/AuthContext';
@@ -7,10 +8,17 @@ import AdminPage from './components/AdminPage';
 import TeamPage from './components/TeamPage';
 import TeamsPage from './components/TeamsPage';
 import CalendarPage from './components/CalendarPage';
-import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedRoute, { ONBOARDING_PATH } from './components/ProtectedRoute';
 import FullScreenLoader from './components/FullScreenLoader';
 import ScrollToTop from './components/ScrollToTop';
 import { MANAGEMENT_ROLES } from './lib/roles';
+
+// Der Onboarding-Assistent läuft genau einmal je Konto – danach nie wieder.
+// Als eigenes Teilstück lädt ihn nur, wer ihn tatsächlich sieht; alle anderen
+// sparen sich den Code bei jedem Aufruf der App.
+const OnboardingWizard = lazy(() =>
+  import('./components/onboarding/OnboardingWizard')
+);
 
 // Bereits eingeloggte Nutzer gehören nicht auf die Login-Seite. Wenn sie vorher
 // eine geschützte Seite aufrufen wollten, geht es dorthin zurück.
@@ -23,6 +31,22 @@ function LoginRoute() {
     return <Navigate to={target} replace />;
   }
   return <AuthScreen />;
+}
+
+// Der Assistent läuft nur, solange er ansteht. Ist alles eingerichtet, führt
+// der Pfad dorthin zurück, wo man hin wollte – oder auf die Startseite.
+function OnboardingRoute() {
+  const { needsOnboarding } = useAuth();
+  const location = useLocation();
+
+  if (!needsOnboarding) {
+    return <Navigate to={location.state?.from?.pathname ?? '/'} replace />;
+  }
+  return (
+    <Suspense fallback={<FullScreenLoader />}>
+      <OnboardingWizard />
+    </Suspense>
+  );
 }
 
 export default function App() {
@@ -39,6 +63,18 @@ export default function App() {
       <ScrollToTop />
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
+
+        {/* Einrichtung beim ersten Login. Liegt hinter <ProtectedRoute>, weil
+            ohne Anmeldung nichts einzurichten ist – die Weiterleitung hierher
+            kommt aus derselben Komponente. */}
+        <Route
+          path={ONBOARDING_PATH}
+          element={
+            <ProtectedRoute>
+              <OnboardingRoute />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/"

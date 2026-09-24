@@ -13,7 +13,7 @@ import {
 import { apiFetch } from '../../lib/api';
 import { useAdminTeams } from '../../hooks/useAdminTeams';
 import { formatNumber } from '../../lib/format';
-import Modal from './ui/Modal';
+import Modal from '../ui/Modal';
 import { EmptyState, ErrorNote, Loading, SuccessNote } from './ui/Feedback';
 
 // Muss zum ENUM `teams.gender` passen.
@@ -82,8 +82,8 @@ export default function TeamsSection() {
       {notice && <SuccessNote>{notice}</SuccessNote>}
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <section className="admin-card">
-        <div className="admin-card__header">
+      <section className="panel">
+        <div className="panel__header">
           <div className="min-w-0">
             <h2 className="section-title text-base">Mannschaften</h2>
             <p className="mt-0.5 text-xs text-ink-muted">

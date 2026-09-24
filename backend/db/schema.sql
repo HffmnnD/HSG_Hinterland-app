@@ -47,12 +47,19 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash  VARCHAR(255) NOT NULL
                  COMMENT 'bcrypt-Hash des Passworts. Nie im Klartext, nie an den Client.',
 
-  is_approved    TINYINT(1) NOT NULL DEFAULT 1
-                 COMMENT 'Konto aktiv (1) oder von einem Admin gesperrt (0). Standard 1 – KEINE globale Registrierungs-Freigabe. Wird bei Login, Session (/me) und RBAC geprüft, damit eine Admin-Sperre sofort greift.',
+  is_approved    TINYINT(1) NOT NULL DEFAULT 0
+                 COMMENT 'Konto freigegeben (1) oder gesperrt bzw. noch nicht freigegeben (0). Neue Registrierungen starten mit 0 und warten auf die Verwaltung. Wird bei Login, Session (/me) und RBAC geprüft, damit eine Sperre sofort greift.',
+  approved_at    DATETIME DEFAULT NULL
+                 COMMENT 'Zeitpunkt der ERSTEN Freigabe (Ortszeit). Zusammen mit is_approved = 0 unterscheidbar: NULL = wartet auf Freigabe, gesetzt = wurde gesperrt.',
 
   role           ENUM('admin','sub_admin','trainer','spieler','zuschauer')
                  NOT NULL DEFAULT 'spieler'
-                 COMMENT 'RBAC-Rolle. admin = Vollzugriff | sub_admin = wie admin, aber ohne Zugriff auf admin-Konten und ohne admin-Vergabe | trainer = Mitgliederliste + Mannschaftszuordnung | spieler/zuschauer = nur lesen. Wird NICHT bei der Registrierung gesetzt, sondern von einem Admin.',
+                 COMMENT 'RBAC-Rolle. admin = Vollzugriff | sub_admin = wie admin, aber ohne Zugriff auf admin-Konten und ohne admin-Vergabe | trainer = Mitgliederliste + Mannschaftszuordnung | spieler/zuschauer = nur lesen. Wird NICHT bei der Registrierung gesetzt, sondern im Onboarding bzw. von einem Admin.',
+
+  theme          ENUM('system','light','dark') NOT NULL DEFAULT 'system'
+                 COMMENT 'Design-Vorliebe: system = dem Gerät folgen | light | dark. Gilt geräteübergreifend, weil sie am Konto hängt.',
+  onboarding_completed_at DATETIME DEFAULT NULL
+                 COMMENT 'Abschluss des Onboarding-Assistenten (Ortszeit). NULL = steht beim nächsten Login an.',
 
   created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                  COMMENT 'Zeitpunkt der Registrierung',
@@ -81,6 +88,12 @@ CREATE TABLE IF NOT EXISTS teams (
                    COMMENT 'nuLiga-Mannschaftsnummer (`teamtable`, rein numerisch). Speist Tabelle, Spielplan und Live-Ticker der Mannschaftsseite. NULL = keine Ligaanbindung.',
   photo_path       VARCHAR(255) DEFAULT NULL
                    COMMENT 'Relativer Pfad des Mannschaftsfotos in backend/uploads/, z. B. "teams/ab12.jpg". Ausgeliefert über /api/uploads/<pfad>.',
+  photo_focus_x    TINYINT UNSIGNED NOT NULL DEFAULT 50
+                   COMMENT 'Waagerechter Bildmittelpunkt im Kopfbereich in Prozent (0 = links, 100 = rechts). Entspricht object-position.',
+  photo_focus_y    TINYINT UNSIGNED NOT NULL DEFAULT 50
+                   COMMENT 'Senkrechter Bildmittelpunkt im Kopfbereich in Prozent (0 = Oberkante, 100 = Unterkante). Damit rutschen Köpfe ins Bild.',
+  photo_zoom       SMALLINT UNSIGNED NOT NULL DEFAULT 100
+                   COMMENT 'Vergrößerung des Fotos im Kopfbereich in Prozent (100 = einpassen, 300 = dreifach).',
   nuliga_sync_enabled TINYINT(1) NOT NULL DEFAULT 0
                    COMMENT 'Ligaspiele aus nuLiga als Termine in den Kalender übernehmen? Standard aus. Wird im Planungsbereich vom Trainerteam gesetzt.',
   nuliga_synced_at DATETIME DEFAULT NULL
@@ -408,5 +421,6 @@ INSERT INTO schema_migrations (filename) VALUES
   ('009_schedule_module.sql'),
   ('010_nuliga_games.sql'),
   ('011_event_cancellation.sql'),
-  ('012_nuliga_key_cleanup.sql')
+  ('012_nuliga_key_cleanup.sql'),
+  ('013_onboarding_theme.sql')
 ON DUPLICATE KEY UPDATE filename = filename;

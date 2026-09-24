@@ -18,6 +18,35 @@
     />
 
     <title>HSG Hinterland App</title>
+
+    <!--
+      Thema VOR dem ersten Bild setzen.
+
+      Die App entscheidet über das Design im ThemeProvider – aber der läuft
+      erst, wenn React geladen ist. Ohne diese vier Zeilen blitzt die Seite bei
+      jedem Aufruf kurz hell auf, bevor sie dunkel wird. Gelesen wird nur die
+      lokale Kopie der Einstellung; die verbindliche Quelle bleibt das
+      Benutzerprofil, das der Provider danach nachzieht.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('hsg-theme');
+          var dark =
+            stored === 'dark' ||
+            ((!stored || stored === 'system') &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.dataset.theme = 'dark';
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', '#111416');
+          }
+        } catch (err) {
+          /* Speicher gesperrt – dann startet die App hell. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

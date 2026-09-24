@@ -4,8 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useEvents } from '../hooks/useSchedule';
-import { EVENT_CATEGORIES, shiftIsoDate, toDateInput } from '../lib/schedule';
+import { shiftIsoDate, toDateInput } from '../lib/schedule';
 import AppLayout from './AppLayout';
+import FilterBar from './schedule/FilterBar';
 import UpcomingPanel from './schedule/UpcomingPanel';
 import AbsencePanel from './schedule/AbsencePanel';
 import ParticipationPanel from './schedule/ParticipationPanel';
@@ -215,68 +216,17 @@ export default function CalendarPage() {
           >
             {/* ------------------------------------------------ Anstehend */}
             {activeTab === 'anstehend' && (
-              <div className="space-y-6">
-                {/* Zwei getrennte Filterzeilen: erst WESSEN Termine,
-                    dann WELCHE. Zusammen in einer Reihe wäre nicht mehr
-                    erkennbar, welcher Knopf was einschränkt. */}
-                {teams.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setTeamFilter(null)}
-                      aria-pressed={teamFilter === null}
-                      className={`chip chip-sm ${teamFilter === null ? 'chip-active' : ''}`}
-                    >
-                      Alle
-                    </button>
-                    {teams.map((team) => (
-                      <button
-                        key={team.id}
-                        type="button"
-                        onClick={() => setTeamFilter(team.id)}
-                        aria-pressed={teamFilter === team.id}
-                        className={`chip chip-sm ${
-                          teamFilter === team.id ? 'chip-active' : ''
-                        }`}
-                      >
-                        {team.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setCategory(null)}
-                    aria-pressed={category === null}
-                    className={`chip chip-sm ${category === null ? 'chip-active' : ''}`}
-                  >
-                    Alles
-                  </button>
-                  {EVENT_CATEGORIES.map((entry) => (
-                    <button
-                      key={entry.key}
-                      type="button"
-                      onClick={() => setCategory(entry.key)}
-                      aria-pressed={category === entry.key}
-                      className={`chip chip-sm ${
-                        category === entry.key ? 'chip-active' : ''
-                      }`}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => setLookback((value) => !value)}
-                    aria-pressed={lookback}
-                    className={`chip chip-sm ml-auto ${lookback ? 'chip-active' : ''}`}
-                  >
-                    Rückblick 30 Tage
-                  </button>
-                </div>
+              <div className="space-y-5">
+                <FilterBar
+                  teams={teams}
+                  teamId={teamFilter}
+                  onTeamChange={setTeamFilter}
+                  category={category}
+                  onCategoryChange={setCategory}
+                  lookback={lookback}
+                  onLookbackChange={setLookback}
+                  lookbackDays={LOOKBACK_DAYS}
+                />
 
                 <UpcomingPanel
                   events={events}

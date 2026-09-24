@@ -1,41 +1,47 @@
-// Beteiligungsarten im Registrierungsformular, Beziehungstypen zu
+// Beteiligungsarten (Onboarding & „Mein Konto"), Beziehungstypen zu
 // Mannschaften und Helferdienste.
 
 /**
- * Auswahlmöglichkeiten bei der Registrierung.
- * `relationType` verknüpft die Auswahl mit `user_teams.relation_type`.
+ * Die drei Fragen des Onboarding-Assistenten und des Einstellungsbereichs:
+ * Spielst du? Trainierst du? Schaust du zu?
+ *
+ * Jede Antwort führt zu genau EINEM Beziehungstyp in `user_teams` – deshalb
+ * ist `relationType` hier der Schlüssel und nicht ein zusätzliches Kürzel.
+ * Mehrfachauswahl ist der Normalfall: Trainer:innen spielen oft selbst, und
+ * wer nur zuschaut, tut das meist bei mehreren Mannschaften.
+ *
+ * Die frühere Option „Mitwirkende:r" (Helferdienste) steht bewusst nicht mehr
+ * hier: Sie beantwortete keine Frage über die eigene Beteiligung an einer
+ * Mannschaft, sondern öffnete ein weiteres Formular – und sie hat die
+ * Zuschauer-Option zwangsweise mitaktiviert, was niemand erwartet hat.
+ * Helferdienste pflegt die Verwaltung.
  */
 export const PARTICIPATION_OPTIONS = [
   {
-    key: 'spieler',
-    label: 'Spieler:in',
-    hint: 'Du spielst aktiv in einer oder mehreren Mannschaften.',
     relationType: 'player',
+    question: 'Bist du aktive:r Spieler:in?',
+    label: 'Spieler:in',
+    hint: 'Du trainierst und spielst in einer oder mehreren Mannschaften.',
+    teamPrompt: 'In welchen Mannschaften spielst du?',
+    needsConfirmation: true,
   },
   {
-    key: 'trainer',
-    label: 'Trainer:in',
-    hint: 'Du trainierst eine oder mehrere Mannschaften.',
     relationType: 'coach',
+    question: 'Bist du Trainer:in?',
+    label: 'Trainer:in',
+    hint: 'Du leitest das Training einer oder mehrerer Mannschaften.',
+    teamPrompt: 'Welche Mannschaften trainierst du?',
+    needsConfirmation: true,
   },
   {
-    key: 'mitwirkender',
-    label: 'Mitwirkende:r',
-    hint: 'Du übernimmst Helferdienste – beinhaltet automatisch „Zuschauer:in“.',
-    relationType: null,
-  },
-  {
-    key: 'zuschauer',
-    label: 'Zuschauer:in',
-    hint: 'Du verfolgst die Spiele bestimmter Mannschaften.',
     relationType: 'fan',
+    question: 'Zuschauer:in oder Fan?',
+    label: 'Zuschauer:in',
+    hint: 'Du willst die Spieltermine bestimmter Mannschaften sehen.',
+    teamPrompt: 'Welche Mannschaften interessieren dich?',
+    needsConfirmation: false,
   },
 ];
-
-// „Mitwirkende:r“ schließt „Zuschauer:in“ zwingend mit ein.
-export const IMPLIES = { mitwirkender: ['zuschauer'] };
-
-export const SERVICE_TYPES = ['zeitnehmer', 'verkaufsdienst'];
 
 export const SERVICE_LABELS = {
   zeitnehmer: 'Zeitnehmer',
@@ -61,6 +67,21 @@ export const RELATION_LABELS_PLURAL = {
   coach: 'Trainer:innen',
   fan: 'Fans',
 };
+
+/**
+ * Beschriftung aus der Sicht des angemeldeten Mitglieds („Meine
+ * Mannschaften"). Dort steht die eigene Rolle über der Liste – „Fans" als
+ * Überschrift über den eigenen Mannschaften wäre schlicht falsch.
+ */
+export const MY_RELATION_LABELS = {
+  coach: 'Als Trainer:in',
+  player: 'Als Spieler:in',
+  fan: 'Verfolge ich',
+};
+
+export function myRelationLabel(relationType) {
+  return MY_RELATION_LABELS[relationType] ?? relationLabel(relationType);
+}
 
 export function relationLabel(relationType) {
   return RELATION_LABELS[relationType] ?? relationType;

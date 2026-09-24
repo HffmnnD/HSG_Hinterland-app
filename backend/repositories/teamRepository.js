@@ -9,6 +9,10 @@ const pool = require('../config/db');
 
 const RELATION_GROUPS = ['player', 'coach', 'fan'];
 
+// Beziehungen, die ein Mitglied selbst wählen darf (replaceSelfRelations).
+// Muss zu SELF_RELATION_TYPES in utils/roles.js passen.
+const SELF_RELATION_GROUPS = ['player', 'coach', 'fan'];
+
 // Spielpositionen (muss zum ENUM in `user_teams.position` passen).
 const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
 
@@ -21,6 +25,9 @@ const TEAM_FIELDS = [
   'sort_order',
   'handball_team_id',
   'photo_path',
+  'photo_focus_x',
+  'photo_focus_y',
+  'photo_zoom',
   'nuliga_sync_enabled',
 ];
 
@@ -72,6 +79,10 @@ const WRITABLE_TEAM_COLUMNS = new Set([
   'sort_order',
   'handball_team_id',
   'photo_path',
+  // Bildausschnitt des Kopfbereichs (Prozentwerte, siehe validatePhotoFrame).
+  'photo_focus_x',
+  'photo_focus_y',
+  'photo_zoom',
   'nuliga_sync_enabled',
 ]);
 const WRITABLE_RELATION_COLUMNS = new Set([
@@ -109,6 +120,11 @@ function mapTeam(row) {
     // nuLiga-Nummer für Tabelle/Spielplan/Ticker. null = keine Ligaanbindung.
     handballTeamId: row.handball_team_id ?? null,
     photoPath: row.photo_path ?? null,
+    // Wie das Foto im Kopfbereich liegt: Bildmittelpunkt in Prozent und
+    // Vergrößerung in Prozent (100 = einpassen).
+    photoFocusX: Number(row.photo_focus_x ?? 50),
+    photoFocusY: Number(row.photo_focus_y ?? 50),
+    photoZoom: Number(row.photo_zoom ?? 100),
     // Werden die Ligaspiele als Termine in den Kalender übernommen?
     nuligaSyncEnabled: Boolean(row.nuliga_sync_enabled),
     nuligaSyncedAt: row.nuliga_synced_at ?? null,
@@ -137,13 +153,16 @@ async function listAll(runner = pool) {
  * Alle Mannschaften mit ihren Mitgliederzahlen – für die Mannschaftsliste
  * der Verwaltung. LEFT JOIN, damit eine gerade angelegte Mannschaft ohne
  * Kader nicht aus der Liste fällt.
+ *
+ * Gezählt werden Kader und offene Anfragen. Fans werden BEWUSST nicht
+ * gezählt: die fan-Zuordnung sagt nur, wessen Spiele jemand angezeigt bekommt,
+ * und ist keine Kennzahl der Mannschaft.
  */
 async function listAllWithCounts(runner = pool) {
   const [rows] = await runner.query(
     `SELECT ${teamColumns('t')},
             SUM(ut.relation_type = 'player' AND ut.is_confirmed = 1) AS player_count,
             SUM(ut.relation_type = 'coach'  AND ut.is_confirmed = 1) AS coach_count,
-            SUM(ut.relation_type = 'fan'    AND ut.is_confirmed = 1) AS fan_count,
             SUM(ut.is_confirmed = 0)                                 AS pending_count
        FROM teams t
        LEFT JOIN user_teams ut ON ut.team_id = t.id
@@ -156,7 +175,6 @@ async function listAllWithCounts(runner = pool) {
     counts: {
       player: Number(row.player_count ?? 0),
       coach: Number(row.coach_count ?? 0),
-      fan: Number(row.fan_count ?? 0),
       pending: Number(row.pending_count ?? 0),
     },
   }));
@@ -545,25 +563,73 @@ async function confirmRelations(userId, teamId, relationType, runner = pool) {
 }
 
 /**
- * Mehrere Beziehungen auf einmal einfügen (bei der Registrierung).
- * player/coach -> is_confirmed 0 (Anfrage), fan -> 1. Muss in einer
- * Transaktion laufen.
+ * Setzt die Mannschaftswahl, die ein Mitglied für SICH SELBST trifft
+ * (Onboarding-Assistent und Bereich „Mein Konto"). Muss in einer Transaktion
+ * laufen.
+ *
+ * Arbeitet als Abgleich, NICHT als „löschen und neu anlegen". Das ist der
+ * ganze Punkt dieser Funktion:
+ *
+ *   - Eine bereits BESTÄTIGTE Zuordnung bleibt bestätigt. Ein Neuanlegen
+ *     hätte sie auf „offene Anfrage" zurückgesetzt – wer sein Design ändert,
+ *     müsste plötzlich erneut vom Trainerteam bestätigt werden.
+ *   - Rückennummer, Position und die Bezeichnung im Betreuerstab hängen an
+ *     derselben Zeile (`user_teams`). Ein Neuanlegen hätte sie gelöscht.
+ *
+ * Neue Zuordnungen entstehen mit initialConfirmation(): `fan` gilt sofort,
+ * `player`/`coach` sind Anfragen an die Trainer:innen der Mannschaft.
+ *
  * @param {import('mysql2/promise').PoolConnection} conn
- * @param {{ teamId:number, relationType:string }[]} relations
+ * @param {number} userId
+ * @param {{ teamId:number, relationType:string }[]} relations vollständige neue Wahl
  */
-async function insertRelations(conn, userId, relations) {
-  if (relations.length === 0) return;
-  await conn.query(
-    'INSERT INTO user_teams (user_id, team_id, relation_type, is_confirmed) VALUES ?',
-    [
-      relations.map((rel) => [
-        userId,
-        rel.teamId,
-        rel.relationType,
-        initialConfirmation(rel.relationType),
-      ]),
-    ]
+async function replaceSelfRelations(conn, userId, relations) {
+  const [current] = await conn.query(
+    `SELECT team_id, relation_type FROM user_teams
+      WHERE user_id = ? AND relation_type IN (?)`,
+    [userId, SELF_RELATION_GROUPS]
   );
+
+  const wanted = new Set(
+    relations
+      .filter((rel) => SELF_RELATION_GROUPS.includes(rel.relationType))
+      .map((rel) => `${rel.teamId}:${rel.relationType}`)
+  );
+  const existing = new Set(
+    current.map((row) => `${row.team_id}:${row.relation_type}`)
+  );
+
+  // 1. Abgewählte Zuordnungen entfernen (das Verlassen einer Mannschaft).
+  const removals = current.filter(
+    (row) => !wanted.has(`${row.team_id}:${row.relation_type}`)
+  );
+  for (const row of removals) {
+    await conn.query(
+      `DELETE FROM user_teams
+        WHERE user_id = ? AND team_id = ? AND relation_type = ?`,
+      [userId, row.team_id, row.relation_type]
+    );
+  }
+
+  // 2. Neu hinzugekommene anlegen – bestehende bleiben unberührt.
+  const additions = relations.filter(
+    (rel) =>
+      SELF_RELATION_GROUPS.includes(rel.relationType) &&
+      !existing.has(`${rel.teamId}:${rel.relationType}`)
+  );
+  if (additions.length > 0) {
+    await conn.query(
+      'INSERT INTO user_teams (user_id, team_id, relation_type, is_confirmed) VALUES ?',
+      [
+        additions.map((rel) => [
+          userId,
+          rel.teamId,
+          rel.relationType,
+          initialConfirmation(rel.relationType),
+        ]),
+      ]
+    );
+  }
 }
 
 /**
@@ -611,6 +677,6 @@ module.exports = {
   addRelation,
   removeRelation,
   confirmRelations,
-  insertRelations,
+  replaceSelfRelations,
   replaceRelationTeams,
 };

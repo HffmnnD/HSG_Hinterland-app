@@ -61,17 +61,3 @@ export function ListSkeleton({ rows = 4, columns = false }) {
     </div>
   );
 }
-
-/** Platzhalter für die Ligatabelle. */
-export function TableSkeleton({ rows = 6 }) {
-  return (
-    <div className="card" aria-busy="true">
-      <Skeleton className="h-4 w-32" />
-      <div className="mt-4 space-y-2">
-        {Array.from({ length: rows }, (_, index) => (
-          <Skeleton key={index} className="h-9" />
-        ))}
-      </div>
-    </div>
-  );
-}

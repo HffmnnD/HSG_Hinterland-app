@@ -1,7 +1,15 @@
 // Gemeinsame Gestaltung aller Diagramme im System-Status.
 //
 // Die Farben stehen HIER und nirgends sonst, damit jedes Diagramm dieselben
-// benutzt. Jede Farbe hat genau eine Aufgabe:
+// benutzt. Flächen, Linien und Schrift verweisen auf die Theme-Variablen aus
+// index.css (`var(--c-…)`) – dadurch tragen die Diagramme den Dunkelmodus mit,
+// ohne dass Recharts etwas davon wissen muss: Es schreibt die Werte als
+// SVG-Attribute in die Seite, und der Browser löst die Variable auf.
+//
+// Die Farben der DATENREIHEN bleiben feste Werte. Sie sind Bedeutung, nicht
+// Gestaltung: Grün heißt „Menge", Rot heißt „Fehler" – in beiden Themen.
+//
+// Jede Farbe hat genau eine Aufgabe:
 //
 //   SERIES.requests   Menge (Anfragen, Antwortzeiten, Länder) -> Vereinsgrün
 //   STATUS.*          Zustand (2xx gut … 5xx kritisch)        -> feste Skala
@@ -43,10 +51,14 @@ export const STATUS_LABELS = {
   other: 'Sonstige',
 };
 
-// Flächen und Linien aus dem Farbsystem der App (tailwind.config.js).
-export const SURFACE = '#ffffff';
-export const GRID = '#e9ecef';
-export const INK_MUTED = '#727579';
+// Flächen, Linien und Schrift aus dem Farbsystem der App – als Variablen,
+// damit sie dem Thema folgen.
+export const SURFACE = 'var(--c-paper)';
+export const GRID = 'var(--c-line)';
+export const INK_MUTED = 'var(--c-ink-muted)';
+export const INK_SOFT = 'var(--c-ink-soft)';
+export const CURSOR_LINE = 'var(--c-line-strong)';
+export const CURSOR_FILL = 'var(--c-surface-strong)';
 
 /** Achsen bleiben zurückhaltend: feine Linie, kleine Schrift, kein Fettdruck. */
 export const AXIS = {

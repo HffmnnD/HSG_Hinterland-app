@@ -57,18 +57,6 @@ async function listForEvents(eventIds, runner = pool) {
   return rows.map(mapAttendance);
 }
 
-/** Rückmeldungen EINER Person zu den angegebenen Terminen. */
-async function listForUserAndEvents(userId, eventIds, runner = pool) {
-  if (eventIds.length === 0) return [];
-  const [rows] = await runner.query(
-    `SELECT ${ATTENDANCE_COLUMNS}
-       FROM attendances a
-      WHERE a.user_id = ? AND a.event_id IN (?)`,
-    [userId, eventIds]
-  );
-  return rows.map(mapAttendance);
-}
-
 /**
  * Zu-/Absage speichern. Pro (Termin, Person) gibt es höchstens eine Zeile
  * (UNIQUE-Index) – ein erneutes Antworten überschreibt die alte Angabe.
@@ -221,7 +209,6 @@ async function deleteAbsence(id, runner = pool) {
 
 module.exports = {
   listForEvents,
-  listForUserAndEvents,
   upsert,
   listOverlapping,
   listForUser,

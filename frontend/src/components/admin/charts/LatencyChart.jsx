@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 
 import { formatMs, formatTime } from '../../../lib/format';
-import { AXIS, DOT, GRID_PROPS, LINE, SERIES } from './chartTheme';
+import { AXIS, CURSOR_LINE, DOT, GRID_PROPS, LINE, SERIES } from './chartTheme';
 
 /**
  * Durchschnittliche Antwortzeit je Minute.
@@ -39,7 +39,7 @@ export default function LatencyChart({ data }) {
             {...AXIS}
           />
 
-          <Tooltip content={<LatencyTooltip />} cursor={{ stroke: '#dbe0e4', strokeWidth: 1 }} />
+          <Tooltip content={<LatencyTooltip />} cursor={{ stroke: CURSOR_LINE, strokeWidth: 1 }} />
 
           <Area
             type="monotone"

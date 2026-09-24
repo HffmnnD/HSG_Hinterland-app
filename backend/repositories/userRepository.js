@@ -8,7 +8,10 @@
 //   {
 //     id, firstName, lastName, email,
 //     isApproved: boolean,
+//     awaitingApproval: boolean,   // noch nie freigegeben (nicht: gesperrt)
 //     role: 'admin' | 'sub_admin' | 'trainer' | 'spieler' | 'zuschauer',
+//     theme: 'system' | 'light' | 'dark',
+//     onboardingCompleted: boolean,
 //     teams:    [{ id, code, name, relationType }],
 //     services: [ 'zeitnehmer' | 'verkaufsdienst' ],
 //     createdAt
@@ -18,18 +21,31 @@ const teamRepository = require('./teamRepository');
 const serviceRepository = require('./serviceRepository');
 
 // Spalten, die an den Client dürfen – NIE password_hash.
+//
+// `approved_at` und `onboarding_completed_at` verlassen den Server bewusst
+// nicht als Zeitstempel: das Frontend braucht daraus nur zwei Ja/Nein-Fragen
+// („wartet auf Freigabe?", „Onboarding erledigt?"). Ein Zeitstempel hätte
+// zusätzlich die Zeitzonen-Frage aufgeworfen, ohne irgendwo angezeigt zu werden.
 const PUBLIC_COLUMNS =
-  'id, first_name, last_name, email, is_approved, role, created_at';
+  'id, first_name, last_name, email, is_approved, approved_at, role, theme, ' +
+  'onboarding_completed_at, created_at';
 
 /** Formt eine users-Zeile + Relationen in die oben dokumentierte Struktur. */
 function toProfile(row, teams, services) {
+  const isApproved = Boolean(row.is_approved);
   return {
     id: row.id,
     firstName: row.first_name,
     lastName: row.last_name,
     email: row.email,
-    isApproved: Boolean(row.is_approved),
+    isApproved,
+    // Nicht freigegeben UND noch nie freigegeben = neue Registrierung. Ein
+    // gesperrtes Konto hat `approved_at` gesetzt – die Verwaltung soll beides
+    // unterscheiden können, sonst steht bei jeder Neuanmeldung „gesperrt".
+    awaitingApproval: !isApproved && !row.approved_at,
     role: row.role,
+    theme: row.theme ?? 'system',
+    onboardingCompleted: Boolean(row.onboarding_completed_at),
     teams,
     services,
     createdAt: row.created_at,
@@ -96,38 +112,6 @@ async function getFullProfile(id, runner = pool) {
 }
 
 /**
- * Alle Konten als Profile – für das Admin-Dashboard.
- * Nutzt 3 Sammelabfragen statt N+1.
- */
-async function listAllWithProfiles(runner = pool) {
-  const [users] = await runner.query(
-    `SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`
-  );
-
-  const [memberships] = await runner.query(
-    `SELECT ut.user_id, ut.relation_type, t.id, t.code, t.name
-       FROM user_teams ut
-       JOIN teams t ON t.id = ut.team_id
-      ORDER BY t.id`
-  );
-  const [services] = await runner.query(
-    'SELECT user_id, service_type FROM user_services ORDER BY service_type'
-  );
-
-  const teamsByUser = groupBy(memberships, 'user_id', (m) => ({
-    id: m.id,
-    code: m.code,
-    name: m.name,
-    relationType: m.relation_type,
-  }));
-  const servicesByUser = groupBy(services, 'user_id', (s) => s.service_type);
-
-  return users.map((row) =>
-    toProfile(row, teamsByUser.get(row.id) ?? [], servicesByUser.get(row.id) ?? [])
-  );
-}
-
-/**
  * Seite der Mitgliederliste für die Verwaltung – gefiltert, durchsucht und
  * seitenweise.
  *
@@ -144,7 +128,10 @@ async function listAllWithProfiles(runner = pool) {
  * @param {string} [opts.search]   Freitext: Vor-/Nachname, E-Mail oder
  *                                 Mitgliedsnummer (= users.id).
  * @param {string} [opts.role]     Genau eine Rolle, sonst alle.
- * @param {'active'|'inactive'} [opts.status]  Gesperrt/aktiv, sonst alle.
+ * @param {'active'|'pending'|'locked'|'inactive'} [opts.status]
+ *        active = freigegeben | pending = wartet auf die erste Freigabe |
+ *        locked = war freigegeben und ist gesperrt | inactive = beides
+ *        (pending + locked). Ohne Angabe alle.
  * @param {number} [opts.page=1]
  * @param {number} [opts.pageSize=20]
  * @returns {Promise<{ users: object[], total: number, page: number,
@@ -173,7 +160,11 @@ async function listPageWithProfiles(
     params.push(role);
   }
   if (status === 'active') where.push('u.is_approved = 1');
-  else if (status === 'inactive') where.push('u.is_approved = 0');
+  else if (status === 'pending') {
+    where.push('u.is_approved = 0 AND u.approved_at IS NULL');
+  } else if (status === 'locked') {
+    where.push('u.is_approved = 0 AND u.approved_at IS NOT NULL');
+  } else if (status === 'inactive') where.push('u.is_approved = 0');
 
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
@@ -238,7 +229,7 @@ async function listPageWithProfiles(
 
 /**
  * Kennzahlen der Mitgliederverwaltung: Gesamtzahl, Verteilung nach Rolle,
- * gesperrte Konten und Neuzugänge der letzten 30 Tage.
+ * offene Freigaben, gesperrte Konten und Neuzugänge der letzten 30 Tage.
  *
  * Eine Abfrage statt fünf – die Zahlen stehen im Kopf der Verwaltung und
  * sollen den Seitenaufbau nicht ausbremsen.
@@ -248,6 +239,8 @@ async function getMemberStats(runner = pool) {
     `SELECT COUNT(*)                                        AS total,
             SUM(is_approved = 1)                            AS active,
             SUM(is_approved = 0)                            AS inactive,
+            SUM(is_approved = 0 AND approved_at IS NULL)     AS pending,
+            SUM(is_approved = 0 AND approved_at IS NOT NULL) AS locked,
             SUM(created_at >= NOW() - INTERVAL 30 DAY)      AS recent
        FROM users`
   );
@@ -259,6 +252,8 @@ async function getMemberStats(runner = pool) {
     total: Number(row?.total ?? 0),
     active: Number(row?.active ?? 0),
     inactive: Number(row?.inactive ?? 0),
+    pending: Number(row?.pending ?? 0),
+    locked: Number(row?.locked ?? 0),
     recent: Number(row?.recent ?? 0),
     byRole: roleRows.map((r) => ({ role: r.role, count: Number(r.count) })),
   };
@@ -267,36 +262,130 @@ async function getMemberStats(runner = pool) {
 // --- Schreiben ---------------------------------------------------------------
 
 /**
- * Legt ein neues Konto samt Mannschaften und Diensten an – alles in EINER
- * Transaktion. Wirft `ER_DUP_ENTRY`, wenn die E-Mail bereits existiert
- * (der Controller macht daraus ein 409).
+ * Legt ein neues Konto an.
  *
- * @param {object} p
- * @param {{ firstName, lastName, email, passwordHash }} p.account
- * @param {{ teamId:number, relationType:string }[]} p.relations
- * @param {string[]} p.services
+ * Bewusst NUR das Konto: Mannschaften und Helferdienste kommen nicht mehr aus
+ * dem Registrierungsformular, sondern aus dem Onboarding-Assistenten nach der
+ * Freigabe (siehe completeOnboarding). Damit braucht diese Funktion auch keine
+ * Transaktion mehr – sie schreibt genau eine Zeile.
+ *
+ * `is_approved` wird NICHT gesetzt -> Spalten-Default 0: das Konto wartet auf
+ * die Freigabe durch die Verwaltung.
+ *
+ * Wirft `ER_DUP_ENTRY`, wenn die E-Mail bereits existiert (der Controller
+ * macht daraus ein 409) – kein SELECT-dann-INSERT, also keine Race Condition.
+ *
+ * @param {{ firstName:string, lastName:string, email:string, passwordHash:string }} account
  * @returns {Promise<number>} die neue user id
  */
-async function createWithProfile({ account, relations, services }) {
+async function createAccount(account, runner = pool) {
+  const [result] = await runner.query(
+    `INSERT INTO users (first_name, last_name, email, password_hash)
+     VALUES (?, ?, ?, ?)`,
+    [account.firstName, account.lastName, account.email, account.passwordHash]
+  );
+  return result.insertId;
+}
+
+/** Nur der Passwort-Hash eines Kontos – ausschliesslich für Login/Wechsel. */
+async function getPasswordHash(userId, runner = pool) {
+  const [rows] = await runner.query(
+    'SELECT password_hash FROM users WHERE id = ?',
+    [userId]
+  );
+  return rows[0]?.password_hash ?? null;
+}
+
+/** Neues Passwort setzen. @returns {Promise<boolean>} true, wenn geändert */
+async function updatePassword(userId, passwordHash, runner = pool) {
+  const [result] = await runner.query(
+    'UPDATE users SET password_hash = ? WHERE id = ?',
+    [passwordHash, userId]
+  );
+  return result.affectedRows > 0;
+}
+
+/** Design-Vorliebe speichern ('system' | 'light' | 'dark'). */
+async function setTheme(userId, theme, runner = pool) {
+  const [result] = await runner.query('UPDATE users SET theme = ? WHERE id = ?', [
+    theme,
+    userId,
+  ]);
+  return result.affectedRows > 0;
+}
+
+/**
+ * Speichert die Angaben aus dem Onboarding-Assistenten – Design,
+ * Mannschaften und die passende Grundrolle – in EINER Transaktion und
+ * markiert das Onboarding als erledigt.
+ *
+ * Die Grundrolle folgt der Auswahl, aber nur nach oben und nur für einfache
+ * Konten: Wer Mannschaften als Spieler:in wählt, ist 'spieler'; wer
+ * ausschliesslich zuschaut, ist 'zuschauer'. `admin`, `sub_admin` und
+ * `trainer` bleiben unangetastet – eine Rolle, die ein Mensch vergeben hat,
+ * darf ein Assistent nicht überschreiben. Die Rolle 'trainer' entsteht wie
+ * bisher erst, wenn ein:e Trainer:in die coach-Zuordnung bestätigt.
+ *
+ * @param {number} userId
+ * @param {{ theme:string, relations:{teamId:number, relationType:string}[] }} input
+ */
+async function completeOnboarding(userId, { theme, relations }) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    // is_approved wird bewusst NICHT gesetzt -> Spalten-Default 1 (aktiv).
-    // Es gibt keine Registrierungs-Freigabe mehr; `is_approved = 0` ist
-    // ausschliesslich eine spätere Admin-Sperre.
-    const [result] = await conn.query(
-      `INSERT INTO users (first_name, last_name, email, password_hash)
-       VALUES (?, ?, ?, ?)`,
-      [account.firstName, account.lastName, account.email, account.passwordHash]
+    await conn.query(
+      `UPDATE users
+          SET theme = ?,
+              onboarding_completed_at = NOW()
+        WHERE id = ?`,
+      [theme, userId]
     );
-    const userId = result.insertId;
 
-    await teamRepository.insertRelations(conn, userId, relations);
-    await serviceRepository.replaceForUser(conn, userId, services);
+    await teamRepository.replaceSelfRelations(conn, userId, relations);
+
+    const wantsToPlay = relations.some((rel) => rel.relationType === 'player');
+    const onlyWatching =
+      relations.length > 0 && relations.every((rel) => rel.relationType === 'fan');
+
+    if (wantsToPlay) {
+      await conn.query(
+        "UPDATE users SET role = 'spieler' WHERE id = ? AND role = 'zuschauer'",
+        [userId]
+      );
+    } else if (onlyWatching) {
+      await conn.query(
+        "UPDATE users SET role = 'zuschauer' WHERE id = ? AND role = 'spieler'",
+        [userId]
+      );
+    }
 
     await conn.commit();
-    return userId;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Ändert Design und/oder Mannschaftswahl des EIGENEN Kontos (Bereich „Mein
+ * Konto"). Wie completeOnboarding, nur ohne den Onboarding-Zeitstempel.
+ */
+async function updateOwnPreferences(userId, { theme, relations }) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    if (theme !== undefined) {
+      await conn.query('UPDATE users SET theme = ? WHERE id = ?', [theme, userId]);
+    }
+    if (relations !== undefined) {
+      await teamRepository.replaceSelfRelations(conn, userId, relations);
+    }
+
+    await conn.commit();
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -330,8 +419,15 @@ async function applyAdminChange(userId, { accountFields, playerTeamIds, services
       if (unknown.length > 0) {
         throw new Error(`Nicht erlaubte Spalte(n): ${unknown.join(', ')}`);
       }
+      const assignments = cols.map((c) => `${c} = ?`);
+      // Die ERSTE Freigabe hält zusätzlich den Zeitpunkt fest. Nur dann wird
+      // aus „wartet auf Freigabe" dauerhaft „war freigegeben" – eine späteres
+      // Sperren setzt is_approved zurück, approved_at bleibt stehen.
+      if (accountFields.is_approved === 1) {
+        assignments.push('approved_at = COALESCE(approved_at, NOW())');
+      }
       await conn.query(
-        `UPDATE users SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`,
+        `UPDATE users SET ${assignments.join(', ')} WHERE id = ?`,
         [...cols.map((c) => accountFields[c]), userId]
       );
     }
@@ -373,9 +469,13 @@ module.exports = {
   promoteToTrainerIfBasic,
   buildProfile,
   getFullProfile,
-  listAllWithProfiles,
   listPageWithProfiles,
   getMemberStats,
-  createWithProfile,
+  createAccount,
+  getPasswordHash,
+  updatePassword,
+  setTheme,
+  completeOnboarding,
+  updateOwnPreferences,
   applyAdminChange,
 };

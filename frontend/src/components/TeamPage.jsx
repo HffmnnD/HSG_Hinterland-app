@@ -142,6 +142,12 @@ function TeamView({ code }) {
   /**
    * Führt eine Verwaltungsaktion aus und lädt danach neu. Zeigt bevorzugt die
    * Meldung aus der Server-Antwort (z. B. „… hat jetzt die Rolle Trainer:in").
+   *
+   * Gibt die Server-Antwort zurück (bzw. `null`, wenn es schiefging), damit
+   * Aufrufer daran anknüpfen können – der Foto-Upload öffnet danach
+   * beispielsweise den Dialog für den Bildausschnitt, aber nur bei Erfolg.
+   *
+   * @returns {Promise<object|null>}
    */
   const run = async (action, fallbackMessage) => {
     setBusy(true);
@@ -152,8 +158,10 @@ function TeamView({ code }) {
       await load();
       setReloadToken((value) => value + 1);
       setNotice(result?.message || fallbackMessage || null);
+      return result ?? {};
     } catch (err) {
       setError(err.message);
+      return null;
     } finally {
       setBusy(false);
     }

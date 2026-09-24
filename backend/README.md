@@ -109,6 +109,9 @@ backend/
       010_nuliga_games.sql               Ligaspiele aus nuLiga als Termine
       011_event_cancellation.sql         Termine absagen statt löschen
       012_nuliga_key_cleanup.sql         Altlasten des ersten nuLiga-Abgleichs
+      013_onboarding_theme.sql           schlanke Registrierung (Freigabe
+                                         nötig), Onboarding, Design-Vorliebe,
+                                         Bildausschnitt des Mannschaftsfotos
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -132,8 +135,8 @@ Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
 
 | Tabelle             | Zweck |
 | ------------------- | ----- |
-| `users`             | Konten inkl. `role` (ENUM). `is_approved` = Konto aktiv (Standard 1) bzw. vom Admin gesperrt (0) – bei Login/Session/RBAC geprüft |
-| `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1. Dazu `handball_team_id` (nuLiga) und `photo_path` (Mannschaftsfoto) |
+| `users`             | Konten inkl. `role` (ENUM). `is_approved` = freigegeben (Standard **0**, neue Konten warten auf die Verwaltung), `approved_at` unterscheidet „wartet" von „gesperrt". Dazu `theme` (Design) und `onboarding_completed_at` (Einrichtung erledigt) |
+| `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1. Dazu `handball_team_id` (nuLiga), `photo_path` (Mannschaftsfoto) und dessen Bildausschnitt im Kopfbereich (`photo_focus_x/y`, `photo_zoom`, alles in Prozent) |
 | `team_sponsors`     | Sponsoren je Mannschaft für den Kopfbereich der Mannschaftsseite |
 | `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)`. Kaderangaben je Mannschaft: `jersey_number`, `position`, `staff_title` |
 | `user_services`     | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
@@ -148,9 +151,15 @@ Alle Verknüpfungstabellen haben `ON DELETE CASCADE` auf `users`.
 ## Rollen (RBAC)
 
 `users.role` ist ein ENUM: `admin`, `sub_admin`, `trainer`, `spieler`,
-`zuschauer` (Standard `spieler`). Die Rolle wird bei Registrierung **nicht**
-vom Client gesetzt, sondern nur von einem Admin/Sub-Admin über
-`/api/admin/users/:id`.
+`zuschauer` (Standard `spieler`). Die Rolle wird bei der Registrierung **nicht**
+vom Client gesetzt. Sie ändert sich an genau drei Stellen:
+
+- **Onboarding** – wer nur zuschaut, wird `zuschauer`; wer Mannschaften als
+  Spieler:in wählt, `spieler`. Nur diese beiden Werte werden getauscht,
+  `trainer`/`sub_admin`/`admin` bleiben unangetastet.
+- **Bestätigte `coach`-Beziehung** – hebt `spieler`/`zuschauer` auf `trainer`.
+- **Verwaltung** – `admin`/`sub_admin` setzen jede Rolle über
+  `/api/admin/users/:id`.
 
 | Rolle       | Darf |
 | ----------- | ---- |
@@ -173,26 +182,74 @@ router.get('/users', authenticate, checkRole('admin'), listUsers);
 // oder mehrere: checkRole(['admin', 'trainer'])
 ```
 
-## Registrierung, Sperre & Team-Bestätigung
+## Registrierung, Freigabe, Onboarding & Team-Bestätigung
 
-**Keine globale Registrierungs-Freigabe.** Nach der Registrierung ist das Konto
-sofort aktiv (`is_approved = 1` per Spalten-Default – die Anwendung setzt das
-Feld beim INSERT nicht).
+**Die Registrierung fragt vier Dinge ab**: Vorname, Nachname, E-Mail,
+Passwort. Mehr nicht – Mannschaften, Beteiligung und Design kommen erst nach
+der Freigabe im Onboarding-Assistenten (siehe unten). Zusätzliche Felder im
+Body werden ignoriert, nicht abgelehnt.
 
-`is_approved = 0` heisst jetzt **von einem Admin gesperrt** und wird bei
-**Login**, **`/api/auth/me`** und in **`checkRole`** geprüft – eine Sperre
-greift also sofort (nicht erst nach Token-Ablauf). Die Meldung ist bewusst
-„Dieses Konto wurde gesperrt." (nicht „wartet auf Freigabe").
+**Neue Konten warten auf die Freigabe.** `is_approved` hat den Spalten-Default
+`0`; die Anwendung setzt das Feld beim INSERT nicht. Ohne Freigabe gibt es
+keine Sitzung: **Login** antwortet `403`, `/api/auth/me` und `checkRole`
+beenden eine bestehende Sitzung. Eine Sperre greift damit sofort und nicht
+erst nach Token-Ablauf.
+
+`approved_at` trennt die beiden Fälle, die sonst beide „nicht freigegeben"
+hießen – und damit auch die Meldung an den Client:
+
+| `is_approved` | `approved_at` | Bedeutung | Meldung beim Login |
+| ------------- | ------------- | --------- | ------------------ |
+| `1`           | gesetzt       | freigegeben | – |
+| `0`           | `NULL`        | neu registriert, wartet | „Dein Konto wartet noch auf die Freigabe …" |
+| `0`           | gesetzt       | war freigegeben, jetzt gesperrt | „Dieses Konto wurde gesperrt." |
+
+Die erste Freigabe setzt `approved_at` (`COALESCE(approved_at, NOW())` in
+`applyAdminChange`); ein späteres Sperren lässt den Zeitpunkt stehen.
+
+### Das erste Konto (frische Datenbank)
+
+Weil neue Konten auf eine Freigabe warten und die Rolle `admin` niemand über
+die Oberfläche vergeben kann, solange es keinen Admin gibt, braucht die erste
+Anmeldung genau einen SQL-Befehl. Nach der Registrierung in der App:
+
+```sql
+UPDATE users
+   SET role = 'admin', is_approved = 1, approved_at = NOW()
+ WHERE email = 'deine@adresse.de';
+```
+
+Danach läuft alles über die Verwaltung: Dieses Konto gibt weitere Mitglieder
+frei und vergibt Rollen.
+
+**Onboarding.** Nach der ersten Anmeldung ist `onboarding_completed_at` noch
+`NULL` – das Frontend führt dann durch drei Schritte (Beteiligung,
+Mannschaften, Design). Gespeichert wird alles in EINEM Aufruf
+(`POST /api/auth/me/onboarding`, transaktional): Mannschaftswahl, Design,
+gegebenenfalls die Grundrolle und der Zeitstempel. Bricht jemand ab, beginnt
+der Assistent beim nächsten Login von vorn, statt halbe Angaben zu hinterlassen.
+
+Dieselben Angaben lassen sich später unter „Mein Konto" ändern
+(`PATCH /api/auth/me/preferences`). Der Abgleich der Mannschaftswahl
+(`teamRepository.replaceSelfRelations`) arbeitet bewusst als **Differenz** und
+nicht als „löschen und neu anlegen": Eine bereits bestätigte Zuordnung bleibt
+bestätigt, und Rückennummer/Position/Bezeichnung im Betreuerstab (dieselbe
+Zeile in `user_teams`) überleben jede Änderung am Design.
 
 Die **Zugehörigkeit zu einer Mannschaft** bestätigt der/die Trainer:in
 (`user_teams.is_confirmed`):
 
-- Registrierung mit `relationType` `player`/`coach` → `is_confirmed = 0`
-  (offene Anfrage, taucht nur in `pendingMembers` auf)
+- Selbst gewählt (Onboarding / „Mein Konto") mit `relationType`
+  `player`/`coach` → `is_confirmed = 0` (offene Anfrage, taucht nur in
+  `pendingMembers` auf)
 - `relationType = 'fan'` sowie alles, was Trainer/Admin manuell anlegen
   (`addMember`, Admin-`teamIds`) → `is_confirmed = 1`
 - `callup` legt eine **offene Anfrage** in der Zielmannschaft an (der/die
   dortige Trainer:in bestätigt)
+
+Die `fan`-Beziehung ist reine Anzeigesteuerung („wessen Spiele will ich
+sehen?") und gilt deshalb sofort. Sie wird **nirgends gezählt**: weder in
+`counts` einer Mannschaft noch in der Verwaltung.
 
 **Automatische Rollen-Anhebung:** Wird eine `coach`-Beziehung bestätigt
 (`/confirm` oder `addMember` mit `relationType=coach`), setzt das System die
@@ -203,21 +260,35 @@ globale `users.role` auf `trainer` – **nur** wenn sie vorher `spieler` oder
 
 | Methode | Pfad                | Body                                      | Beschreibung |
 | ------- | ------------------- | ---------------------------------------- | ------------ |
-| POST    | `/api/auth/register`| `firstName, lastName, email, password, teams?, services?` | Konto sofort aktiv, `role = 'spieler'`. `teams: [{ teamId, relationType }]` und `services: […]` optional, transaktional. player/coach → offene Anfrage, fan → bestätigt. `teamIds: [1,2]` bleibt Kurzform (player). |
-| POST    | `/api/auth/login`   | `email, password`                       | Setzt JWT (inkl. `role`) als HttpOnly-Cookie. Antwort enthält `user.role`, `user.teams` (mit `isConfirmed`) und `user.services`. |
+| POST    | `/api/auth/register`| `firstName, lastName, email, password` | Legt das Konto an – **ohne** Sitzung: es wartet auf die Freigabe (`is_approved = 0`). Weitere Felder werden ignoriert. `201` mit Hinweistext, `409` bei belegter E-Mail. |
+| POST    | `/api/auth/login`   | `email, password`                       | Setzt JWT (inkl. `role`) als HttpOnly-Cookie. `403` mit passender Meldung, solange das Konto nicht freigegeben ist. Antwort enthält das Profil. |
 | POST    | `/api/auth/logout`  | –                                       | Löscht den Cookie. |
-| GET     | `/api/auth/me`      | – (Cookie)                              | Daten des angemeldeten Users inkl. `role`, `teams` (`[{ id, code, name, relationType, isConfirmed }]`) und `services`. |
+| GET     | `/api/auth/me`      | – (Cookie)                              | Profil des angemeldeten Users: `role`, `theme`, `onboardingCompleted`, `awaitingApproval`, `teams` (`[{ id, code, name, relationType, isConfirmed }]`) und `services`. |
+
+### Eigenes Konto (angemeldet, jede Rolle)
+
+Alle vier Endpunkte hängen an `authenticate` **und** `checkRole(ROLES)` – nicht
+wegen der Rolle, sondern weil das die Freigabe frisch aus der Datenbank liest:
+`authenticate` prüft nur das sieben Tage gültige Token.
+
+| Methode | Pfad                          | Body                                   | Beschreibung |
+| ------- | ----------------------------- | -------------------------------------- | ------------ |
+| PATCH   | `/api/auth/me/theme`          | `theme` (`system`\|`light`\|`dark`)    | Design speichern. Schlanker Endpunkt für den Umschalter in der Kopfzeile. |
+| POST    | `/api/auth/me/onboarding`     | `theme?`, `teams?: [{ teamId, relationType }]` | Abschluss des Assistenten: Mannschaftswahl, Design, Grundrolle und `onboarding_completed_at` in einer Transaktion. Idempotent. Antwort enthält das frische Profil. |
+| PATCH   | `/api/auth/me/preferences`    | `theme?`, `teams?`                     | Dieselben Angaben später ändern. `teams` ist die **vollständige** neue Wahl; weglassen heißt „unverändert", `[]` heißt „alle Zuordnungen aufheben". |
+| POST    | `/api/auth/me/password`       | `currentPassword, newPassword`         | Passwortwechsel. Das aktuelle Passwort ist Pflicht (`401`, wenn es nicht stimmt), das neue muss sich unterscheiden. Rate-Limit: 10 Fehlversuche / 15 min. Die Sitzung bleibt bestehen. |
 
 ## Mannschaften
 
 | Methode | Pfad                                   | Auth | Beschreibung |
 | ------- | -------------------------------------- | ---- | ------------ |
 | GET     | `/api/teams`                           | –    | Alle Mannschaften. Öffentlich (Registrierungsformular). |
-| GET     | `/api/teams/:code`                     | angemeldet | `team`, `members` (nur **bestätigte**, nach `player`/`coach`/`fan`), `counts`, `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). E-Mails nur für Verwaltende. |
+| GET     | `/api/teams/:code`                     | angemeldet | `team` (inkl. `photoUrl` und Bildausschnitt), `members` (nur **bestätigte**, nach `player`/`coach`/`fan`), `counts` (`player`, `coach` – **keine** Fan-Zahlen), `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). E-Mails nur für Verwaltende. |
 | GET     | `/api/teams/:code/candidates`          | Verwaltung | Aktive Mitglieder ohne diese Beziehung (`?relationType=`). |
 | POST    | `/api/teams/:code/members`             | Verwaltung | `{ userId, relationType }` – Beziehung direkt **bestätigt** anlegen. Bei `relationType=coach` wird die globale Rolle ggf. auf `trainer` angehoben (`roleUpgraded` in der Antwort). |
 | POST    | `/api/teams/:code/members/:userId/confirm` | Verwaltung | Offene Anfrage(n) bestätigen. `?relationType=` optional (sonst alle offenen). `404` wenn nichts offen. Antwort: `{ message, roleUpgraded }` – bei bestätigter `coach`-Anfrage wird die globale Rolle ggf. auf `trainer` angehoben. |
 | DELETE  | `/api/teams/:code/members/:userId`     | Verwaltung | `?relationType=` – Beziehung entfernen / offene Anfrage ablehnen. |
+| PATCH   | `/api/teams/:code/photo/frame`         | admin/sub_admin | `{ focusX?, focusY?, zoom? }` – Bildausschnitt des Kopfbereichs in Prozent (Mittelpunkt 0–100, Zoom 100–300). Speichert **Werte, kein zugeschnittenes Bild**: Das Original bleibt erhalten, und der Streifen sitzt auf jedem Bildschirmformat richtig. `409`, wenn kein Foto hinterlegt ist. Ein neues Foto und das Löschen setzen die Werte zurück. |
 | POST    | `/api/teams/:code/callup`              | Verwaltung | `{ userId, targetTeamCode }` – Spieler:in hochrufen. Legt eine **offene Anfrage** in der Zielmannschaft an (deren Trainer:in bestätigt). Voraussetzung: bestätigte:r Spieler:in der Quellmannschaft. |
 
 „Verwaltung“ = `admin`, `sub_admin` oder als **bestätigte:r** `coach` dieser
@@ -228,8 +299,8 @@ Trainer:in der eigenen Mannschaft entfernen (sonst verlieren sie den Zugriff).
 
 | Methode | Pfad                     | Body / Query                                          | Beschreibung |
 | ------- | ------------------------ | ----------------------------------------------------- | ------------ |
-| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=`              | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. |
-| GET     | `/api/admin/users/stats` | – (Cookie)                                            | Kennzahlen des **gesamten** Vereins: `{ total, active, inactive, recent, byRole }`. Bewusst getrennt von der Liste, damit die Zahlen im Kopf sich nicht mit den Filtern ändern. |
+| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=` (`status`: `active`, `pending`, `locked`, `inactive`) | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. |
+| GET     | `/api/admin/users/stats` | – (Cookie)                                            | Kennzahlen des **gesamten** Vereins: `{ total, active, inactive, pending, locked, recent, byRole }` – `pending` sind die offenen Freigaben. Bewusst getrennt von der Liste, damit die Zahlen im Kopf sich nicht mit den Filtern ändern. |
 | PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (bestätigt; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) nur `admin`+`sub_admin`. Alles transaktional. |
 
 Sperren für `sub_admin` (jeweils `403`):
@@ -455,10 +526,10 @@ npm run uploads:sweep -- --apply # wirklich löschen
 # Verfügbare Mannschaften
 curl http://localhost:5000/api/teams
 
-# Registrierung mit Mannschaften (teamIds optional)
+# Registrierung – vier Felder. Das Konto wartet danach auf die Freigabe.
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"firstName":"Max","lastName":"Muster","email":"max@example.com","password":"geheim1234","teamIds":[1,4]}'
+  -d '{"firstName":"Max","lastName":"Muster","email":"max@example.com","password":"geheim1234"}'
 
 # Login speichert den Cookie in cookies.txt
 curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
@@ -466,6 +537,21 @@ curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
   -d '{"email":"max@example.com","password":"geheim1234"}'
 
 curl -b cookies.txt http://localhost:5000/api/auth/me
+
+# Onboarding abschliessen (Mannschaftswahl + Design) und später ändern
+curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/onboarding \
+  -H "Content-Type: application/json" \
+  -d '{"theme":"dark","teams":[{"teamId":1,"relationType":"player"},{"teamId":4,"relationType":"fan"}]}'
+curl -b cookies.txt -X PATCH http://localhost:5000/api/auth/me/theme \
+  -H "Content-Type: application/json" -d '{"theme":"system"}'
+curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/password \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword":"geheim1234","newPassword":"nochgeheimer42"}'
+
+# Admin: wartende Registrierungen ansehen und freigeben
+curl -b cookies.txt "http://localhost:5000/api/admin/users?status=pending"
+curl -b cookies.txt -X PATCH http://localhost:5000/api/admin/users/7 \
+  -H "Content-Type: application/json" -d '{"isApproved":true}'
 
 # Trainer: offene Beitrittsanfrage bestätigen bzw. ablehnen
 curl -b cookies.txt -X POST http://localhost:5000/api/teams/MJC/members/5/confirm
@@ -779,7 +865,10 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | Cookie-Lebensdauer wird aus dem `exp` des Tokens abgeleitet | `controllers/authController.js` |
 | Rolle **und Sperrstatus** werden bei jeder RBAC-Prüfung frisch aus der DB gelesen | `middleware/authMiddleware.js` |
 | `/api/auth/me` beendet die Sitzung, wenn das Konto gelöscht oder gesperrt wurde | `controllers/authController.js` |
-| Rate-Limit: Login 10/15 min, Registrierung 5/h pro IP; `trust proxy` konfiguriert (`TRUST_PROXY`) | `routes/authRoutes.js`, `server.js` |
+| Rate-Limit: Login 10/15 min, Registrierung 5/h, Passwortwechsel 10/15 min pro IP; `trust proxy` konfiguriert (`TRUST_PROXY`) | `routes/authRoutes.js`, `server.js` |
+| Neue Konten sind gesperrt, bis die Verwaltung sie freigibt (`is_approved` Default `0`) | `db/migrations/013_onboarding_theme.sql` |
+| Passwortwechsel verlangt das aktuelle Passwort (ein offener Browser genügt nicht) | `controllers/authController.js` |
+| Endpunkte des eigenen Kontos lesen Rolle **und** Freigabe frisch aus der DB (`checkRole(ROLES)`) | `routes/authRoutes.js` |
 | CSRF-Schutz: Origin-Prüfung bei allen schreibenden Requests | `server.js` |
 | Sicherheits-Header via `helmet` | `server.js` |
 | Alle SQL-Queries mit `?`-Platzhaltern; dynamische Spaltennamen nur aus fester Allowlist | überall, `repositories/userRepository.js` |

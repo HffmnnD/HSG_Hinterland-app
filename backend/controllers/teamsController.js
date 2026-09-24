@@ -6,6 +6,7 @@
 //                                                (+ offene Anfragen für Verwaltung)
 //   PATCH /api/teams/:code                       Stammdaten (nuLiga-Nummer)
 //   POST /api/teams/:code/photo                  Mannschaftsfoto setzen
+//   PATCH /api/teams/:code/photo/frame           Bildausschnitt des Banners
 //   DEL  /api/teams/:code/photo                  Mannschaftsfoto entfernen
 //   PATCH /api/teams/:code/members/:userId       Kaderangaben (Nummer/Position)
 //   GET  /api/teams/:code/candidates             Auswahlliste zum Hinzufügen (Verwaltung)
@@ -23,6 +24,7 @@ const {
   isRelationType,
   validateTeamPatch,
   validateRosterPatch,
+  validatePhotoFrame,
 } = require('../utils/validation');
 const { ADMIN_ROLES, RELATION_TYPES } = require('../utils/roles');
 const {
@@ -99,10 +101,12 @@ async function getTeam(req, res, next) {
       team: presentTeam(team),
       sponsors,
       members,
+      // Gezählt wird der Kader. Fans erscheinen hier BEWUSST nicht: die
+      // fan-Zuordnung steuert nur, wessen Spiele jemand angezeigt bekommt –
+      // eine Zahl dazu hat für die Mannschaft keine Bedeutung.
       counts: {
         player: members.player.length,
         coach: members.coach.length,
-        fan: members.fan.length,
       },
       canManage,
     };
@@ -444,16 +448,64 @@ async function setTeamPhoto(req, res, next) {
         .json({ message: 'Die Datei ist kein gültiges Bild.' });
     }
 
-    await teamRepository.updateTeam(team.id, { photo_path: storedPath });
+    // Ein neues Foto startet mittig und uneingezoomt: Der Ausschnitt des
+    // vorherigen Bildes passt zu diesem nicht.
+    await teamRepository.updateTeam(team.id, {
+      photo_path: storedPath,
+      photo_focus_x: 50,
+      photo_focus_y: 50,
+      photo_zoom: 100,
+    });
     // Erst nach dem erfolgreichen Speichern das alte Foto löschen.
     if (team.photoPath) await removeUpload(team.photoPath);
 
     return res.status(201).json({
       message: 'Mannschaftsfoto gespeichert.',
       photoUrl: publicUrlFor(storedPath),
+      // Das Frontend öffnet direkt danach den Ausschnitt-Dialog und braucht
+      // dafür die Mannschaft mit den zurückgesetzten Werten.
+      team: presentTeam(await teamRepository.findById(team.id)),
     });
   } catch (err) {
     await cleanup();
+    return next(err);
+  }
+}
+
+// PATCH /api/teams/:code/photo/frame   Body: { focusX?, focusY?, zoom? }
+//
+// Speichert, WIE das Foto im Kopfbereich liegt – nicht ein zugeschnittenes
+// Bild. Deshalb ein eigener Endpunkt neben dem Upload: Der Ausschnitt lässt
+// sich beliebig oft nachjustieren, ohne das Bild erneut hochzuladen, und das
+// Original bleibt in voller Auflösung erhalten.
+async function setTeamPhotoFrame(req, res, next) {
+  try {
+    if (!ADMIN_ROLES.includes(req.userRole)) {
+      return res.status(403).json({ message: TEAM_DATA_DENIED });
+    }
+
+    const team = await teamRepository.findByCode(req.params.code);
+    if (!team) {
+      return res.status(404).json({ message: 'Mannschaft nicht gefunden.' });
+    }
+    if (!team.photoPath) {
+      return res.status(409).json({
+        message: 'Für diese Mannschaft ist kein Foto hinterlegt.',
+      });
+    }
+
+    const check = validatePhotoFrame(req.body);
+    if (!check.ok) {
+      return res.status(check.status).json({ message: check.message });
+    }
+
+    await teamRepository.updateTeam(team.id, check.fields);
+
+    return res.json({
+      message: 'Bildausschnitt gespeichert.',
+      team: presentTeam(await teamRepository.findById(team.id)),
+    });
+  } catch (err) {
     return next(err);
   }
 }
@@ -475,7 +527,14 @@ async function deleteTeamPhoto(req, res, next) {
         .json({ message: 'Kein Mannschaftsfoto hinterlegt.' });
     }
 
-    await teamRepository.updateTeam(team.id, { photo_path: null });
+    // Den Ausschnitt gleich mit zurücksetzen: Er beschreibt das entfernte
+    // Bild. Bliebe er stehen, läge das nächste Foto von Anfang an schief.
+    await teamRepository.updateTeam(team.id, {
+      photo_path: null,
+      photo_focus_x: 50,
+      photo_focus_y: 50,
+      photo_zoom: 100,
+    });
     await removeUpload(team.photoPath);
     return res.json({ message: 'Mannschaftsfoto entfernt.' });
   } catch (err) {
@@ -547,6 +606,7 @@ module.exports = {
   getTeam,
   updateTeam,
   setTeamPhoto,
+  setTeamPhotoFrame,
   deleteTeamPhoto,
   updateMemberDetails,
   listCandidates,

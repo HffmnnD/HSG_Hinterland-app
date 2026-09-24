@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RotateCcw, SearchX, ShieldCheck, Users } from 'lucide-react';
+import { Hourglass, RotateCcw, SearchX, ShieldCheck, Users } from 'lucide-react';
 
 import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -10,7 +10,7 @@ import { ADMIN_ROLES, ROLES, roleLabel } from '../../lib/roles';
 import { relationLabelPlural, serviceLabel } from '../../lib/participation';
 import { formatCount, formatNumber } from '../../lib/format';
 import TeamSelect from '../TeamSelect';
-import StatCard from './ui/StatCard';
+import StatCard from '../ui/StatCard';
 import SearchField from './ui/SearchField';
 import Pagination from './ui/Pagination';
 import { EmptyState, ErrorNote, Loading } from './ui/Feedback';
@@ -19,10 +19,14 @@ import { EmptyState, ErrorNote, Loading } from './ui/Feedback';
 // das Blättern zur Fleißarbeit wird.
 const PAGE_SIZE = 20;
 
+// Drei Zustände statt zwei: Seit neue Konten auf die Freigabe warten, ist
+// „nicht aktiv" zweierlei – noch nie freigegeben oder nachträglich gesperrt.
+// Wer neue Registrierungen abarbeitet, braucht genau den ersten Filter.
 const STATUS_OPTIONS = [
   { value: '', label: 'Status: alle' },
-  { value: 'active', label: 'Nur aktive' },
-  { value: 'inactive', label: 'Nur gesperrte' },
+  { value: 'pending', label: 'Wartet auf Freigabe' },
+  { value: 'active', label: 'Nur freigegebene' },
+  { value: 'locked', label: 'Nur gesperrte' },
 ];
 
 /**
@@ -124,7 +128,13 @@ export default function MembersSection() {
   };
 
   const changeRole = (id, nextRole) => patchUser(id, { role: nextRole }, { role: nextRole });
-  const setApproved = (id, isApproved) => patchUser(id, { isApproved }, { isApproved });
+  // Beim Freigeben verliert das Konto den Zustand „wartet" dauerhaft (der
+  // Server hält den Zeitpunkt in `approved_at` fest). Das optimistische Update
+  // zieht das mit, sonst stünde in der Zeile bis zum nächsten Laden weiter
+  // „Wartet". Auch in der Gegenrichtung ist `false` richtig: Sperren lässt sich
+  // nur ein bereits freigegebenes Konto.
+  const setApproved = (id, isApproved) =>
+    patchUser(id, { isApproved }, { isApproved, awaitingApproval: false });
 
   // Die Chips steuern die Spieler-Zuordnung; Trainer-/Fan-Beziehungen werden
   // auf der Mannschaftsseite gepflegt und bleiben hier unverändert.
@@ -166,16 +176,38 @@ export default function MembersSection() {
   return (
     <div className="space-y-5">
       {/* Kennzahlen des gesamten Vereins – unabhängig von den Filtern.
-          Aktiv/Gesperrt stehen bewusst NICHT mehr hier: der Status jedes
-          Kontos ist in der Tabelle abzulesen und über den Status-Filter in
-          einem Klick zu haben. Zwei Karten dafür wären doppelte Buchführung. */}
-      <div className="grid grid-cols-2 gap-3">
+          „Gesperrt" steht bewusst NICHT hier: der Status jedes Kontos ist in
+          der Tabelle abzulesen und über den Status-Filter in einem Klick zu
+          haben. Offene Freigaben dagegen sind eine Aufgabe und keine
+          Eigenschaft – sie brauchen eine Zahl, die ins Auge fällt, und einen
+          Weg direkt in die Liste. */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
         <StatCard
           icon={Users}
           label="Mitglieder"
           value={formatNumber(stats?.total ?? total)}
           hint={`${formatNumber(stats?.recent ?? 0)} in den letzten 30 Tagen dazugekommen`}
         />
+        <StatCard
+          icon={Hourglass}
+          label="Wartet auf Freigabe"
+          value={formatNumber(stats?.pending ?? 0)}
+          hint={
+            (stats?.pending ?? 0) > 0
+              ? 'Ohne Freigabe ist keine Anmeldung möglich.'
+              : 'Keine offenen Registrierungen.'
+          }
+        >
+          {(stats?.pending ?? 0) > 0 && status !== 'pending' && (
+            <button
+              type="button"
+              onClick={() => setStatus('pending')}
+              className="btn btn-outline btn-sm mt-3"
+            >
+              Jetzt ansehen
+            </button>
+          )}
+        </StatCard>
         <StatCard
           icon={ShieldCheck}
           label="Verwaltung"
@@ -186,8 +218,8 @@ export default function MembersSection() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <section className="admin-card">
-        <div className="admin-card__header">
+      <section className="panel">
+        <div className="panel__header">
           <div className="min-w-0">
             <h2 className="section-title text-base">Mitglieder</h2>
             <p className="mt-0.5 text-xs text-ink-muted">
@@ -202,7 +234,7 @@ export default function MembersSection() {
         </div>
 
         {/* Werkzeugleiste: Suche + zwei Dropdown-Filter */}
-        <div className="admin-toolbar">
+        <div className="panel__toolbar">
           <SearchField
             id="member-search"
             label="Mitglieder durchsuchen"
@@ -354,7 +386,10 @@ function MemberRow({
 }) {
   const teams = user.teams ?? [];
   const playerTeamIds = teams.filter((t) => t.relationType === 'player').map((t) => t.id);
-  const otherRelations = ['coach', 'fan']
+  // Nur Trainer:innen-Zuordnungen. Die fan-Zuordnung steht hier BEWUSST nicht:
+  // Sie steuert lediglich, wessen Spieltermine jemand angezeigt bekommt, und
+  // ist für die Verwaltung eines Kontos ohne Bedeutung.
+  const otherRelations = ['coach']
     .map((relation) => ({
       relation,
       entries: teams.filter((t) => t.relationType === relation),
@@ -456,16 +491,20 @@ function MemberRow({
         )}
       </td>
 
+      {/* Drei Zustände, drei Beschriftungen. „Wartet auf Freigabe" ist der
+          Normalfall einer neuen Registrierung und darf nicht wie eine Strafe
+          („gesperrt") aussehen – entsprechend heißt der Knopf „Freigeben" und
+          nicht „Reaktivieren". */}
       <td>
         {user.isApproved ? (
           <div className="flex items-center gap-2 whitespace-nowrap">
             <span className="status text-hsg-green-dark">
               <span className="status-dot bg-hsg-green" />
-              Aktiv
+              Freigegeben
             </span>
-            {/* Sperren ist die Gegenrichtung zum Reaktivieren – ohne sie
-                führt der Weg nur in eine Richtung. Das eigene Konto und
-                Admin-Konten (für Sub-Admins) bleiben ausgenommen. */}
+            {/* Sperren ist die Gegenrichtung zur Freigabe – ohne sie führt der
+                Weg nur in eine Richtung. Das eigene Konto und Admin-Konten
+                (für Sub-Admins) bleiben ausgenommen. */}
             {canManageAccounts && !locked && !isSelf && (
               <button
                 type="button"
@@ -479,18 +518,41 @@ function MemberRow({
             )}
           </div>
         ) : canManageAccounts && !locked ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onSetApproved(user.id, true)}
-            className="btn btn-primary btn-sm"
-          >
-            {busy ? '…' : 'Reaktivieren'}
-          </button>
+          <div className="flex items-center gap-2 whitespace-nowrap">
+            <span
+              className={`status ${user.awaitingApproval ? 'text-warn' : 'text-danger'}`}
+            >
+              <span
+                className={`status-dot ${
+                  user.awaitingApproval ? 'bg-warn' : 'bg-danger'
+                }`}
+              />
+              {user.awaitingApproval ? 'Wartet' : 'Gesperrt'}
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onSetApproved(user.id, true)}
+              className="btn btn-primary btn-sm"
+              title={
+                user.awaitingApproval
+                  ? 'Konto freigeben – die Person kann sich danach anmelden und wird durch die Einrichtung geführt.'
+                  : 'Sperre aufheben – die Person kann sich danach wieder anmelden.'
+              }
+            >
+              {busy ? '…' : user.awaitingApproval ? 'Freigeben' : 'Entsperren'}
+            </button>
+          </div>
         ) : (
-          <span className="status text-warn">
-            <span className="status-dot bg-warn" />
-            Gesperrt
+          <span
+            className={`status ${user.awaitingApproval ? 'text-warn' : 'text-danger'}`}
+          >
+            <span
+              className={`status-dot ${
+                user.awaitingApproval ? 'bg-warn' : 'bg-danger'
+              }`}
+            />
+            {user.awaitingApproval ? 'Wartet auf Freigabe' : 'Gesperrt'}
           </span>
         )}
       </td>

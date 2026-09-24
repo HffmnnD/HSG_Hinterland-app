@@ -7,7 +7,13 @@
 // zurück. Kein Zugriff auf `req`/`res`, keine Seiteneffekte ausser
 // Lese-Abfragen zur Existenzprüfung (über teamRepository).
 const teamRepository = require('../repositories/teamRepository');
-const { ROLES, RELATION_TYPES, SERVICE_TYPES } = require('./roles');
+const {
+  ROLES,
+  RELATION_TYPES,
+  SELF_RELATION_TYPES,
+  SERVICE_TYPES,
+  THEMES,
+} = require('./roles');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_EMAIL_LENGTH = 255;
@@ -295,63 +301,28 @@ async function validateTeamIdList(teamIds) {
   return { ok: true, ids };
 }
 
-/**
- * Ausführliche Form `teams: [{ teamId, relationType }]`.
- * @returns {Promise<{ ok:true, relations: {teamId:number, relationType:string}[] | undefined }
- *                  | { ok:false, ... }>}
- */
-async function validateTeamRelations(teams) {
-  if (teams === undefined) return { ok: true, relations: undefined };
-  if (!Array.isArray(teams)) return fail('teams muss eine Liste sein.');
-
-  const relations = [];
-  const seen = new Set();
-
-  for (const entry of teams) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      return fail('Ungültiger Mannschaftseintrag.');
-    }
-    const teamId = Number(entry.teamId);
-    const relationType = entry.relationType ?? 'player';
-
-    if (!Number.isInteger(teamId) || teamId <= 0) {
-      return fail('Ungültige Mannschafts-ID.');
-    }
-    if (!isRelationType(relationType)) {
-      return fail(
-        `Ungültiger Beziehungstyp. Erlaubt: ${RELATION_TYPES.join(', ')}.`
-      );
-    }
-
-    const key = `${teamId}:${relationType}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    relations.push({ teamId, relationType });
-  }
-
-  if (relations.length === 0) return { ok: true, relations: [] };
-
-  const ids = [...new Set(relations.map((r) => r.teamId))];
-  const existing = await teamRepository.findExistingIds(ids);
-  if (existing.length !== ids.length) {
-    return fail('Mindestens eine Mannschaft existiert nicht.');
-  }
-  return { ok: true, relations };
-}
-
 // --- Registrierung -------------------------------------------------------
 
 /**
- * Prüft den kompletten Registrierungs-Body.
+ * Prüft den Registrierungs-Body.
+ *
+ * Bewusst NUR vier Felder: Vorname, Nachname, E-Mail, Passwort. Mannschaften,
+ * Beteiligung und Helferdienste standen früher ebenfalls hier – sie machten
+ * aus dem ersten Kontakt mit der App ein Formular mit vier Abschnitten, das
+ * viele abgebrochen haben. Diese Angaben fragt jetzt der Onboarding-Assistent
+ * nach der Freigabe ab (siehe validateOnboarding), wo sie hingehören: dort
+ * sieht man die Mannschaften und kann sie in Ruhe wählen.
+ *
+ * Mitgeschickte Zusatzfelder werden ignoriert – ein älterer Client soll keine
+ * Fehlermeldung bekommen, seine Mannschaftswahl aber auch nicht still an der
+ * Bestätigung durch die Trainer:innen vorbeischmuggeln.
+ *
  * @returns {Promise<{ ok:true,
- *                     account: { firstName, lastName, email, password },
- *                     relations: {teamId, relationType}[],
- *                     services: string[] }
+ *                     account: { firstName, lastName, email, password } }
  *                  | { ok:false, ... }>}
  */
 async function validateRegistration(body) {
-  const { firstName, lastName, email, password, teams, teamIds, services } =
-    body || {};
+  const { firstName, lastName, email, password } = body || {};
 
   if (!firstName || !lastName || !email || !password) {
     return fail('firstName, lastName, email und password sind erforderlich.');
@@ -382,34 +353,9 @@ async function validateRegistration(body) {
   if (normalizedEmail.length > MAX_EMAIL_LENGTH || !EMAIL_REGEX.test(normalizedEmail)) {
     return fail('Ungültige E-Mail-Adresse.');
   }
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return fail(
-      `Das Passwort muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`
-    );
-  }
-  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_LENGTH) {
-    return fail(
-      `Das Passwort darf höchstens ${MAX_PASSWORD_LENGTH} Zeichen lang sein.`
-    );
-  }
 
-  // Mannschaften: bevorzugt `teams`, sonst Kurzform `teamIds` (alles -> player).
-  let relations = [];
-  if (teams !== undefined) {
-    const check = await validateTeamRelations(teams);
-    if (!check.ok) return check;
-    relations = check.relations ?? [];
-  } else if (teamIds !== undefined) {
-    const check = await validateTeamIdList(teamIds);
-    if (!check.ok) return check;
-    relations = (check.ids ?? []).map((teamId) => ({
-      teamId,
-      relationType: 'player',
-    }));
-  }
-
-  const serviceCheck = validateServiceList(services);
-  if (!serviceCheck.ok) return serviceCheck;
+  const passwordCheck = checkPassword(password);
+  if (!passwordCheck.ok) return passwordCheck;
 
   return {
     ok: true,
@@ -419,9 +365,129 @@ async function validateRegistration(body) {
       email: normalizedEmail,
       password,
     },
-    relations,
-    services: serviceCheck.services ?? [],
   };
+}
+
+// --- Eigenes Konto: Design, Onboarding, Passwort ----------------------------
+
+/** Gemeinsame Passwortregeln für Registrierung und Passwortwechsel. */
+function checkPassword(password, label = 'Das Passwort') {
+  if (typeof password !== 'string') {
+    return fail(`${label} muss eine Zeichenkette sein.`);
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return fail(`${label} muss mindestens ${MIN_PASSWORD_LENGTH} Zeichen lang sein.`);
+  }
+  // bcrypt beachtet nur die ersten 72 Bytes – längere Eingaben würden
+  // stillschweigend abgeschnitten.
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_LENGTH) {
+    return fail(`${label} darf höchstens ${MAX_PASSWORD_LENGTH} Zeichen lang sein.`);
+  }
+  return { ok: true, password };
+}
+
+/**
+ * Design-Vorliebe („system" | „light" | „dark").
+ * @returns {{ ok:true, theme:string } | { ok:false, ... }}
+ */
+function validateTheme(theme) {
+  if (!THEMES.includes(theme)) {
+    return fail(`Ungültiges Design. Erlaubt: ${THEMES.join(', ')}.`);
+  }
+  return { ok: true, theme };
+}
+
+/**
+ * Mannschafts-Zuordnungen, die jemand für SICH SELBST wählt – im
+ * Onboarding-Assistenten und später unter „Mein Konto".
+ *
+ * Anders als validateTeamRelations (Verwaltung) sind hier nur die Beziehungen
+ * erlaubt, die man selbst beantragen darf. Die Bestätigung durch die
+ * Trainer:innen hängt davon nicht ab – die regelt die Datenschicht.
+ *
+ * @returns {Promise<{ ok:true, relations:{teamId:number, relationType:string}[] }
+ *                  | { ok:false, ... }>}
+ */
+async function validateSelfRelations(teams) {
+  if (teams === undefined || teams === null) return { ok: true, relations: [] };
+  if (!Array.isArray(teams)) return fail('teams muss eine Liste sein.');
+
+  const relations = [];
+  const seen = new Set();
+
+  for (const entry of teams) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return fail('Ungültiger Mannschaftseintrag.');
+    }
+    const teamId = Number(entry.teamId);
+    const relationType = entry.relationType ?? 'player';
+
+    if (!Number.isInteger(teamId) || teamId <= 0) {
+      return fail('Ungültige Mannschafts-ID.');
+    }
+    if (!SELF_RELATION_TYPES.includes(relationType)) {
+      return fail(
+        `Ungültiger Beziehungstyp. Erlaubt: ${SELF_RELATION_TYPES.join(', ')}.`
+      );
+    }
+
+    const key = `${teamId}:${relationType}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    relations.push({ teamId, relationType });
+  }
+
+  if (relations.length === 0) return { ok: true, relations: [] };
+
+  const ids = [...new Set(relations.map((r) => r.teamId))];
+  const existing = await teamRepository.findExistingIds(ids);
+  if (existing.length !== ids.length) {
+    return fail('Mindestens eine Mannschaft existiert nicht.');
+  }
+  return { ok: true, relations };
+}
+
+/**
+ * Prüft den Body des Onboarding-Abschlusses bzw. der späteren Änderung unter
+ * „Mein Konto": gewählte Beteiligungen, Mannschaften und Design.
+ *
+ * @returns {Promise<{ ok:true, theme:string,
+ *                     relations:{teamId:number, relationType:string}[] }
+ *                  | { ok:false, ... }>}
+ */
+async function validateOnboarding(body) {
+  const { theme = 'system', teams } = body || {};
+
+  const themeCheck = validateTheme(theme);
+  if (!themeCheck.ok) return themeCheck;
+
+  const relationCheck = await validateSelfRelations(teams);
+  if (!relationCheck.ok) return relationCheck;
+
+  return {
+    ok: true,
+    theme: themeCheck.theme,
+    relations: relationCheck.relations,
+  };
+}
+
+/**
+ * Prüft den Body des Passwortwechsels.
+ * @returns {{ ok:true, currentPassword:string, newPassword:string } | { ok:false, ... }}
+ */
+function validatePasswordChange(body) {
+  const { currentPassword, newPassword } = body || {};
+
+  if (typeof currentPassword !== 'string' || currentPassword.length === 0) {
+    return fail('Bitte das aktuelle Passwort angeben.');
+  }
+  const check = checkPassword(newPassword, 'Das neue Passwort');
+  if (!check.ok) return check;
+
+  if (currentPassword === newPassword) {
+    return fail('Das neue Passwort muss sich vom bisherigen unterscheiden.');
+  }
+  return { ok: true, currentPassword, newPassword };
 }
 
 // --- Admin: Konto-Änderung -------------------------------------------------
@@ -475,6 +541,57 @@ async function validateUserPatch(body) {
     services: serviceCheck.services,
     raw: { role, isApproved },
   };
+}
+
+// --- Mannschaftsfoto: Bildausschnitt ----------------------------------------
+
+// Grenzen des Bannerausschnitts. Der Zoom endet bei dreifach – darüber wird
+// jedes Mannschaftsfoto matschig, und zum „Heranzoomen an ein Gesicht" ist der
+// Kopfbereich ohnehin nicht da.
+const MIN_PHOTO_ZOOM = 100;
+const MAX_PHOTO_ZOOM = 300;
+
+/** Ganzzahl in einem Bereich. `null`/`undefined` -> Feld nicht mitgeschickt. */
+function checkPercent(value, min, max, label) {
+  if (value === undefined || value === null) return { ok: true, value: undefined };
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fail(`${label} muss eine Zahl sein.`);
+  const rounded = Math.round(number);
+  if (rounded < min || rounded > max) {
+    return fail(`${label} muss zwischen ${min} und ${max} liegen.`);
+  }
+  return { ok: true, value: rounded };
+}
+
+/**
+ * Prüft den Body für PATCH /api/teams/:code/photo/frame.
+ *
+ * Erwartet Prozentwerte statt Pixel: Der Kopfbereich ist auf dem Handy
+ * schmaler als am Rechner, ein in Pixeln gespeicherter Ausschnitt säße dort
+ * falsch. Prozent bleiben in jeder Breite richtig.
+ *
+ * @returns {{ ok:true, fields: object } | { ok:false, status, message }}
+ */
+function validatePhotoFrame(body) {
+  const { focusX, focusY, zoom } = body || {};
+  const fields = {};
+
+  const x = checkPercent(focusX, 0, 100, 'Die waagerechte Position');
+  if (!x.ok) return x;
+  if (x.value !== undefined) fields.photo_focus_x = x.value;
+
+  const y = checkPercent(focusY, 0, 100, 'Die senkrechte Position');
+  if (!y.ok) return y;
+  if (y.value !== undefined) fields.photo_focus_y = y.value;
+
+  const z = checkPercent(zoom, MIN_PHOTO_ZOOM, MAX_PHOTO_ZOOM, 'Die Vergrößerung');
+  if (!z.ok) return z;
+  if (z.value !== undefined) fields.photo_zoom = z.value;
+
+  if (Object.keys(fields).length === 0) {
+    return fail('Keine Änderungen übergeben (focusX, focusY oder zoom).');
+  }
+  return { ok: true, fields };
 }
 
 // --- Vereins-News -----------------------------------------------------------
@@ -538,15 +655,23 @@ module.exports = {
   MAX_TEAM_NAME_LENGTH,
   MAX_TEAM_CODE_LENGTH,
   MAX_AGE_GROUP_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  MAX_PASSWORD_LENGTH,
+  MIN_PHOTO_ZOOM,
+  MAX_PHOTO_ZOOM,
   parseId,
   isRelationType,
   validateTeamCreate,
   validateTeamPatch,
   validateRosterPatch,
+  validatePhotoFrame,
   validateServiceList,
   validateTeamIdList,
-  validateTeamRelations,
   validateRegistration,
+  validateTheme,
+  validateSelfRelations,
+  validateOnboarding,
+  validatePasswordChange,
   validateUserPatch,
   validateNewsPost,
   validateNewsArchivePatch,

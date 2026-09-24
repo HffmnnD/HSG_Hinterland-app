@@ -6,6 +6,7 @@ const {
   getTeam,
   updateTeam,
   setTeamPhoto,
+  setTeamPhotoFrame,
   deleteTeamPhoto,
   listCandidates,
   addMember,
@@ -50,6 +51,9 @@ router.patch('/:code', requireAuth, updateTeam);
 // entgegennehmen – so landet eine abgelehnte Anfrage gar nicht erst auf der
 // Platte.
 router.post('/:code/photo', photoLimiter, requireAuth, uploadTeamPhoto, setTeamPhoto);
+// Bildausschnitt des Kopfbereichs. Kein Upload-Limit: hier gehen nur drei
+// Zahlen über die Leitung, und beim Ausrichten speichert man gern mehrmals.
+router.patch('/:code/photo/frame', requireAuth, setTeamPhotoFrame);
 router.delete('/:code/photo', requireAuth, deleteTeamPhoto);
 
 router.get('/:code/candidates', requireAuth, listCandidates);

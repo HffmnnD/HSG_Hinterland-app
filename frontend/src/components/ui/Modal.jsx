@@ -2,7 +2,14 @@ import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
 /**
- * Schlichter Dialog für Formulare (z. B. „Neue Mannschaft anlegen").
+ * Der Dialog der App – für Formulare („Neue Mannschaft anlegen"), Rückfragen
+ * („Termin löschen?") und Werkzeuge (Bildausschnitt des Mannschaftsfotos).
+ *
+ * Es gab davon einmal ZWEI: diesen und ein zweites, schlichteres Exemplar für
+ * die Termin-Rückfragen. Beide brachten ihre eigene Escape-Behandlung, ihre
+ * eigene Fokusverwaltung und ihre eigene Abdunklung mit – und im Stylesheet
+ * zwei konkurrierende `.modal-backdrop`-Regeln, von denen eine die andere
+ * still überschrieben hat. Zusammengeführt: ein Dialog, ein Verhalten.
  *
  * Bewusst kein <dialog>: Safari auf iOS unterstützt `showModal()` erst seit
  * Kurzem, und die App läuft als PWA auch auf älteren Geräten. Stattdessen ein
@@ -27,14 +34,16 @@ import { X } from 'lucide-react';
  * Effekt neu auslöst. Der Effekt hängt damit ausschließlich an `open` – er
  * läuft beim Öffnen und beim Schließen, sonst nie.
  *
- * @param {boolean}    open
+ * @param {boolean}    [open]  Standard `true` – Aufrufer, die den Dialog
+ *                            ohnehin nur bedingt einhängen, brauchen das Feld
+ *                            nicht zu setzen.
  * @param {() => void} onClose
  * @param {string}     title
  * @param {string}     [description]
  * @param {'sm'|'md'|'lg'} [size]
  */
 export default function Modal({
-  open,
+  open = true,
   onClose,
   title,
   description,
