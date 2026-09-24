@@ -4,8 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useEvents } from '../hooks/useSchedule';
-import { EVENT_CATEGORIES, shiftIsoDate, toDateInput } from '../lib/schedule';
+import { shiftIsoDate, toDateInput } from '../lib/schedule';
 import AppLayout from './AppLayout';
+import FilterBar from './schedule/FilterBar';
 import UpcomingPanel from './schedule/UpcomingPanel';
 import AbsencePanel from './schedule/AbsencePanel';
 import ParticipationPanel from './schedule/ParticipationPanel';
@@ -34,7 +35,13 @@ export default function CalendarPage() {
 
   const [teamFilter, setTeamFilter] = useState(null);
   const [category, setCategory] = useState(null);
-  const [lookback, setLookback] = useState(false);
+  // Zeitraum: 'upcoming' = ab heute | 'lookback' = zusätzlich 30 Tage zurück |
+  // 'custom' = die beiden Datumsfelder in `range`.
+  const [rangeMode, setRangeMode] = useState('upcoming');
+  const [range, setRange] = useState(() => ({
+    from: toDateInput(),
+    to: shiftIsoDate(toDateInput(), 30),
+  }));
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -45,18 +52,29 @@ export default function CalendarPage() {
   const [deleting, setDeleting] = useState(null);
   const [cancelling, setCancelling] = useState(null);
 
+  // Aus der Zeitraum-Wahl werden die beiden Parameter der Abfrage. Ein
+  // eigener Zeitraum wird nur benutzt, wenn beide Daten gesetzt sind und
+  // „von" nicht hinter „bis" liegt – sonst bliebe die Liste ohne Erklärung
+  // leer, während jemand noch am Tippen ist.
   const today = toDateInput();
+  const customUsable =
+    rangeMode === 'custom' && range.from && range.to && range.from <= range.to;
+  const query = customUsable
+    ? { from: range.from, to: range.to }
+    : {
+        from:
+          rangeMode === 'lookback'
+            ? shiftIsoDate(today, -LOOKBACK_DAYS)
+            : today,
+      };
+
   const {
     events,
     teams,
     loading,
     error: loadError,
     reload,
-  } = useEvents({
-    teamId: teamFilter,
-    category,
-    from: lookback ? shiftIsoDate(today, -LOOKBACK_DAYS) : today,
-  });
+  } = useEvents({ teamId: teamFilter, category, ...query });
 
   const playerTeams = useMemo(
     () => teams.filter((team) => team.isPlayer),
@@ -215,68 +233,19 @@ export default function CalendarPage() {
           >
             {/* ------------------------------------------------ Anstehend */}
             {activeTab === 'anstehend' && (
-              <div className="space-y-6">
-                {/* Zwei getrennte Filterzeilen: erst WESSEN Termine,
-                    dann WELCHE. Zusammen in einer Reihe wäre nicht mehr
-                    erkennbar, welcher Knopf was einschränkt. */}
-                {teams.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setTeamFilter(null)}
-                      aria-pressed={teamFilter === null}
-                      className={`chip chip-sm ${teamFilter === null ? 'chip-active' : ''}`}
-                    >
-                      Alle
-                    </button>
-                    {teams.map((team) => (
-                      <button
-                        key={team.id}
-                        type="button"
-                        onClick={() => setTeamFilter(team.id)}
-                        aria-pressed={teamFilter === team.id}
-                        className={`chip chip-sm ${
-                          teamFilter === team.id ? 'chip-active' : ''
-                        }`}
-                      >
-                        {team.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setCategory(null)}
-                    aria-pressed={category === null}
-                    className={`chip chip-sm ${category === null ? 'chip-active' : ''}`}
-                  >
-                    Alles
-                  </button>
-                  {EVENT_CATEGORIES.map((entry) => (
-                    <button
-                      key={entry.key}
-                      type="button"
-                      onClick={() => setCategory(entry.key)}
-                      aria-pressed={category === entry.key}
-                      className={`chip chip-sm ${
-                        category === entry.key ? 'chip-active' : ''
-                      }`}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={() => setLookback((value) => !value)}
-                    aria-pressed={lookback}
-                    className={`chip chip-sm ml-auto ${lookback ? 'chip-active' : ''}`}
-                  >
-                    Rückblick 30 Tage
-                  </button>
-                </div>
+              <div className="space-y-5">
+                <FilterBar
+                  teams={teams}
+                  teamId={teamFilter}
+                  onTeamChange={setTeamFilter}
+                  category={category}
+                  onCategoryChange={setCategory}
+                  rangeMode={rangeMode}
+                  onRangeModeChange={setRangeMode}
+                  range={range}
+                  onRangeChange={setRange}
+                  lookbackDays={LOOKBACK_DAYS}
+                />
 
                 <UpcomingPanel
                   events={events}

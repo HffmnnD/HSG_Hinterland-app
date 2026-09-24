@@ -31,7 +31,7 @@ export default function SearchField({
       <input
         id={id}
         type="text"
-        className="admin-search"
+        className="search-input"
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}

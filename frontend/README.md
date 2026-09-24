@@ -7,7 +7,7 @@ Zwei Laufzeit-Abhängigkeiten über React hinaus:
 
 | Paket | Wofür | Wo |
 | ----- | ----- | -- |
-| `lucide-react` | Icons der Verwaltung (Baumstruktur-Import, es landet nur im Bündel, was benutzt wird) | `components/admin/**` |
+| `lucide-react` | Icons in Verwaltung, Startseite, Onboarding und Dialogen (Baumstruktur-Import, es landet nur im Bündel, was benutzt wird) | `components/**` |
 | `recharts` | Diagramme des System-Status | nur im nachgeladenen Teilstück `SystemSection` – siehe [Verwaltung](#verwaltung-admin) |
 
 Die Navigations-Icons der App selbst bleiben handgeschriebenes Inline-SVG
@@ -41,14 +41,20 @@ Sitzung geht dann bei jedem Neuladen verloren.
 
 ```
 frontend/src/
-  main.jsx                     <BrowserRouter> + <AuthProvider>
-  App.jsx                      <Routes>: /login, / (geschützt), /admin (admin+trainer), * -> /
+  main.jsx                     <BrowserRouter> + <AuthProvider> + <ThemeProvider>
+  App.jsx                      <Routes>: /login, /willkommen (Onboarding),
+                               / (geschützt), /admin (admin+trainer), * -> /
   context/
-    AuthContext.jsx            globaler Auth-State: user, role, teams, loading, error
-                               + login() / register(…, teamIds) / logout() / refresh()
-                               prüft beim Start GET /api/auth/me
+    AuthContext.jsx            globaler Auth-State: user, role, teams, services,
+                               needsOnboarding, loading, error + login() /
+                               register() / logout() / refresh() /
+                               completeOnboarding() / updatePreferences() /
+                               changePassword(); prüft beim Start GET /api/auth/me
+    ThemeContext.jsx           Hell/Dunkel: leitet die Einstellung aus Sitzung,
+                               Profil und localStorage ab und setzt die Klasse
+                               `dark` am <html> (siehe „Design")
   hooks/
-    useTeams.js                lädt GET /api/teams (öffentlich)
+    useTeams.js                lädt GET /api/teams (Anmeldung nötig)
     useNews.js                 lädt GET /api/news (+ reload nach Anlegen/Löschen)
     useAdminUsers.js           seitenweise Mitgliederliste (entprellte Suche,
                                verwirft überholte Antworten) + useMemberStats
@@ -65,7 +71,13 @@ frontend/src/
     api.js                     fetch-Wrapper, IMMER credentials: 'include'
                                (setzt bei FormData bewusst KEINEN Content-Type)
     roles.js                   Rollen-Konstanten, Labels und Badges
-    participation.js           Beteiligungsarten, Beziehungstypen, Helferdienste
+    participation.js           Beteiligungsarten (die drei Fragen des
+                               Onboardings), Beziehungstypen, Helferdienste
+    teams.js                   Einteilung der Mannschaften (Senioren/Jugend),
+                               Beschriftungen und der Bildausschnitt des
+                               Kopfbereichs (photoFrameStyle)
+    theme.js                   Werte des Themas + die drei Browser-Zugriffe
+                               (localStorage, Media Query, Adressleisten-Farbe)
     navigation.js              EINZIGE Quelle der Hauptnavigation (rollengefiltert)
     format.js                  deutsche Datums-, Zahlen- und Größenformate
                                (formatBytes / formatDuration / formatMs / …)
@@ -83,18 +95,37 @@ frontend/src/
     ScrollToTop.jsx            setzt den Scroll-Stand bei Seitenwechsel zurück
     Badge.jsx                  Badge (Status-Chips; die Rolle einer Person
                                steht bewusst nirgends im Kopfbereich)
-    Badge.jsx                  Badge / RoleBadge (Rollen- und Status-Chips)
-    Modal.jsx                  Rückfrage-Dialog über dem Inhalt (fixiert)
+    ThemeChoice.jsx            Auswahl Hell/Dunkel/System (Onboarding + Konto)
+    ui/                        geteilte Bausteine: Modal.jsx (DER Dialog der
+                               App), StatCard.jsx (Kennzahl-Kachel),
+                               Avatar.jsx (Profilbild, sonst Initialen)
     FullScreenLoader.jsx
     ErrorBoundary.jsx          fängt Render-Fehler ab (keine weisse Seite)
-    ProtectedRoute.jsx         Routen-Schutz nach Login-Status + Rolle
+    ProtectedRoute.jsx         Routen-Schutz nach Login-Status, Rolle und
+                               offenem Onboarding
     TeamSelect.jsx             Mannschafts-Mehrfachauswahl als Toggle-Chips
-    MyTeams.jsx                eigene Mannschaften, nach Beziehung gruppiert
-                               (Dashboard + Mannschafts-Übersicht)
-    NewsCard.jsx               eine Ankündigung (Datum, Titel, Bild, Text)
-    Dashboard.jsx              /: News-Feed, „Meine Mannschaften“, Konto
-    TeamsPage.jsx              /teams: eigene + alle Mannschaften
-    SchedulePage.jsx           /termine: Vorschau auf das Termin-Modul
+                               (Verwaltung – dort sind die Kürzel bekannt)
+    MyTeams.jsx                eigene Mannschaften, nach eigener Rolle gruppiert
+                               (Startseite + Mannschafts-Übersicht)
+    NewsCard.jsx               eine Ankündigung (Datum, Titel, Bilder, Text);
+                               `highlight` macht sie zum Aufmacher
+    Dashboard.jsx              /: Aktuelles, Mannschaften + „Als Nächstes",
+                               „Mein Konto", Verwaltungs-Einstieg
+    dashboard/
+      NextUpPanel.jsx          die nächsten Trainings und Spiele als Kurzliste
+    onboarding/
+      OnboardingWizard.jsx     Einrichtung nach der Registrierung (vier
+                               Schritte: Rolle, Mannschaften, Profil, Design)
+      TeamChoice.jsx           Mannschaftsauswahl als Karten, nach Senioren /
+                               Jugend gruppiert (Onboarding + „Mein Konto")
+    account/
+      AccountPanel.jsx         „Mein Konto": Kennzahlen + vier Bereiche
+      ProfileForm.jsx          Profilbild und Telefonnummer (auch im Onboarding)
+      PreferencesForm.jsx      Rolle & Mannschaften nachträglich ändern
+      PasswordForm.jsx         Passwortwechsel (aktuelles Passwort nötig)
+    TeamsPage.jsx              /teams: zwei Reiter („Meine" / „Alle") mit
+                               denselben Karten, gruppiert nach eigener Rolle
+                               bzw. nach Senioren / Jugend
     AdminPage.jsx              /admin: Gerüst der Verwaltung – Reiterleiste
                                (wie TeamPage) + genau EIN Bereich
     admin/
@@ -108,8 +139,8 @@ frontend/src/
                                verwaltung) + Dialoge zum Anlegen und Ändern
       SystemSection.jsx        System-Status: Hardware-Messer, API-Kennzahlen,
                                Diagramme, Herkunft, Wartungsaktionen
-      ui/                      StatCard, Modal, Pagination, SearchField,
-                               Feedback (Loading/Error/Success/EmptyState)
+      ui/                      Pagination, SearchField, Feedback
+                               (Loading/Error/Success/EmptyState)
       charts/                  chartTheme.js (Farben & Achsen) + TrafficChart,
                                LatencyChart, CountryChart, StatusBreakdown
     CalendarPage.jsx           /kalender: Kalender-Modul mit Reitern
@@ -119,11 +150,16 @@ frontend/src/
                                Verwaltung), Live-Banner und nuLiga-Widgets
     team/
       TeamHero.jsx             Kopfbereich: Foto/Verlauf, Name, Liga
+      PhotoFrameDialog.jsx     Bildausschnitt des Kopfbereichs: ziehen,
+                               zoomen, Vorschau in Originaloptik
+      RosterSection.jsx        Kader mit Profilbildern; Trainer:innen mit
+                               E-Mail und (falls hinterlegt) Telefonnummer
       NextGameCard.jsx         Karte „Nächstes Spiel" (Reiter Übersicht)
       RosterSection.jsx        Kader: Trainerstab, Spielerkarten, Positionsfilter
       TeamManagePanel.jsx      Verwaltung: Anfragen, Zuordnungen, Stammdaten
       Skeleton.jsx             Lade-Platzhalter
     schedule/
+      FilterBar.jsx            Filterleiste: Mannschaft, Terminart, Zeitraum
       UpcomingPanel.jsx        Terminliste, nach Monat gruppiert
       EventCard.jsx            ein Termin: Mannschaft, Zeit, Ort, grosser
                                Status-Balken, Abmelden, Mannschaft aufklappen
@@ -143,11 +179,16 @@ frontend/src/
       AuthScreen.jsx           Umschalter Login <-> Registrierung
       AuthLayout.jsx           mobile-first zentriertes Karten-Layout
       LoginForm.jsx            E-Mail/Passwort
-      RegisterForm.jsx         Name/E-Mail/Passwort + Beteiligung + Teams + Dienste
+      RegisterForm.jsx         genau vier Felder: Vor-/Nachname, E-Mail,
+                               Passwort – meldet direkt an
       TextField.jsx / Alert.jsx
 ```
 
 ## Mannschaftsseite (`/teams/:code`)
+
+In der Kopfzeile steht links der Mannschaftsname als Weg zurück zur Übersicht –
+ohne das frühere Kürzel-Abzeichen davor, das neben dem ausgeschriebenen Namen
+nichts hinzufügte.
 
 Vier Reiter, damit die Seite nicht überläuft. Der aktive Reiter steht im
 Adressfeld (`?tab=kader`) – ein Link auf den Kader geht auch als Kader wieder
@@ -174,6 +215,11 @@ Weitere Entscheidungen, die beim Weiterbauen wichtig sind:
 * **Der Kopfbereich trägt nur die Identität** der Mannschaft: Foto, Name, Liga.
   Kürzel, Rollen-Badge und Kaderzahlen stehen dort bewusst nicht – das Kürzel
   zeigt schon die Kopfzeile, Zahlen gehören in die Reiter.
+* **Der Bildausschnitt ist einstellbar.** Nach dem Hochladen eines Fotos öffnet
+  sich `PhotoFrameDialog`: ziehen, zoomen, Vorschau in Originaloptik. Gespeichert
+  werden drei Prozentwerte (`PATCH /api/teams/:code/photo/frame`), kein
+  zugeschnittenes Bild – das Original bleibt erhalten, der Ausschnitt lässt sich
+  jederzeit korrigieren, und Handy wie Rechner schneiden keine Köpfe ab.
 * **Ohne Foto** trägt der Kopfbereich einen Verlauf im Anthrazit der Marke mit
   grünem Schimmer (`.team-hero` in `index.css`), keine fremde Farbfamilie.
 * **Ohne `handballTeamId`** erscheint statt Tabelle und Spielplan der Hinweis
@@ -195,7 +241,8 @@ Terminliste zurückgibt (`teams: [{ id, code, name, canManage, isPlayer, … }]`
 
 | Reiter | sichtbar für | Inhalt |
 | ------ | ------------ | ------ |
-| **Anstehend** | alle | Terminliste nach Datum, nach Monat gruppiert. Filter nach Mannschaft und nach Kategorie (Training / Spiele / Sonstiges) sowie „Rückblick 30 Tage" |
+| **Anstehend** | alle | Terminliste nach Datum, nach Monat gruppiert. Darüber eine Filterleiste (`FilterBar`) mit drei benannten Feldern: **Mannschaft** („Alle meine Teams" oder eine bestimmte, als Auswahlfeld), **Terminart** (Alles / Training / Spiele / Sonstiges als Segmentumschalter) und **Zeitraum** (Nur anstehende / Rückblick 30 Tage / eigener Zeitraum mit
+zwei Datumsfeldern, die erst beim Auswählen erscheinen). Vorher waren das bis zu zwölf gleich aussehende Chips in zwei Reihen, von denen einer nicht filterte, sondern den Zeitraum verschob |
 | **Meine Abwesenheiten** | wer irgendwo `player` ist | Urlaub/Verletzung mit Zeitraum eintragen und entfernen |
 | **Beteiligung** | alle | Zeitraum + Kategorie, dann je Person der Anteil in Prozent. Ein Klick öffnet die Termine dahinter. **Jedes Mitglied** sieht die ganze Mannschaft, nicht nur das Trainerteam; die eigene Zeile ist grün hinterlegt |
 | **Planung** | wer irgendwo `coach` ist (oder Admin) | **Erst die Mannschaft wählen**, dann Trainingszeiten, Einzeltermine, Ligaspiele aus nuLiga und längerfristige Ausfälle für genau diese Mannschaft |
@@ -454,29 +501,140 @@ und die **Mitgliedsnummer** (= die Konto-ID, erste Tabellenspalte).
 - Die Rolle „Admin“ fehlt in der Auswahlliste (die aktuelle Rolle einer Zeile
   wird trotzdem korrekt angezeigt).
 
-## Registrierung & Team-Bestätigung
+## Registrierung & Onboarding
 
-Das Formular fragt „Wie machst du mit?“ als Mehrfachauswahl ab:
+Der Weg in die App hat zwei Stationen:
 
-| Auswahl        | Folge |
-| -------------- | ----- |
-| Spieler:in     | Mannschaftsauswahl → `relationType: 'player'` (Beitritt muss der Trainer bestätigen) |
-| Trainer:in     | Mannschaftsauswahl → `relationType: 'coach'` (Beitritt muss der Trainer bestätigen) |
-| Mitwirkende:r  | Checkboxen für Helferdienste **und** aktiviert „Zuschauer:in“ zwingend mit |
-| Zuschauer:in   | Mannschaftsauswahl → `relationType: 'fan'` (sofort aktiv) |
+| Station | Wo | Was passiert |
+| ------- | -- | ------------ |
+| **Registrierung** | `RegisterForm` | Vorname, Nachname, E-Mail, Passwort. Der Server legt das Konto an **und meldet an** – `register()` setzt `user` im Context, die App wechselt sofort weiter. |
+| **Onboarding** | `/willkommen` | Vier Schritte: Beteiligung (Spieler:in / Trainer:in / Zuschauer:in), Mannschaften je Beteiligung, Profil (Bild + Telefon), Design. Am Ende EIN Aufruf `POST /api/auth/me/onboarding`. |
 
-Gesendet wird `teams: [{ teamId, relationType }]` plus `services`. Die
-RBAC-Rolle setzt der Client bewusst **nicht**.
+Warum das Formular geschrumpft ist: Vorher standen Beteiligung, Helferdienste
+und drei Mannschaftsauswahlen direkt unter dem Passwortfeld – also an der
+Stelle, an der niemand die App kennt. Wer sich anmeldet, weiß weder, welche
+Mannschaften es gibt, noch was „Mitwirkende:r" bedeutet. Diese Angaben stehen
+jetzt im Assistenten, mit einer Frage je Schritt und der Möglichkeit, sie
+später unter „Mein Konto" zu ändern.
 
-**Es gibt keine globale Admin-Freigabe mehr** – das Konto ist nach der
-Registrierung sofort aktiv und der Login funktioniert direkt. Stattdessen:
+Es gibt **keine Freigabe durch die Verwaltung**: Zwischen „Konto erstellen" und
+der fertig eingerichteten App liegt kein Warten und kein zweites
+Anmeldeformular. `ProtectedRoute` leitet auf `/willkommen` um, solange
+`user.onboardingCompleted` `false` ist – und merkt sich das ursprüngliche Ziel,
+sodass es nach der Einrichtung dort weitergeht.
 
-- Das Dashboard zeigt Mannschaften mit `isConfirmed === false` als
-  „ausstehend“.
-- Auf `/teams/:code` sehen Verwaltende ganz oben „Offene Beitrittsanfragen“
+**Bestätigung durch das Trainerteam** (unverändert): Was jemand für sich selbst
+wählt, ist bei `player`/`coach` eine Anfrage.
+
+- „Meine Mannschaften" zeigt Zuordnungen mit `isConfirmed === false` als
+  „ausstehend".
+- Auf `/teams/:code` sehen Verwaltende ganz oben „Offene Beitrittsanfragen"
   mit **Bestätigen** (`POST …/members/:id/confirm`) und **Ablehnen**
   (`DELETE …/members/:id`).
-- Der öffentliche Kader (`members`) enthält nur bestätigte Mitglieder.
+- Der Kader (`members`) enthält nur bestätigte Mitglieder.
+- Die `fan`-Zuordnung gilt sofort. Sie steuert nur, wessen Spiele jemand
+  sehen will, und wird **nirgends gezählt** – weder auf der Mannschaftsseite
+  noch in der Verwaltung.
+
+## Profilbild & Kontakt
+
+Das Profilbild wird sofort hochgeladen (`POST /api/auth/me/photo`), die
+Telefonnummer ist ein normales Formularfeld. Beides steckt in einer
+Komponente (`account/ProfileForm.jsx`), die an zwei Stellen erscheint: im
+Onboarding-Schritt „Profil" und unter „Mein Konto".
+
+Angezeigt wird das Bild über `<Avatar>`: auf der Startseite statt der
+Initialen, im Kader auf den Spielerkarten (die Rückennummer wandert dann als
+kleines Abzeichen an den Bildrand) und in der Mannschaftsverwaltung. Ohne Bild
+bleibt es beim getönten Kreis mit den Initialen.
+
+Die **Kontaktzeile im Kader** zeigt E-Mail und Telefonnummer als `mailto:`-
+bzw. `tel:`-Link – am Handy ist genau das der Zweck. Wer was sieht, entscheidet
+das Backend (siehe `backend/README.md` → „Wer sieht die Kontaktdaten im
+Kader?"): Trainer:innen sind für die Mitglieder **ihrer** Mannschaft
+erreichbar, die Daten der Spieler:innen sieht nur das Trainerteam. Das Frontend
+prüft nichts – es zeigt an, was in der Antwort steht, und lässt die Zeile weg,
+wenn nichts drinsteht.
+
+## Mein Konto (Startseite, unten)
+
+Ein eigenes Segment am Fuß der Startseite mit vier Kennzahl-Kacheln und vier
+aufklappbaren Bereichen:
+
+| Bereich | Inhalt |
+| ------- | ------ |
+| **Profil** | Profilbild und Telefonnummer |
+| **Mannschaften** | dieselbe Auswahl wie im Onboarding. Gesendet wird die vollständige neue Wahl (`PATCH /api/auth/me/preferences`); der Server gleicht sie ab, statt neu anzulegen – Bestätigungen und Rückennummern bleiben erhalten. |
+| **Design** | Hell / Dunkel / System (`PATCH /api/auth/me/preferences`) |
+| **Passwort** | aktuelles Passwort + neues Passwort mit Wiederholung |
+
+Geöffnet ist zunächst keiner: Man kommt hierher, um etwas zu ändern, nicht um
+zu lesen. Das spart auch Arbeit – die Mannschaftsliste lädt erst, wenn der
+Bereich „Mannschaften" wirklich aufgeklappt wird.
+
+Ein Passwortwechsel beendet die Sitzungen auf **anderen** Geräten; dieses
+Gerät bleibt angemeldet. Das Formular sagt das in seiner Erfolgsmeldung.
+
+## Design (Hell & Dunkel)
+
+Das Thema hängt an **einer** Klasse: `dark` am `<html>`-Element, gesetzt vom
+`ThemeProvider`.
+
+```
+tailwind.config.js        Farbnamen sind Bedeutungen: paper, ink, line, surface …
+      │                   und verweisen alle auf var(--c-…)
+      ▼
+src/index.css             :root { --c-paper: #ffffff; … }
+                          .dark { --c-paper: #1a1d20; … }
+```
+
+Damit gilt der Dunkelmodus für Karten, Tabellen, Dialoge, Formulare und
+Navigation, **ohne** an jeder Komponente ein `dark:`-Gegenstück zu pflegen.
+`dark:` bleibt für die wenigen Stellen, an denen im Dunkeln etwas anderes gilt
+als eine andere Farbe (Verlauf des Mannschafts-Kopfbereichs, aktiver Knopf im
+Umschalter).
+
+Gewählt wird das Design an genau zwei Stellen: im Onboarding und unter „Mein
+Konto". Einen Ein-Klick-Umschalter in der Kopfzeile gibt es bewusst nicht mehr –
+eine Einstellung, die man einmal trifft und dann selten ändert, braucht keinen
+Dauerplatz auf jeder Seite.
+
+Drei Dinge, die dabei wichtig sind:
+
+* **Die Wahl liegt im Profil** (`users.theme`), nicht im Browser – damit ist das
+  Design am Handy dasselbe wie am Rechner. Gespeichert wird sie über
+  `PATCH /api/auth/me/preferences`, das das frische Profil zurückgibt: eine
+  Anfrage, kein Nachladen. `localStorage` hält nur eine Kopie,
+  damit die Seite nicht hell aufblitzt, solange `GET /api/auth/me` läuft; ein
+  Inline-Skript in `index.html` liest sie vor dem ersten Bild.
+* **Die Einstellung wird abgeleitet, nicht kopiert:** Sitzungswahl → Profil →
+  lokale Kopie → `system`. Kein Effekt, der State aus State setzt.
+* **„System" hört zu:** Die Media Query hängt über `useSyncExternalStore` am
+  Browser, ein Wechsel der Systemeinstellung wirkt sofort.
+
+Die Diagramme des System-Status ziehen mit: `chartTheme.js` gibt Flächen,
+Linien und Schrift als `var(--c-…)` an Recharts weiter. Die Farben der
+Datenreihen bleiben feste Werte – sie sind Bedeutung (grün = Menge, rot =
+Fehler), nicht Gestaltung.
+
+## Startseite (`/`)
+
+Aufbau von oben nach unten nach der Frage, weshalb jemand die App öffnet:
+
+1. **Aktuelles aus dem Verein** – der jüngste Beitrag als Aufmacher
+   (`<NewsCard highlight>`), darunter die weiteren, dann „Ältere Beiträge".
+2. **Meine Mannschaften** und **Als Nächstes** nebeneinander: die eigenen
+   Zuordnungen und die nächsten vier Termine mit Datumsblock, Ort und
+   Absage-Kennzeichnung. Jeder Eintrag führt in den Kalender – zu- und
+   abgesagt wird dort, damit es für dieselbe Handlung nicht zwei Orte gibt.
+3. **Mein Konto** (siehe oben) und, für Verwaltungsrollen, der Einstieg in
+   die Verwaltung.
+
+Die Gestaltung folgt dem System-Status: Abschnittskarten (`.panel` mit
+Kopfzeile und feiner Kontur) und Kennzahl-Kacheln (`.stat-card`). Das war der
+am besten ausgearbeitete Bereich der App – statt daneben eine zweite
+Formensprache zu erfinden, benutzt die Startseite dieselben Bauteile. Deshalb
+heißen die Klassen auch nicht mehr `.admin-card`.
 
 `ProtectedRoute` verhält sich so:
 
@@ -501,10 +659,12 @@ nicht als Sitzungsabbruch behandelt wird.
 
 1. Beim Laden fragt der `AuthProvider` `GET /api/auth/me` ab (Cookie-Check).
 2. `login()` → `POST /api/auth/login`; das Backend setzt ein HttpOnly-Cookie
-   (für JS nicht lesbar). Bei Erfolg wird `user` gesetzt → App zeigt das Dashboard.
-   Es gibt **keine** Freigabe-Hürde: neue Konten können sich sofort anmelden.
-3. `register()` → `POST /api/auth/register` (inkl. `teams` / `services`); danach
-   Erfolgsmeldung „Konto sofort aktiv, Team-Zuordnungen bestätigt der Trainer“.
+   (für JS nicht lesbar). Bei Erfolg wird `user` gesetzt → die App zeigt die
+   Startseite, oder zuerst den Onboarding-Assistenten. Ein gesperrtes Konto
+   bekommt `403` mit Begründung – das Formular zeigt sie an.
+3. `register()` → `POST /api/auth/register` (vier Felder). Die Antwort enthält
+   Cookie **und** Profil; `user` wird direkt gesetzt, die App springt in den
+   Assistenten.
 4. `logout()` → `POST /api/auth/logout` löscht das Cookie; `user` wird `null`.
 
 `useAuth()` liefert zusätzlich `teams`

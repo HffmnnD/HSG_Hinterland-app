@@ -22,6 +22,7 @@ const UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
 // (scripts/sweep-uploads.js) und die Rechtevergabe übersichtlich.
 const NEWS_SUBDIR = 'news';
 const TEAMS_SUBDIR = 'teams';
+const USERS_SUBDIR = 'users';
 // Öffentliches URL-Präfix (siehe server.js).
 const PUBLIC_PREFIX = '/api/uploads';
 
@@ -175,6 +176,27 @@ function newsImageFiles(files) {
 }
 
 /**
+ * Profilbild eines Mitglieds. Gleiche Begrenzung wie beim Mannschaftsfoto:
+ * genau eine Datei, kein Textfeld.
+ */
+const uploadUserPhoto = multer({
+  storage: storageFor(USERS_SUBDIR),
+  fileFilter: imageFileFilter,
+  limits: {
+    fileSize: MAX_IMAGE_BYTES,
+    files: 1,
+    fields: 0,
+    parts: 2,
+    fieldNameSize: 100,
+  },
+}).single('photo');
+
+/** Relativer Speicherpfad eines Profilbildes, z. B. "users/ab12.jpg". */
+function userPhotoPathFor(file) {
+  return relativePathFor(file, USERS_SUBDIR);
+}
+
+/**
  * Mannschaftsfoto für den Kopfbereich der Mannschaftsseite.
  * Enger begrenzt als der News-Upload: hier kommt ausschließlich eine Datei
  * und kein einziges Textfeld mit.
@@ -325,11 +347,14 @@ module.exports = {
   NEWS_IMAGE_FIELD,
   NEWS_SUBDIR,
   TEAMS_SUBDIR,
+  USERS_SUBDIR,
   uploadNewsImage,
   newsImageFiles,
   uploadTeamPhoto,
+  uploadUserPhoto,
   relativePathFor,
   teamPhotoPathFor,
+  userPhotoPathFor,
   publicUrlFor,
   hasValidImageSignature,
   removeUpload,

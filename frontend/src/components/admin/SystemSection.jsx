@@ -26,7 +26,7 @@ import {
   formatNumber,
   formatPercent,
 } from '../../lib/format';
-import StatCard from './ui/StatCard';
+import StatCard from '../ui/StatCard';
 import TrafficChart from './charts/TrafficChart';
 import LatencyChart from './charts/LatencyChart';
 import CountryChart from './charts/CountryChart';
@@ -205,22 +205,22 @@ export default function SystemSection() {
 
       {/* ------------------------------------------------------ Diagramme */}
       <section className="grid gap-4 xl:grid-cols-2">
-        <div className="admin-card">
-          <div className="admin-card__header">
+        <div className="panel">
+          <div className="panel__header">
             <h3 className="section-title text-base">Anfragen und Fehler</h3>
             <span className="eyebrow">je Minute</span>
           </div>
-          <div className="admin-card__body">
+          <div className="panel__body">
             <TrafficChart data={api.perMinute} />
           </div>
         </div>
 
-        <div className="admin-card">
-          <div className="admin-card__header">
+        <div className="panel">
+          <div className="panel__header">
             <h3 className="section-title text-base">Antwortzeit</h3>
             <span className="eyebrow">Durchschnitt je Minute</span>
           </div>
-          <div className="admin-card__body">
+          <div className="panel__body">
             <LatencyChart data={api.perMinute} />
 
             <h4 className="eyebrow mt-5">HTTP-Statusklassen</h4>
@@ -233,8 +233,8 @@ export default function SystemSection() {
 
       {/* -------------------------------------------------------- Herkunft */}
       <section className="grid gap-4 xl:grid-cols-2">
-        <div className="admin-card">
-          <div className="admin-card__header">
+        <div className="panel">
+          <div className="panel__header">
             <h3 className="section-title flex items-center gap-2 text-base">
               <Globe2 size={16} aria-hidden="true" className="text-ink-muted" />
               Herkunft der Anfragen
@@ -243,7 +243,7 @@ export default function SystemSection() {
               {formatCount(api.countries.length, 'Herkunft', 'Herkünfte')}
             </span>
           </div>
-          <div className="admin-card__body">
+          <div className="panel__body">
             {api.countries.length === 0 ? (
               <p className="py-4 text-sm text-ink-muted">
                 Noch keine Anfragen im Beobachtungsfenster.
@@ -254,12 +254,12 @@ export default function SystemSection() {
           </div>
         </div>
 
-        <div className="admin-card">
-          <div className="admin-card__header">
+        <div className="panel">
+          <div className="panel__header">
             <h3 className="section-title text-base">Meistgenutzte Bereiche</h3>
             <span className="eyebrow">seit Start</span>
           </div>
-          <div className="admin-card__body">
+          <div className="panel__body">
             {api.routes.length === 0 ? (
               <p className="py-4 text-sm text-ink-muted">Noch keine Anfragen erfasst.</p>
             ) : (
@@ -301,15 +301,15 @@ export default function SystemSection() {
       </section>
 
       {/* --------------------------------------------- Server & Wartung */}
-      <section className="admin-card">
-        <div className="admin-card__header">
+      <section className="panel">
+        <div className="panel__header">
           <h3 className="section-title text-base">Server</h3>
           <span className="badge badge-neutral">
             {host.environment === 'production' ? 'Produktion' : 'Entwicklung'}
           </span>
         </div>
 
-        <div className="admin-card__body space-y-4">
+        <div className="panel__body space-y-4">
           <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
             <Detail icon={Server} label="Host" value={host.hostname} />
             <Detail

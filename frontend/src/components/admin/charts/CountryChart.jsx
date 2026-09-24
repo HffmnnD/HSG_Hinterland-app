@@ -11,7 +11,7 @@ import {
 } from 'recharts';
 
 import { formatNumber, formatPercent } from '../../../lib/format';
-import { AXIS, GRID, SERIES } from './chartTheme';
+import { AXIS, CURSOR_FILL, GRID, INK_SOFT, SERIES } from './chartTheme';
 
 // Mehr Zeilen als diese passen nicht mehr lesbar in eine Karte; der Rest wird
 // zu „Übrige Länder" zusammengefasst, statt das Diagramm zu strecken.
@@ -58,7 +58,7 @@ export default function CountryChart({ countries }) {
             tickFormatter={(value) => (value.length > 16 ? `${value.slice(0, 15)}…` : value)}
           />
 
-          <Tooltip content={<CountryTooltip />} cursor={{ fill: '#f8f9fa' }} />
+          <Tooltip content={<CountryTooltip />} cursor={{ fill: CURSOR_FILL }} />
 
           <Bar
             dataKey="requests"
@@ -77,7 +77,7 @@ export default function CountryChart({ countries }) {
               dataKey="requests"
               position="right"
               formatter={formatNumber}
-              style={{ fill: '#4b4b4b', fontSize: 11, fontWeight: 700 }}
+              style={{ fill: INK_SOFT, fontSize: 11, fontWeight: 700 }}
             />
           </Bar>
         </BarChart>

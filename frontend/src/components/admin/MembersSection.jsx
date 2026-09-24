@@ -10,7 +10,7 @@ import { ADMIN_ROLES, ROLES, roleLabel } from '../../lib/roles';
 import { relationLabelPlural, serviceLabel } from '../../lib/participation';
 import { formatCount, formatNumber } from '../../lib/format';
 import TeamSelect from '../TeamSelect';
-import StatCard from './ui/StatCard';
+import StatCard from '../ui/StatCard';
 import SearchField from './ui/SearchField';
 import Pagination from './ui/Pagination';
 import { EmptyState, ErrorNote, Loading } from './ui/Feedback';
@@ -37,7 +37,7 @@ export default function MembersSection() {
   const { teams: allTeams } = useTeams();
 
   const actorRole = currentUser?.role;
-  // admin & sub_admin dürfen Rolle und Freigabe ändern, Trainer:innen nicht.
+  // admin & sub_admin dürfen Rolle und Sperre ändern, Trainer:innen nicht.
   const canManageAccounts = ADMIN_ROLES.includes(actorRole);
   const isSubAdmin = actorRole === 'sub_admin';
 
@@ -166,9 +166,9 @@ export default function MembersSection() {
   return (
     <div className="space-y-5">
       {/* Kennzahlen des gesamten Vereins – unabhängig von den Filtern.
-          Aktiv/Gesperrt stehen bewusst NICHT mehr hier: der Status jedes
-          Kontos ist in der Tabelle abzulesen und über den Status-Filter in
-          einem Klick zu haben. Zwei Karten dafür wären doppelte Buchführung. */}
+          Aktiv/Gesperrt stehen bewusst NICHT hier: der Status jedes Kontos ist
+          in der Tabelle abzulesen und über den Status-Filter in einem Klick zu
+          haben. Zwei Karten dafür wären doppelte Buchführung. */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard
           icon={Users}
@@ -186,8 +186,8 @@ export default function MembersSection() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <section className="admin-card">
-        <div className="admin-card__header">
+      <section className="panel">
+        <div className="panel__header">
           <div className="min-w-0">
             <h2 className="section-title text-base">Mitglieder</h2>
             <p className="mt-0.5 text-xs text-ink-muted">
@@ -202,7 +202,7 @@ export default function MembersSection() {
         </div>
 
         {/* Werkzeugleiste: Suche + zwei Dropdown-Filter */}
-        <div className="admin-toolbar">
+        <div className="panel__toolbar">
           <SearchField
             id="member-search"
             label="Mitglieder durchsuchen"
@@ -354,7 +354,10 @@ function MemberRow({
 }) {
   const teams = user.teams ?? [];
   const playerTeamIds = teams.filter((t) => t.relationType === 'player').map((t) => t.id);
-  const otherRelations = ['coach', 'fan']
+  // Nur Trainer:innen-Zuordnungen. Die fan-Zuordnung steht hier BEWUSST nicht:
+  // Sie steuert lediglich, wessen Spieltermine jemand angezeigt bekommt, und
+  // ist für die Verwaltung eines Kontos ohne Bedeutung.
+  const otherRelations = ['coach']
     .map((relation) => ({
       relation,
       entries: teams.filter((t) => t.relationType === relation),
@@ -479,21 +482,29 @@ function MemberRow({
             )}
           </div>
         ) : canManageAccounts && !locked ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onSetApproved(user.id, true)}
-            className="btn btn-primary btn-sm"
-          >
-            {busy ? '…' : 'Reaktivieren'}
-          </button>
+          <div className="flex items-center gap-2 whitespace-nowrap">
+            <span className="status text-danger">
+              <span className="status-dot bg-danger" />
+              Gesperrt
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onSetApproved(user.id, true)}
+              className="btn btn-primary btn-sm"
+              title="Sperre aufheben – die Person kann sich danach wieder anmelden."
+            >
+              {busy ? '…' : 'Entsperren'}
+            </button>
+          </div>
         ) : (
-          <span className="status text-warn">
-            <span className="status-dot bg-warn" />
+          <span className="status text-danger">
+            <span className="status-dot bg-danger" />
             Gesperrt
           </span>
         )}
       </td>
+
     </tr>
   );
 }

@@ -7,19 +7,33 @@
 //
 //   {
 //     id, firstName, lastName, email,
+//     photoUrl: string|null, phone: string|null,
 //     isApproved: boolean,
 //     role: 'admin' | 'sub_admin' | 'trainer' | 'spieler' | 'zuschauer',
+//     theme: 'system' | 'light' | 'dark',
+//     onboardingCompleted: boolean,
 //     teams:    [{ id, code, name, relationType }],
 //     services: [ 'zeitnehmer' | 'verkaufsdienst' ],
 //     createdAt
 //   }
 const pool = require('../config/db');
+const { publicUrlFor } = require('../config/uploads');
 const teamRepository = require('./teamRepository');
 const serviceRepository = require('./serviceRepository');
 
 // Spalten, die an den Client dürfen – NIE password_hash.
+//
+// `onboarding_completed_at` verlässt den Server bewusst nicht als Zeitstempel:
+// Das Frontend braucht daraus nur eine Ja/Nein-Frage („Onboarding erledigt?").
+// Ein Zeitstempel hätte zusätzlich die Zeitzonen-Frage aufgeworfen, ohne
+// irgendwo angezeigt zu werden.
 const PUBLIC_COLUMNS =
-  'id, first_name, last_name, email, is_approved, role, created_at';
+  'id, first_name, last_name, email, photo_path, phone, is_approved, role, ' +
+  'theme, onboarding_completed_at, created_at';
+
+// Zusätzlich zu PUBLIC_COLUMNS für die Sitzungsprüfung. Steht NICHT im Profil
+// (toProfile lässt das Feld weg) – der Client hat damit nichts zu tun.
+const SESSION_COLUMN = 'sessions_valid_from';
 
 /** Formt eine users-Zeile + Relationen in die oben dokumentierte Struktur. */
 function toProfile(row, teams, services) {
@@ -28,8 +42,13 @@ function toProfile(row, teams, services) {
     firstName: row.first_name,
     lastName: row.last_name,
     email: row.email,
+    // Der interne Dateipfad verlässt den Server nie – nur die abrufbare URL.
+    photoUrl: publicUrlFor(row.photo_path),
+    phone: row.phone ?? null,
     isApproved: Boolean(row.is_approved),
     role: row.role,
+    theme: row.theme ?? 'system',
+    onboardingCompleted: Boolean(row.onboarding_completed_at),
     teams,
     services,
     createdAt: row.created_at,
@@ -50,7 +69,7 @@ async function findByEmail(email, runner = pool) {
 /** Konto per id (ohne password_hash). null wenn unbekannt. */
 async function findById(id, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = ?`,
+    `SELECT ${PUBLIC_COLUMNS}, ${SESSION_COLUMN} FROM users WHERE id = ?`,
     [id]
   );
   return rows[0] ?? null;
@@ -96,38 +115,6 @@ async function getFullProfile(id, runner = pool) {
 }
 
 /**
- * Alle Konten als Profile – für das Admin-Dashboard.
- * Nutzt 3 Sammelabfragen statt N+1.
- */
-async function listAllWithProfiles(runner = pool) {
-  const [users] = await runner.query(
-    `SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`
-  );
-
-  const [memberships] = await runner.query(
-    `SELECT ut.user_id, ut.relation_type, t.id, t.code, t.name
-       FROM user_teams ut
-       JOIN teams t ON t.id = ut.team_id
-      ORDER BY t.id`
-  );
-  const [services] = await runner.query(
-    'SELECT user_id, service_type FROM user_services ORDER BY service_type'
-  );
-
-  const teamsByUser = groupBy(memberships, 'user_id', (m) => ({
-    id: m.id,
-    code: m.code,
-    name: m.name,
-    relationType: m.relation_type,
-  }));
-  const servicesByUser = groupBy(services, 'user_id', (s) => s.service_type);
-
-  return users.map((row) =>
-    toProfile(row, teamsByUser.get(row.id) ?? [], servicesByUser.get(row.id) ?? [])
-  );
-}
-
-/**
  * Seite der Mitgliederliste für die Verwaltung – gefiltert, durchsucht und
  * seitenweise.
  *
@@ -144,7 +131,7 @@ async function listAllWithProfiles(runner = pool) {
  * @param {string} [opts.search]   Freitext: Vor-/Nachname, E-Mail oder
  *                                 Mitgliedsnummer (= users.id).
  * @param {string} [opts.role]     Genau eine Rolle, sonst alle.
- * @param {'active'|'inactive'} [opts.status]  Gesperrt/aktiv, sonst alle.
+ * @param {'active'|'inactive'} [opts.status]  aktiv/gesperrt, sonst alle.
  * @param {number} [opts.page=1]
  * @param {number} [opts.pageSize=20]
  * @returns {Promise<{ users: object[], total: number, page: number,
@@ -267,36 +254,192 @@ async function getMemberStats(runner = pool) {
 // --- Schreiben ---------------------------------------------------------------
 
 /**
- * Legt ein neues Konto samt Mannschaften und Diensten an – alles in EINER
- * Transaktion. Wirft `ER_DUP_ENTRY`, wenn die E-Mail bereits existiert
- * (der Controller macht daraus ein 409).
+ * Legt ein neues Konto an.
  *
- * @param {object} p
- * @param {{ firstName, lastName, email, passwordHash }} p.account
- * @param {{ teamId:number, relationType:string }[]} p.relations
- * @param {string[]} p.services
+ * Bewusst NUR das Konto: Mannschaften und Helferdienste kommen nicht mehr aus
+ * dem Registrierungsformular, sondern aus dem Onboarding-Assistenten nach der
+ * Freigabe (siehe completeOnboarding). Damit braucht diese Funktion auch keine
+ * Transaktion mehr – sie schreibt genau eine Zeile.
+ *
+ * `is_approved` wird NICHT gesetzt -> Spalten-Default 1: das Konto ist sofort
+ * aktiv. Eine Freigabe durch die Verwaltung gibt es nicht; `is_approved = 0`
+ * entsteht ausschliesslich durch eine spätere Admin-Sperre.
+ *
+ * Wirft `ER_DUP_ENTRY`, wenn die E-Mail bereits existiert (der Controller
+ * macht daraus ein 409) – kein SELECT-dann-INSERT, also keine Race Condition.
+ *
+ * @param {{ firstName:string, lastName:string, email:string, passwordHash:string }} account
  * @returns {Promise<number>} die neue user id
  */
-async function createWithProfile({ account, relations, services }) {
+async function createAccount(account, runner = pool) {
+  const [result] = await runner.query(
+    `INSERT INTO users (first_name, last_name, email, password_hash)
+     VALUES (?, ?, ?, ?)`,
+    [account.firstName, account.lastName, account.email, account.passwordHash]
+  );
+
+  // Die angelegte Zeile in der Form, die auch findByEmail/findById liefern –
+  // so kommt der Aufrufer ohne ein SELECT auf die gerade geschriebene Zeile
+  // aus (Session-Cookie und Profil brauchen dieselben Felder).
+  return {
+    id: result.insertId,
+    first_name: account.firstName,
+    last_name: account.lastName,
+    email: account.email,
+    photo_path: null,
+    phone: null,
+    is_approved: 1,
+    role: 'spieler',
+    theme: 'system',
+    onboarding_completed_at: null,
+    created_at: new Date(),
+    sessions_valid_from: 0,
+  };
+}
+
+/**
+ * Profil eines GERADE angelegten Kontos – ohne Mannschaften und Dienste, weil
+ * ein neues Konto beides noch nicht hat. Spart die drei Abfragen, die
+ * getFullProfile dafür stellen würde.
+ */
+function toNewProfile(accountRow) {
+  return toProfile(accountRow, [], []);
+}
+
+/** Nur der Passwort-Hash eines Kontos – ausschliesslich für Login/Wechsel. */
+async function getPasswordHash(userId, runner = pool) {
+  const [rows] = await runner.query(
+    'SELECT password_hash FROM users WHERE id = ?',
+    [userId]
+  );
+  return rows[0]?.password_hash ?? null;
+}
+
+/**
+ * Neues Passwort setzen und dabei ALLE bisherigen Sitzungen entwerten.
+ *
+ * `sessions_valid_from` bekommt den aktuellen Zeitpunkt in Unix-Sekunden;
+ * jedes vorher ausgestellte Token fällt damit in `checkRole` und in
+ * `/api/auth/me` durch. Ohne diese Zeile bliebe ein gestohlenes Token nach dem
+ * Passwortwechsel bis zu sieben Tage gültig – also genau in dem Fall, für den
+ * man das Passwort wechselt.
+ *
+ * Beides in EINER Anweisung, damit es keinen Moment gibt, in dem das neue
+ * Passwort gilt, die alten Sitzungen aber noch laufen.
+ *
+ * @returns {Promise<boolean>} true, wenn geändert
+ */
+async function updatePassword(userId, passwordHash, runner = pool) {
+  // Die Grenze kommt aus der Uhr DIESES Prozesses, nicht aus UNIX_TIMESTAMP():
+  // Verglichen wird sie mit dem `iat` des JWT, das hier ebenfalls entsteht.
+  // Läuft die Datenbank auf einem anderen Rechner und geht deren Uhr ein paar
+  // Sekunden vor, würde sie sonst genau das Token aussperren, das direkt nach
+  // dem Wechsel ausgestellt wird.
+  const [result] = await runner.query(
+    `UPDATE users
+        SET password_hash = ?,
+            sessions_valid_from = ?
+      WHERE id = ?`,
+    [passwordHash, Math.floor(Date.now() / 1000), userId]
+  );
+  return result.affectedRows > 0;
+}
+
+/**
+ * Profilbild setzen oder entfernen (`null`).
+ * @returns {Promise<string|null>} der VORHERIGE Pfad – die Datei räumt der
+ *   Controller weg, nachdem der neue Wert sicher gespeichert ist.
+ */
+async function setPhotoPath(userId, photoPath, runner = pool) {
+  const [[row]] = await runner.query(
+    'SELECT photo_path FROM users WHERE id = ?',
+    [userId]
+  );
+  await runner.query('UPDATE users SET photo_path = ? WHERE id = ?', [
+    photoPath,
+    userId,
+  ]);
+  return row?.photo_path ?? null;
+}
+
+/**
+ * Speichert die Angaben aus dem Onboarding-Assistenten – Design,
+ * Mannschaften und die passende Grundrolle – in EINER Transaktion und
+ * markiert das Onboarding als erledigt.
+ *
+ * Die Grundrolle folgt der Auswahl, aber nur nach oben und nur für einfache
+ * Konten: Wer Mannschaften als Spieler:in wählt, ist 'spieler'; wer
+ * ausschliesslich zuschaut, ist 'zuschauer'. `admin`, `sub_admin` und
+ * `trainer` bleiben unangetastet – eine Rolle, die ein Mensch vergeben hat,
+ * darf ein Assistent nicht überschreiben. Die Rolle 'trainer' entsteht wie
+ * bisher erst, wenn ein:e Trainer:in die coach-Zuordnung bestätigt.
+ *
+ * @param {number} userId
+ * @param {{ theme:string, phone?:string|null,
+ *           relations:{teamId:number, relationType:string}[] }} input
+ */
+async function completeOnboarding(userId, { theme, phone, relations }) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    // is_approved wird bewusst NICHT gesetzt -> Spalten-Default 1 (aktiv).
-    // Es gibt keine Registrierungs-Freigabe mehr; `is_approved = 0` ist
-    // ausschliesslich eine spätere Admin-Sperre.
-    const [result] = await conn.query(
-      `INSERT INTO users (first_name, last_name, email, password_hash)
-       VALUES (?, ?, ?, ?)`,
-      [account.firstName, account.lastName, account.email, account.passwordHash]
+    await conn.query(
+      `UPDATE users
+          SET theme = ?,
+              phone = ?,
+              onboarding_completed_at = NOW()
+        WHERE id = ?`,
+      [theme, phone ?? null, userId]
     );
-    const userId = result.insertId;
 
-    await teamRepository.insertRelations(conn, userId, relations);
-    await serviceRepository.replaceForUser(conn, userId, services);
+    await teamRepository.replaceSelfRelations(conn, userId, relations);
+
+    const wantsToPlay = relations.some((rel) => rel.relationType === 'player');
+    const onlyWatching =
+      relations.length > 0 && relations.every((rel) => rel.relationType === 'fan');
+
+    if (wantsToPlay) {
+      await conn.query(
+        "UPDATE users SET role = 'spieler' WHERE id = ? AND role = 'zuschauer'",
+        [userId]
+      );
+    } else if (onlyWatching) {
+      await conn.query(
+        "UPDATE users SET role = 'zuschauer' WHERE id = ? AND role = 'spieler'",
+        [userId]
+      );
+    }
 
     await conn.commit();
-    return userId;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+/**
+ * Ändert Design, Telefonnummer und/oder Mannschaftswahl des EIGENEN Kontos
+ * (Bereich „Mein Konto"). Wie completeOnboarding, nur ohne den
+ * Onboarding-Zeitstempel.
+ */
+async function updateOwnPreferences(userId, { theme, phone, relations }) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    if (theme !== undefined) {
+      await conn.query('UPDATE users SET theme = ? WHERE id = ?', [theme, userId]);
+    }
+    if (phone !== undefined) {
+      await conn.query('UPDATE users SET phone = ? WHERE id = ?', [phone, userId]);
+    }
+    if (relations !== undefined) {
+      await teamRepository.replaceSelfRelations(conn, userId, relations);
+    }
+
+    await conn.commit();
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -373,9 +516,14 @@ module.exports = {
   promoteToTrainerIfBasic,
   buildProfile,
   getFullProfile,
-  listAllWithProfiles,
   listPageWithProfiles,
   getMemberStats,
-  createWithProfile,
+  createAccount,
+  toNewProfile,
+  getPasswordHash,
+  updatePassword,
+  setPhotoPath,
+  completeOnboarding,
+  updateOwnPreferences,
   applyAdminChange,
 };

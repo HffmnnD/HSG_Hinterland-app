@@ -6,13 +6,13 @@ const {
   getTeam,
   updateTeam,
   setTeamPhoto,
+  setTeamPhotoFrame,
   deleteTeamPhoto,
   listCandidates,
   addMember,
   confirmMember,
   updateMemberDetails,
   removeMember,
-  callUpPlayer,
 } = require('../controllers/teamsController');
 const { authenticate, checkRole } = require('../middleware/authMiddleware');
 const { ROLES } = require('../utils/roles');
@@ -34,11 +34,15 @@ const photoLimiter = rateLimit({
   },
 });
 
-// Öffentlich: wird im Registrierungsformular benötigt (noch kein Login).
-router.get('/', listTeams);
-
-// Ab hier: angemeldet, mit gültiger Rolle (checkRole liest sie frisch aus der DB).
+// Angemeldet, mit gültiger Rolle (checkRole liest sie frisch aus der DB).
 const requireAuth = [authenticate, checkRole(ROLES)];
+
+// Die Mannschaftsliste war früher öffentlich, weil das Registrierungsformular
+// sie ohne Anmeldung gebraucht hat. Das Formular fragt nur noch Name, E-Mail
+// und Passwort ab – die Mannschaftswahl passiert im Onboarding, also nach dem
+// Login. Damit gibt es keinen Grund mehr, die Struktur des Vereins anonym
+// herauszugeben.
+router.get('/', requireAuth, listTeams);
 
 router.get('/:code', requireAuth, getTeam);
 
@@ -50,6 +54,9 @@ router.patch('/:code', requireAuth, updateTeam);
 // entgegennehmen – so landet eine abgelehnte Anfrage gar nicht erst auf der
 // Platte.
 router.post('/:code/photo', photoLimiter, requireAuth, uploadTeamPhoto, setTeamPhoto);
+// Bildausschnitt des Kopfbereichs. Kein Upload-Limit: hier gehen nur drei
+// Zahlen über die Leitung, und beim Ausrichten speichert man gern mehrmals.
+router.patch('/:code/photo/frame', requireAuth, setTeamPhotoFrame);
 router.delete('/:code/photo', requireAuth, deleteTeamPhoto);
 
 router.get('/:code/candidates', requireAuth, listCandidates);
@@ -58,6 +65,5 @@ router.post('/:code/members/:userId/confirm', requireAuth, confirmMember);
 // Kaderangaben: Rückennummer, Position, Bezeichnung im Betreuerstab.
 router.patch('/:code/members/:userId', requireAuth, updateMemberDetails);
 router.delete('/:code/members/:userId', requireAuth, removeMember);
-router.post('/:code/callup', requireAuth, callUpPlayer);
 
 module.exports = router;

@@ -14,7 +14,7 @@ import {
 import { apiFetch } from '../../lib/api';
 import { useAdminNews } from '../../hooks/useAdminNews';
 import { formatDateTime } from '../../lib/format';
-import Modal from './ui/Modal';
+import Modal from '../ui/Modal';
 import { EmptyState, ErrorNote, Loading, SuccessNote } from './ui/Feedback';
 
 // Müssen zu utils/validation.js und config/uploads.js im Backend passen.
@@ -110,8 +110,8 @@ export default function NewsSection() {
       {notice && <SuccessNote>{notice}</SuccessNote>}
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <section className="admin-card">
-        <div className="admin-card__header">
+      <section className="panel">
+        <div className="panel__header">
           <div className="min-w-0">
             <h2 className="section-title text-base">Vereins-News</h2>
             <p className="mt-0.5 text-xs text-ink-muted">
@@ -134,7 +134,7 @@ export default function NewsSection() {
 
         {/* Umschalter zwischen Feed und Archiv. Die Zählerstände stehen an den
             Knöpfen – ein erklärender Fließtext daneben wäre nur Rauschen. */}
-        <div className="admin-toolbar">
+        <div className="panel__toolbar">
           <div className="switcher">
             <button
               type="button"

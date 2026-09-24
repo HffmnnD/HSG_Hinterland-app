@@ -19,6 +19,9 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/011_event_cancellation.sql` | `events.cancelled_at` / `cancel_reason`: Termine absagen statt löschen. |
 | `migrations/010_nuliga_games.sql` | Ligaspiele aus nuLiga als Termine (`events.nuliga_game_id`, Schalter je Mannschaft). |
 | `migrations/009_schedule_module.sql` | Termin-Modul: `event_series`, `events`, `attendances`, `long_term_absences`. |
+| `migrations/013_onboarding_theme.sql` | Schlanke Registrierung, Onboarding (`onboarding_completed_at`), Design (`theme`) und der Bildausschnitt des Mannschaftsfotos (`photo_focus_x/y`, `photo_zoom`). |
+| `migrations/014_instant_signup_and_profile.sql` | Registrierung ohne Freigabe: `is_approved` wieder Default `1`, `approved_at` entfällt. Dazu Profilbild (`users.photo_path`) und freiwillige Telefonnummer (`users.phone`). |
+| `migrations/015_session_invalidation.sql` | `users.sessions_valid_from`: Ein Passwortwechsel entwertet alle vorher ausgestellten Tokens und beendet damit die Sitzungen auf anderen Geräten. Korrigiert ausserdem den Spaltenkommentar an `users.phone`: Kontaktdaten sind nicht für jedes angemeldete Konto sichtbar. |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
@@ -31,7 +34,9 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 │ id (PK)     │        │  player|coach  │        │ id (PK)      │
 │ email (uq)  │        │  |fan          │        │ code (uq)    │
 │ role        │        │  is_confirmed  │        │ name         │
-│ is_approved │        └────────────────┘        └──────────────┘
+│ is_approved │        └────────────────┘        │ photo_*      │
+│ theme       │                                  └──────────────┘
+│ photo_path  │
 │ ...         │───1:n──┐
 └─────────────┘        │   ┌────────────────┐
       │                └───│  user_services │
@@ -62,10 +67,15 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | ------ | --------- |
 | `id` | Primärschlüssel, überall als `user_id` referenziert |
 | `first_name`, `last_name` | Name |
-| `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert |
+| `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert. Erscheint als Kontakt im Kader – bei Trainer:innen für die Mitglieder ihrer Mannschaft, bei Spieler:innen nur für das Trainerteam |
+| `photo_path` | Profilbild in `backend/uploads/`, z. B. `users/ab12.jpg`. `NULL` = Initialen anzeigen |
+| `phone` | Freiwillige Telefonnummer aus den Kontoeinstellungen. Sichtbar nach derselben Regel wie die E-Mail-Adresse |
 | `password_hash` | bcrypt-Hash – nie im Klartext, nie an den Client |
-| `is_approved` | `1` = aktiv (Standard), `0` = von einem Admin gesperrt. **Keine** globale Registrierungs-Freigabe mehr. Wird bei Login, `/api/auth/me` und in `checkRole` geprüft, damit eine Sperre sofort wirkt |
-| `role` | RBAC-Rolle, siehe unten. Wird **nicht** bei der Registrierung gesetzt |
+| `sessions_valid_from` | Unix-Sekunden: Tokens, die **vorher** ausgestellt wurden, gelten nicht mehr. Der Passwortwechsel setzt die Spalte auf jetzt und beendet so alle anderen Sitzungen. `0` = nie gewechselt. Bewusst eine Zahl und kein `DATETIME` – verglichen wird mit dem `iat` des JWT (UTC) |
+| `is_approved` | `1` = aktiv (Standard), `0` = von einem Admin gesperrt. **Keine** Registrierungs-Freigabe: Wer sich registriert, ist sofort angemeldet. Wird bei Login, `/api/auth/me` und in `checkRole` geprüft, damit eine Sperre sofort wirkt |
+| `role` | RBAC-Rolle, siehe unten. Wird **nicht** bei der Registrierung gesetzt (sondern im Onboarding bzw. von der Verwaltung) |
+| `theme` | Design-Vorliebe: `system` (Standard, folgt dem Gerät), `light`, `dark`. Am Konto und nicht im Browser, damit das Design auf allen Geräten gleich ist |
+| `onboarding_completed_at` | Wann der Einrichtungs-Assistent abgeschlossen wurde. `NULL` = steht beim nächsten Login an |
 | `created_at` | Registrierungszeitpunkt |
 
 **Rollen** (`role`):
@@ -90,6 +100,8 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `sort_order` | Anzeigereihenfolge im ganzen Frontend, kleinste Zahl zuerst; bei Gleichstand entscheidet der Name. **Interner Sortierschlüssel** – vom Server vergeben (`nextSortOrder`), kein Eingabefeld und nicht Teil der API-Antwort |
 | `handball_team_id` | nuLiga-Nummer (`teamtable`) für Tabelle/Spielplan/Ticker. `NULL` = keine Ligaanbindung |
 | `photo_path` | Mannschaftsfoto in `backend/uploads/`, z. B. `teams/ab12.jpg` |
+| `photo_focus_x`, `photo_focus_y` | Bildmittelpunkt im Kopfbereich in Prozent (0–100). Damit rutschen Köpfe ins Bild, statt am Rand abgeschnitten zu werden |
+| `photo_zoom` | Vergrößerung im Kopfbereich in Prozent (100 = einpassen, max. 300). Gespeichert werden **Werte, kein zugeschnittenes Bild**: Das Original bleibt erhalten, und der Ausschnitt stimmt auf jedem Bildschirmformat |
 
 Seed: `MJC`, `MJB`, `MJA`, `H1` (1. Herren), `H2` (2. Herren), `D1` (Damen) –
 mit `sort_order` in Zehnerschritten (10, 20, …), damit sich eine neue
@@ -116,12 +128,21 @@ mehrere Beziehungen haben (z. B. Trainer der MJC *und* Spieler der H1).
 
 | Wert | Bedeutung |
 | ---- | --------- |
-| `0` | offene Beitrittsanfrage. Nur die Verwaltung sieht sie (`pendingMembers`), nicht der öffentliche Kader. |
+| `0` | offene Beitrittsanfrage. Nur die Verwaltung sieht sie (`pendingMembers`), nicht der Kader. |
 | `1` | vom Trainer bestätigt (oder direkt so angelegt). Teil des Kaders. |
 
-Bei der Registrierung: `player`/`coach` → `0`, `fan` → `1`. Alles, was
-Trainer/Admin manuell anlegen (`addMember`, `callup`, Admin-`teamIds`), ist
+Selbst gewählt (Onboarding, „Mein Konto"): `player`/`coach` → `0`, `fan` → `1`.
+Alles, was Trainer/Admin manuell anlegen (`addMember`, Admin-`teamIds`), ist
 sofort `1`.
+
+Die `fan`-Beziehung ist reine Anzeigesteuerung („wessen Spiele will ich
+sehen?") und wird deshalb nirgends gezählt – weder in den `counts` einer
+Mannschaft noch in der Verwaltung.
+
+Ändert jemand seine Wahl unter „Mein Konto", gleicht
+`teamRepository.replaceSelfRelations` die Zeilen ab, statt sie neu anzulegen:
+Bestätigungen bleiben bestätigt, und Rückennummer, Position und die
+Bezeichnung im Betreuerstab (dieselbe Zeile) gehen nicht verloren.
 
 `ON DELETE CASCADE`: Wird ein Mitglied oder ein Team gelöscht, verschwinden
 die Zeilen hier automatisch.
@@ -256,7 +277,7 @@ Kein Controller enthält rohes SQL. Alle Abfragen liegen in
 
 | Repository | Zuständig für |
 | ---------- | ------------- |
-| `userRepository.js` | `users` + zusammengesetztes Profil (`getFullProfile`, `listAllWithProfiles`, seitenweise `listPageWithProfiles`, `getMemberStats`), Transaktionen für Registrierung und Admin-Änderungen |
+| `userRepository.js` | `users` + zusammengesetztes Profil (`getFullProfile`, seitenweise `listPageWithProfiles`, `getMemberStats`), Kontoanlage, Onboarding/Design/Passwort des eigenen Kontos sowie die Transaktionen der Admin-Änderungen |
 | `teamRepository.js` | `teams` + `user_teams` (Kader, Kandidaten, Zuordnungen) |
 | `serviceRepository.js` | `user_services` |
 | `newsRepository.js` | `news` (Feed, Anlegen, Archivieren, Löschen) |

@@ -125,11 +125,11 @@ app.use('/api/events', eventsRouter);
 app.use('/api/attendances', attendancesRouter);
 app.use('/api/absences', absencesRouter);
 
-// Hochgeladene Beitragsbilder.
+// Hochgeladene Bilder: Beiträge, Mannschaftsfotos und Profilbilder.
 //
 // Bewusst unter /api/, damit der Vite-Dev-Proxy sie ohne Zusatzkonfiguration
-// mitausliefert. `authenticate` davor, weil News vereinsintern sind – der
-// Browser schickt den HttpOnly-Cookie bei same-origin <img>-Requests mit.
+// mitausliefert. `authenticate` davor, weil die Inhalte vereinsintern sind –
+// der Browser schickt den HttpOnly-Cookie bei same-origin <img>-Requests mit.
 app.use(
   '/api/uploads',
   authenticate,
@@ -140,6 +140,15 @@ app.use(
     // Keine Verzeichnislisten und kein Ausliefern von Dotfiles. Unbekannte
     // Dateien fallen durch und landen beim JSON-404 weiter unten.
     dotfiles: 'ignore',
+    setHeaders(res) {
+      // `express.static` setzt von sich aus `Cache-Control: public`. Für
+      // Profilbilder von Vereinsmitgliedern – oft Jugendliche – ist das
+      // falsch: „public" erlaubt jedem Zwischenspeicher auf dem Weg (Proxy,
+      // CDN), die Datei zu behalten und später an eine ANDERE Person
+      // auszuliefern, die dieselbe Adresse anfragt. Die Antwort hängt aber an
+      // einer Sitzung. `private` heißt: nur der Browser des Empfängers.
+      res.setHeader('Cache-Control', 'private, max-age=604800');
+    },
   })
 );
 

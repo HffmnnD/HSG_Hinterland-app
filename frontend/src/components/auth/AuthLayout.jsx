@@ -1,3 +1,11 @@
+/**
+ * Rahmen der Anmeldeseite: anthrazitfarbene Fläche in Markenfarbe, darauf die
+ * Karte mit dem Formular.
+ *
+ * Die Fläche ist in beiden Themen dunkel – hier gibt es bewusst keinen
+ * Umschalter: Wer noch nicht angemeldet ist, hat auch noch kein Profil, in dem
+ * die Wahl gespeichert werden könnte. Gefragt wird im Onboarding.
+ */
 export default function AuthLayout({ children }) {
   return (
     <div className="flex min-h-[100dvh] flex-col bg-hsg-dark text-white">

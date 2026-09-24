@@ -1,7 +1,11 @@
-import { formatPercent } from '../../../lib/format';
+import { formatPercent } from '../../lib/format';
 
 /**
  * Kennzahl-Karte: Beschriftung, Wert und wahlweise ein Balken (Messer).
+ *
+ * Wird im System-Status, in der Mitgliederverwaltung und auf der Startseite
+ * verwendet – deshalb liegt sie unter components/ui/ und nicht bei der
+ * Verwaltung.
  *
  * Warum hier ein Balken und kein Diagramm: ein einzelner Anteil an einem
  * Maximum (RAM, CPU, Plattenplatz) ist keine Datenreihe. Ein Tortendiagramm
@@ -69,11 +73,15 @@ export default function StatCard({
 /**
  * Farbe des Balkens. `auto` schaltet ab 75 % auf Bernstein und ab 90 % auf
  * Rot – die reservierten Statusfarben der App. Darunter das Vereinsgrün.
+ *
+ * Die Werte sind die Theme-Variablen aus index.css und keine festen Hex-Werte:
+ * im Dunkelmodus wären #5f9e28 und #8a6116 auf dunklem Grund kaum noch zu
+ * erkennen.
  */
 function meterColor(percent, tone) {
-  if (tone === 'neutral') return '#727579';
-  if (tone === 'good') return '#5f9e28';
-  if (percent >= 90) return '#c0392b';
-  if (percent >= 75) return '#8a6116';
-  return '#5f9e28';
+  if (tone === 'neutral') return 'var(--c-ink-muted)';
+  if (tone === 'good') return 'var(--c-green-dark)';
+  if (percent >= 90) return 'var(--c-danger)';
+  if (percent >= 75) return 'var(--c-warn)';
+  return 'var(--c-green-dark)';
 }

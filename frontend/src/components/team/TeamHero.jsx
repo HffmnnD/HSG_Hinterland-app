@@ -1,3 +1,5 @@
+import { photoFrameStyle } from '../../lib/teams';
+
 /**
  * Kopfbereich der Mannschaftsseite.
  *
@@ -11,7 +13,14 @@
  * grünem Schimmer (siehe `.team-hero` in index.css) – die Seite sieht dann
  * gestaltet aus statt „kaputt".
  *
- * @param {{ team: { code:string, name:string, photoUrl:string|null },
+ * Der Bildausschnitt (Verschiebung und Zoom) kommt aus der Mannschaft und
+ * wird über photoFrameStyle() angewandt – eingestellt wird er im Reiter
+ * „Verwaltung" (siehe PhotoFrameDialog), damit auf dem breiten Streifen keine
+ * Köpfe abgeschnitten werden.
+ *
+ * @param {{ team: { code:string, name:string, photoUrl:string|null,
+ *                   photoFocusX?:number, photoFocusY?:number,
+ *                   photoZoom?:number },
  *           competition?: string|null,
  *           season?: string|null }} props
  */
@@ -23,7 +32,12 @@ export default function TeamHero({ team, competition, season }) {
       {hasPhoto && (
         <>
           {/* Dekoratives Mannschaftsfoto – die Information steht daneben. */}
-          <img src={team.photoUrl} alt="" className="team-hero__image" />
+          <img
+            src={team.photoUrl}
+            alt=""
+            style={photoFrameStyle(team)}
+            className="team-hero__image"
+          />
           <div className="team-hero__scrim" aria-hidden="true" />
         </>
       )}

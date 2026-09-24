@@ -6,13 +6,13 @@
 //                                                (+ offene Anfragen für Verwaltung)
 //   PATCH /api/teams/:code                       Stammdaten (nuLiga-Nummer)
 //   POST /api/teams/:code/photo                  Mannschaftsfoto setzen
+//   PATCH /api/teams/:code/photo/frame           Bildausschnitt des Banners
 //   DEL  /api/teams/:code/photo                  Mannschaftsfoto entfernen
 //   PATCH /api/teams/:code/members/:userId       Kaderangaben (Nummer/Position)
 //   GET  /api/teams/:code/candidates             Auswahlliste zum Hinzufügen (Verwaltung)
 //   POST /api/teams/:code/members                Zuordnung anlegen (Verwaltung)
 //   POST /api/teams/:code/members/:userId/confirm offene Anfrage bestätigen (Verwaltung)
 //   DEL  /api/teams/:code/members/:userId        Zuordnung entfernen / Anfrage ablehnen
-//   POST /api/teams/:code/callup                 Spieler:in hochrufen (Verwaltung)
 //
 // "Verwaltung" = Rolle admin/sub_admin ODER als bestätigte:r coach dieser
 // Mannschaft eingetragen.
@@ -23,6 +23,7 @@ const {
   isRelationType,
   validateTeamPatch,
   validateRosterPatch,
+  validatePhotoFrame,
 } = require('../utils/validation');
 const { ADMIN_ROLES, RELATION_TYPES } = require('../utils/roles');
 const {
@@ -34,8 +35,6 @@ const {
 
 const MANAGE_ROSTER_DENIED =
   'Nur Trainer:innen dieser Mannschaft dürfen den Kader ändern.';
-const CALLUP_DENIED =
-  'Nur Trainer:innen dieser Mannschaft dürfen Spieler hochrufen.';
 const TEAM_DATA_DENIED =
   'Nur Administrator:innen dürfen die Stammdaten der Mannschaft ändern.';
 
@@ -59,14 +58,14 @@ async function loadManageableTeam(req, code, deniedMessage) {
   }
   const canManage =
     ADMIN_ROLES.includes(req.userRole) ||
-    (await teamRepository.isCoachOf(req.userId, team.id));
+    (await teamRepository.hasConfirmedRelation(req.userId, team.id, 'coach'));
   if (!canManage) {
     return { ok: false, status: 403, message: deniedMessage };
   }
   return { ok: true, team };
 }
 
-// GET /api/teams  (öffentlich)
+// GET /api/teams  (angemeldet)
 async function listTeams(req, res, next) {
   try {
     const teams = await teamRepository.listAll();
@@ -84,25 +83,35 @@ async function getTeam(req, res, next) {
       return res.status(404).json({ message: 'Mannschaft nicht gefunden.' });
     }
 
-    const canManage =
-      ADMIN_ROLES.includes(req.userRole) ||
-      (await teamRepository.isCoachOf(req.userId, team.id));
+    // „Darf verwalten" und „gehört zum Kader" kommen aus EINER Abfrage; für
+    // die Verwaltung erübrigt sie sich, weil dort beides ohnehin gilt.
+    const isAdmin = ADMIN_ROLES.includes(req.userRole);
+    const { isMember, isCoach } = isAdmin
+      ? { isMember: true, isCoach: true }
+      : await teamRepository.getSquadMembership(req.userId, team.id);
+    const canManage = isAdmin || isCoach;
 
-    // Öffentlich: nur bestätigte Mitglieder. E-Mails nur für Verwaltende.
-    const members = await teamRepository.getConfirmedRoster(team.id, {
-      includeEmail: canManage,
-    });
-
-    const sponsors = await teamRepository.getSponsors(team.id);
+    // Der Kader enthält nur bestätigte Mitglieder. Kontaktdaten des
+    // Trainerteams sehen alle, die selbst zu dieser Mannschaft gehören, die
+    // der Spieler:innen nur das Trainerteam (siehe teamRepository.mapMember).
+    const [members, sponsors] = await Promise.all([
+      teamRepository.getConfirmedRoster(team.id, {
+        coachContact: isMember,
+        playerContact: canManage,
+      }),
+      teamRepository.getSponsors(team.id),
+    ]);
 
     const response = {
       team: presentTeam(team),
       sponsors,
       members,
+      // Gezählt wird der Kader. Fans erscheinen hier BEWUSST nicht: die
+      // fan-Zuordnung steuert nur, wessen Spiele jemand angezeigt bekommt –
+      // eine Zahl dazu hat für die Mannschaft keine Bedeutung.
       counts: {
         player: members.player.length,
         coach: members.coach.length,
-        fan: members.fan.length,
       },
       canManage,
     };
@@ -110,7 +119,8 @@ async function getTeam(req, res, next) {
     // Verwaltung sieht zusätzlich die offenen Beitrittsanfragen.
     if (canManage) {
       response.pendingMembers = await teamRepository.getPendingMembers(team.id, {
-        includeEmail: true,
+        coachContact: true,
+        playerContact: true,
       });
     }
 
@@ -217,10 +227,17 @@ async function confirmMember(req, res, next) {
       return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
     }
 
-    // Optionaler Filter auf einen Beziehungstyp; sonst alle offenen bestätigen.
+    // Der Beziehungstyp ist PFLICHT. Ohne ihn hätte `confirmRelations` alle
+    // offenen Anfragen dieser Person auf einmal bestätigt – wer gleichzeitig
+    // als Spieler:in und als Trainer:in angefragt hat, wäre mit einem Klick
+    // auf „Bestätigen" in der Spielerzeile auch Trainer:in geworden (und
+    // global zur Rolle `trainer` hochgestuft). Eine Rechteerweiterung darf
+    // nicht als Nebenwirkung passieren.
     const relationType = req.query.relationType;
-    if (relationType !== undefined && !isRelationType(relationType)) {
-      return res.status(400).json({ message: 'Ungültiger Beziehungstyp.' });
+    if (!isRelationType(relationType)) {
+      return res.status(400).json({
+        message: `Bitte angeben, welche Anfrage bestätigt wird (relationType: ${RELATION_TYPES.join(', ')}).`,
+      });
     }
 
     const confirmed = await teamRepository.confirmRelations(
@@ -237,7 +254,7 @@ async function confirmMember(req, res, next) {
     // Wurde eine Trainer-Beziehung bestätigt, bekommt der Nutzer auch die
     // globale Rolle 'trainer' (sofern er bisher nur spieler/zuschauer war).
     let roleUpgraded = false;
-    if (relationType === undefined || relationType === 'coach') {
+    if (relationType === 'coach') {
       const nowCoach = await teamRepository.hasConfirmedRelation(
         targetId,
         loaded.team.id,
@@ -303,59 +320,6 @@ async function removeMember(req, res, next) {
       return res.status(404).json({ message: 'Zuordnung nicht gefunden.' });
     }
     return res.json({ message: 'Zuordnung entfernt.' });
-  } catch (err) {
-    return next(err);
-  }
-}
-
-// POST /api/teams/:code/callup   Body: { userId, targetTeamCode }
-async function callUpPlayer(req, res, next) {
-  try {
-    const loaded = await loadManageableTeam(
-      req,
-      req.params.code,
-      CALLUP_DENIED
-    );
-    if (!loaded.ok) {
-      return res.status(loaded.status).json({ message: loaded.message });
-    }
-    const sourceTeam = loaded.team;
-
-    const { userId, targetTeamCode } = req.body || {};
-    const targetId = parseId(userId);
-    if (!targetId) {
-      return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
-    }
-
-    const targetTeam = await teamRepository.findByCode(targetTeamCode);
-    if (!targetTeam) {
-      return res.status(404).json({ message: 'Zielmannschaft nicht gefunden.' });
-    }
-    if (targetTeam.id === sourceTeam.id) {
-      return res
-        .status(400)
-        .json({ message: 'Quell- und Zielmannschaft sind identisch.' });
-    }
-
-    // Nur wer in dieser Mannschaft (bestätigt) spielt, kann hochgerufen werden.
-    const plays = await teamRepository.hasConfirmedRelation(
-      targetId,
-      sourceTeam.id,
-      'player'
-    );
-    if (!plays) {
-      return res
-        .status(400)
-        .json({ message: 'Die Person spielt nicht in dieser Mannschaft.' });
-    }
-
-    // Der Trainer der QUELLmannschaft darf nicht ungefragt einen bestätigten
-    // Eintrag in einer fremden Mannschaft erzeugen -> als offene Anfrage
-    // anlegen, die der/die Trainer:in der Zielmannschaft bestätigt.
-    await teamRepository.addRelation(targetId, targetTeam.id, 'player', 0);
-    return res.status(201).json({
-      message: `Anfrage an ${targetTeam.name} gesendet – der/die dortige Trainer:in muss sie noch bestätigen.`,
-    });
   } catch (err) {
     return next(err);
   }
@@ -444,16 +408,64 @@ async function setTeamPhoto(req, res, next) {
         .json({ message: 'Die Datei ist kein gültiges Bild.' });
     }
 
-    await teamRepository.updateTeam(team.id, { photo_path: storedPath });
+    // Ein neues Foto startet mittig und uneingezoomt: Der Ausschnitt des
+    // vorherigen Bildes passt zu diesem nicht.
+    await teamRepository.updateTeam(team.id, {
+      photo_path: storedPath,
+      photo_focus_x: 50,
+      photo_focus_y: 50,
+      photo_zoom: 100,
+    });
     // Erst nach dem erfolgreichen Speichern das alte Foto löschen.
     if (team.photoPath) await removeUpload(team.photoPath);
 
     return res.status(201).json({
       message: 'Mannschaftsfoto gespeichert.',
       photoUrl: publicUrlFor(storedPath),
+      // Das Frontend öffnet direkt danach den Ausschnitt-Dialog und braucht
+      // dafür die Mannschaft mit den zurückgesetzten Werten.
+      team: presentTeam(await teamRepository.findById(team.id)),
     });
   } catch (err) {
     await cleanup();
+    return next(err);
+  }
+}
+
+// PATCH /api/teams/:code/photo/frame   Body: { focusX?, focusY?, zoom? }
+//
+// Speichert, WIE das Foto im Kopfbereich liegt – nicht ein zugeschnittenes
+// Bild. Deshalb ein eigener Endpunkt neben dem Upload: Der Ausschnitt lässt
+// sich beliebig oft nachjustieren, ohne das Bild erneut hochzuladen, und das
+// Original bleibt in voller Auflösung erhalten.
+async function setTeamPhotoFrame(req, res, next) {
+  try {
+    if (!ADMIN_ROLES.includes(req.userRole)) {
+      return res.status(403).json({ message: TEAM_DATA_DENIED });
+    }
+
+    const team = await teamRepository.findByCode(req.params.code);
+    if (!team) {
+      return res.status(404).json({ message: 'Mannschaft nicht gefunden.' });
+    }
+    if (!team.photoPath) {
+      return res.status(409).json({
+        message: 'Für diese Mannschaft ist kein Foto hinterlegt.',
+      });
+    }
+
+    const check = validatePhotoFrame(req.body);
+    if (!check.ok) {
+      return res.status(check.status).json({ message: check.message });
+    }
+
+    await teamRepository.updateTeam(team.id, check.fields);
+
+    return res.json({
+      message: 'Bildausschnitt gespeichert.',
+      team: presentTeam(await teamRepository.findById(team.id)),
+    });
+  } catch (err) {
     return next(err);
   }
 }
@@ -475,7 +487,14 @@ async function deleteTeamPhoto(req, res, next) {
         .json({ message: 'Kein Mannschaftsfoto hinterlegt.' });
     }
 
-    await teamRepository.updateTeam(team.id, { photo_path: null });
+    // Den Ausschnitt gleich mit zurücksetzen: Er beschreibt das entfernte
+    // Bild. Bliebe er stehen, läge das nächste Foto von Anfang an schief.
+    await teamRepository.updateTeam(team.id, {
+      photo_path: null,
+      photo_focus_x: 50,
+      photo_focus_y: 50,
+      photo_zoom: 100,
+    });
     await removeUpload(team.photoPath);
     return res.json({ message: 'Mannschaftsfoto entfernt.' });
   } catch (err) {
@@ -547,11 +566,11 @@ module.exports = {
   getTeam,
   updateTeam,
   setTeamPhoto,
+  setTeamPhotoFrame,
   deleteTeamPhoto,
   updateMemberDetails,
   listCandidates,
   addMember,
   confirmMember,
   removeMember,
-  callUpPlayer,
 };

@@ -22,9 +22,14 @@ const MAX_VORSCHAUEN = 6;
  * @param {{ item: { id:number, title:string, content:string,
  *                   imageUrl:string|null, imageUrls?:string[],
  *                   createdAt:string,
- *                   author:{firstName:string, lastName:string}|null } }} props
+ *                   author:{firstName:string, lastName:string}|null },
+ *           highlight?: boolean }} props
+ *   `highlight` macht den Beitrag zum Aufmacher der Startseite: größere
+ *   Überschrift und mehr sichtbare Zeilen, bevor der Text abgeschnitten wird.
+ *   Sonst ist es dieselbe Karte – ein zweites Bauteil für „derselbe Beitrag,
+ *   nur größer" wäre doppelte Arbeit bei jeder künftigen Änderung.
  */
-export default function NewsCard({ item }) {
+export default function NewsCard({ item, highlight = false }) {
   // `imageUrls` ist die maßgebliche Form; `imageUrl` bleibt als Rückfallebene,
   // falls die Antwort noch von einer älteren Backend-Version stammt.
   const images = item.imageUrls ?? (item.imageUrl ? [item.imageUrl] : []);
@@ -103,7 +108,8 @@ export default function NewsCard({ item }) {
 
   return (
     <article className="card-accent">
-      <p className="eyebrow">
+      <p className="eyebrow flex flex-wrap items-center gap-x-1.5">
+        {highlight && <span className="badge badge-trainer">Neu</span>}
         {formatDateTime(item.createdAt)}
         {item.author && (
           <>
@@ -113,7 +119,13 @@ export default function NewsCard({ item }) {
         )}
       </p>
 
-      <h3 className="section-title mt-1.5 text-base">{item.title}</h3>
+      <h3
+        className={`section-title mt-1.5 ${
+          highlight ? 'text-lg sm:text-xl' : 'text-base'
+        }`}
+      >
+        {item.title}
+      </h3>
 
       {images.length > 0 && (
         <ul className={`news-gallery news-gallery--${images.length > 1 ? 'grid' : 'single'} mt-3`}>
@@ -149,7 +161,11 @@ export default function NewsCard({ item }) {
 
       <p
         ref={textRef}
-        className={`news-body mt-3 ${ausgeklappt ? '' : 'news-body--collapsed'}`}
+        className={`news-body mt-3 ${
+          ausgeklappt
+            ? ''
+            : `news-body--collapsed ${highlight ? 'news-body--spotlight' : ''}`
+        }`}
       >
         {item.content}
       </p>

@@ -7,6 +7,20 @@
    ========================================================================== */
 
 @layer base {
+  /* ==========================================================================
+     Farbwerte der Themen
+     --------------------------------------------------------------------------
+     tailwind.config.js kennt nur BEDEUTUNGEN (`paper`, `ink`, `line`, …) und
+     verweist für jede auf eine Variable von hier. Der Dunkelmodus tauscht
+     deshalb nur diesen Block aus – jede Karte, jede Tabelle, jedes Modal und
+     jede Navigation zieht automatisch mit.
+
+     Die Klasse `dark` am <html> setzt der ThemeProvider
+     (src/context/ThemeContext.jsx). Absichtlich KEIN
+     `@media (prefers-color-scheme: dark)`: bei „System" liest der Provider die
+     Einstellung des Geräts aus und setzt dieselbe Klasse. So gibt es genau
+     eine Stelle, die über das Thema entscheidet.
+     ========================================================================== */
   :root {
     color-scheme: light;
     /* Safe-Area (PWA im Standalone-Modus, viewport-fit=cover) */
@@ -14,6 +28,95 @@
     --safe-b: env(safe-area-inset-bottom, 0px);
     --safe-l: env(safe-area-inset-left, 0px);
     --safe-r: env(safe-area-inset-right, 0px);
+
+    /* Vereinsgrün. `green` ist die Markenfarbe (Flächen, Balken),
+       `green-dark`/`darker` sind die Textstufen. */
+    --c-green: #79b636;
+    --c-green-dark: #5f9e28;
+    --c-green-darker: #4c7f1f;
+    --c-green-soft: #eef6e4;
+    --c-green-line: #cfe4b4;
+
+    /* Anthrazit: Anmeldeseite, sekundäre Buttons, Admin-Badge */
+    --c-dark: #2e2e2e;
+    --c-dark-hover: #1f1f1f;
+    --c-dark-soft: #3d3d3d;
+
+    /* Text */
+    --c-ink: #2e2e2e;
+    --c-ink-soft: #4b4b4b;
+    --c-ink-muted: #727579;
+
+    /* Flächen & Linien */
+    --c-paper: #ffffff;
+    --c-surface: #f8f9fa;
+    --c-surface-strong: #eef1f3;
+    --c-line: #e9ecef;
+    --c-line-strong: #dbe0e4;
+
+    /* Status */
+    --c-warn: #8a6116;
+    --c-warn-soft: #fdf6e7;
+    --c-warn-line: #f0d9a8;
+    --c-danger: #c0392b;
+    /* Volle rote Fläche MIT weißer Schrift (Absage-Banner, LIVE-Chip). Im
+       Dunkeln bleibt sie kräftig, während `--c-danger` als Textfarbe heller
+       wird – beides aus derselben Variable ginge nicht auf. */
+    --c-danger-fill: #c0392b;
+    --c-danger-soft: #fdecea;
+    --c-danger-line: #f2c4bf;
+
+    /* Abdunklung hinter Dialogen und im Vollbild */
+    --c-scrim: rgb(46 46 46 / 0.45);
+    --c-scrim-strong: rgb(24 24 24 / 0.95);
+
+    /* Schatten. Im Dunkeln deutlich kräftiger, sonst verschwinden sie. */
+    --shadow-card: 0 1px 2px rgb(20 24 28 / 0.05), 0 1px 3px rgb(20 24 28 / 0.08);
+    --shadow-pop: 0 8px 24px rgb(20 24 28 / 0.12);
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    /* Das Marken-Grün bleibt das Marken-Grün. Nur die Textstufen drehen sich
+       ins Hellere – #4c7f1f auf anthrazit wäre nicht lesbar. */
+    --c-green: #79b636;
+    --c-green-dark: #8ec94c;
+    --c-green-darker: #a5d873;
+    --c-green-soft: #1c2a13;
+    --c-green-line: #3a5a22;
+
+    --c-dark: #0f1214;
+    --c-dark-hover: #191d20;
+    --c-dark-soft: #2a3035;
+
+    --c-ink: #f2f4f5;
+    --c-ink-soft: #cfd4d8;
+    --c-ink-muted: #98a0a6;
+
+    /* Karten (`paper`) liegen HELLER auf dem Seitenhintergrund (`surface`) –
+       im Dunkeln genau andersherum als im Hellen, damit „erhöht" erhöht
+       bleibt. `surface-strong` (Zeilen-Hover) ist entsprechend die hellste
+       der drei Flächen. */
+    --c-paper: #1a1d20;
+    --c-surface: #111416;
+    --c-surface-strong: #24292d;
+    --c-line: #2a2f33;
+    --c-line-strong: #3b4147;
+
+    --c-warn: #e3b457;
+    --c-warn-soft: #2c2310;
+    --c-warn-line: #5a4622;
+    --c-danger: #f08579;
+    --c-danger-fill: #b43326;
+    --c-danger-soft: #2e1815;
+    --c-danger-line: #5e2a24;
+
+    --c-scrim: rgb(0 0 0 / 0.65);
+    --c-scrim-strong: rgb(0 0 0 / 0.95);
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.35);
+    --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.6);
   }
 
   * {
@@ -48,13 +151,13 @@
 
   /* Sichtbarer, markenkonformer Fokus */
   :focus-visible {
-    outline: 2px solid #79b636;
+    outline: 2px solid var(--c-green);
     outline-offset: 2px;
     border-radius: 2px;
   }
 
   ::selection {
-    background: #79b636;
+    background: var(--c-green);
     color: #fff;
   }
 
@@ -70,8 +173,9 @@
   /* Autofill nicht blau einfärben */
   input:-webkit-autofill,
   input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #2e2e2e;
-    -webkit-box-shadow: 0 0 0 1000px #fff inset;
+    -webkit-text-fill-color: var(--c-ink);
+    -webkit-box-shadow: 0 0 0 1000px var(--c-paper) inset;
+    caret-color: var(--c-ink);
   }
 }
 
@@ -244,6 +348,13 @@
      allen aktuellen Browsern der Standardweg; die Zeilenzahl steht als
      Variable, damit sie an einer Stelle liegt. `white-space: pre-line` bleibt
      erhalten – Zeilenumbrüche aus dem Formular zählen also mit. */
+  /* Aufmacher der Startseite: mehr Zeilen, bevor abgeschnitten wird. Eine
+     eigene Klasse statt eines Inline-Stils, damit die Zeilenzahl dort steht,
+     wo auch der Standardwert steht. */
+  .news-body--spotlight {
+    --news-clamp: 10;
+  }
+
   .news-body--collapsed {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -295,7 +406,8 @@
 
   /* ------------------------------------------------------- Vollbild */
   .lightbox {
-    @apply fixed inset-0 z-50 flex items-center justify-center bg-hsg-dark/95 p-4;
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+    background-color: var(--c-scrim-strong);
     padding-top: calc(1rem + var(--safe-t));
     padding-bottom: calc(1rem + var(--safe-b));
   }
@@ -418,9 +530,13 @@
       bg-paper px-2.5 py-1 text-xs font-semibold text-ink-soft;
   }
 
+  /* Initialen-Kreis. Getönt statt grau: Auf dem Seitenhintergrund (`surface`)
+     war der frühere graue Kreis in beiden Themen praktisch unsichtbar – die
+     Initialen schwebten im Nichts. */
   .avatar {
-    @apply flex shrink-0 items-center justify-center rounded-full bg-surface
-      font-display font-bold uppercase leading-none text-hsg-green-dark;
+    @apply flex shrink-0 items-center justify-center rounded-full border
+      border-hsg-green-line bg-hsg-green-soft font-display font-bold uppercase
+      leading-none text-hsg-green-darker;
   }
 
   /* ------------------------------------------------------- Badges / Status */
@@ -465,7 +581,7 @@
      Stelle in der App ist, die „jetzt gerade" bedeutet – bewusst kräftiger
      als die übrigen Status-Chips. */
   .badge-live {
-    @apply bg-danger text-white;
+    @apply bg-danger-fill text-white;
   }
 
   /* Pulsierender Punkt im LIVE-Badge. Steht still, wenn das Betriebssystem
@@ -536,7 +652,7 @@
   }
 
   .data-table tbody tr.row-own td:first-child {
-    box-shadow: inset 3px 0 0 #79b636;
+    box-shadow: inset 3px 0 0 var(--c-green);
   }
 
   /* Kompakte Tabelle für Widgets auf der Startseite (viele Spalten, wenig
@@ -624,6 +740,23 @@
       linear-gradient(135deg, #1c1c1c 0%, #343434 45%, #212121 100%);
   }
 
+  /* Im Dunkelmodus darf der Kopfbereich nicht heller sein als die Seite –
+     sonst leuchtet er wie ein Fremdkörper unter der Kopfzeile. */
+  .dark .team-hero {
+    background-color: #0d0f10;
+    background-image:
+      radial-gradient(
+        120% 140% at 88% -15%,
+        rgb(121 182 54 / 0.22) 0%,
+        rgb(121 182 54 / 0.06) 38%,
+        transparent 62%
+      ),
+      linear-gradient(135deg, #0b0d0e 0%, #1c2124 45%, #121516 100%);
+  }
+
+  /* Das Foto selbst wird über `object-position` und `scale` ausgerichtet –
+     beides setzt <TeamHero> als Stil, weil die Werte aus der Datenbank
+     kommen (photoFocusX/Y, photoZoom). */
   .team-hero__image {
     @apply absolute inset-0 h-full w-full object-cover;
   }
@@ -725,7 +858,7 @@
      lesen. Deshalb volle rote Fläche statt eines Badges am Rand. */
   .event-cancelled {
     @apply -mx-5 -mt-5 mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1
-      rounded-t-md bg-danger px-5 py-2.5 text-white;
+      rounded-t-md bg-danger-fill px-5 py-2.5 text-white;
   }
 
   .event-cancelled__label {
@@ -735,19 +868,16 @@
   /* ------------------------------------------------------------- Dialog */
   /* Abdunklung hinter einem Dialog. Fixiert, damit die Rückfrage auch dann
      mitten im Bild steht, wenn weit unten in einer langen Liste geklickt
-     wurde. */
+     wurde. Auf dem Handy sitzt der Dialog am unteren Rand (Daumenreichweite),
+     ab `sm` mittig.
+
+     Eine Definition für den einen Dialog (components/ui/Modal.jsx) – früher
+     standen hier zwei konkurrierende Regeln für zwei Dialog-Bauteile, von
+     denen die spätere die frühere still überschrieben hat. */
   .modal-backdrop {
     @apply fixed inset-0 z-50 flex items-end justify-center overflow-y-auto
-      bg-hsg-dark/60 p-4 sm:items-center;
-    padding-bottom: calc(1rem + var(--safe-b));
-  }
-
-  .modal-card {
-    @apply w-full max-w-md rounded-md border border-line bg-paper p-5 shadow-pop;
-  }
-
-  .modal-title {
-    @apply font-display text-lg font-bold uppercase tracking-[0.03em] text-ink;
+      p-0 backdrop-blur-[2px] sm:items-center sm:p-4;
+    background-color: var(--c-scrim);
   }
 
   /* --------------------------------------------------------- Ladezustand */
@@ -757,32 +887,34 @@
     animation: skeleton-pulse 1.4s ease-in-out infinite;
   }
 
-  /* ================================================== Verwaltung (/admin) */
-  /* Die Bereichsnavigation nutzt `.tabs` / `.tab` – dieselben Klassen wie die
+  /* ======================================================= Abschnittskarten */
+  /* Karte mit Kopfzeile und Inhalt – das Grundmuster des System-Status und
+     seit dem Umbau auch der Startseite. Hieß früher `.admin-card`; der Name
+     stimmte nicht mehr, sobald dieselbe Karte auf der Startseite steht, und
+     genau dieselbe Optik ist dort ausdrücklich gewollt.
+
+     Die Bereichsnavigation nutzt `.tabs` / `.tab` – dieselben Klassen wie die
      Mannschaftsseite. Es gibt bewusst KEIN eigenes Navigationsmuster für die
      Verwaltung: Reiter sollen in der ganzen App gleich aussehen. */
-
-  /* Karte eines Verwaltungsabschnitts. */
-  .admin-card {
+  .panel {
     @apply rounded-md border border-line bg-paper shadow-card;
   }
 
-  .admin-card__header {
+  .panel__header {
     @apply flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5;
   }
 
-  .admin-card__body {
+  .panel__body {
     @apply px-4 py-4 sm:px-5;
   }
 
-  /* Werkzeugleiste über einer Tabelle (Suche, Filter, Umschalter). Bleibt
-     beim Scrollen langer Listen sichtbar. */
-  .admin-toolbar {
+  /* Werkzeugleiste über einer Tabelle (Suche, Filter, Umschalter). */
+  .panel__toolbar {
     @apply flex flex-col gap-2 border-b border-line bg-surface/70 px-4 py-3 sm:flex-row sm:items-center sm:px-5;
   }
 
   /* Suchfeld mit Platz für das Lupen-Icon links. */
-  .admin-search {
+  .search-input {
     @apply block min-h-11 w-full rounded-sm border border-line-strong bg-paper py-2.5 pl-9 pr-9
       text-sm text-ink placeholder:text-ink-muted transition-colors
       focus:border-hsg-green focus:outline-none focus:ring-2 focus:ring-hsg-green/25;
@@ -826,10 +958,6 @@
   }
 
   /* --------------------------------------------------------------- Modal */
-  .modal-backdrop {
-    @apply fixed inset-0 z-50 flex items-end justify-center bg-hsg-dark/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4;
-  }
-
   /* Die Breite setzt <Modal> je nach `size` als Utility (sm:max-w-…) – hier
      steht nur, was für jeden Dialog gilt. */
   .modal-panel {
@@ -879,8 +1007,11 @@
       text-ink-muted transition-colors hover:text-ink;
   }
 
+  /* Im Hellen die anthrazitfarbene Fläche der Marke. Im Dunkeln IST
+     Anthrazit der Seitenhintergrund – dort hebt sich der aktive Knopf
+     stattdessen nach oben ab. */
   .segment__btn--active {
-    @apply bg-hsg-dark text-white hover:text-white;
+    @apply bg-hsg-dark text-white hover:text-white dark:bg-hsg-dark-soft;
   }
 }
 

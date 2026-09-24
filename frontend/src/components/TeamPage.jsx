@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { ChevronLeft } from 'lucide-react';
 
 import { apiFetch } from '../lib/api';
-import { useTeams } from '../hooks/useTeams';
 import { useHandballSchedule, useHandballTable } from '../hooks/useHandball';
 import { ADMIN_ROLES } from '../lib/roles';
 import { useAuth } from '../context/AuthContext';
@@ -63,7 +63,6 @@ function LeagueFallback({ canManage }) {
 
 function TeamView({ code }) {
   const { user } = useAuth();
-  const { teams: allTeams } = useTeams();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Ein Zustandsobjekt statt vieler Einzel-States: `loading` ergibt sich
@@ -142,6 +141,12 @@ function TeamView({ code }) {
   /**
    * Führt eine Verwaltungsaktion aus und lädt danach neu. Zeigt bevorzugt die
    * Meldung aus der Server-Antwort (z. B. „… hat jetzt die Rolle Trainer:in").
+   *
+   * Gibt die Server-Antwort zurück (bzw. `null`, wenn es schiefging), damit
+   * Aufrufer daran anknüpfen können – der Foto-Upload öffnet danach
+   * beispielsweise den Dialog für den Bildausschnitt, aber nur bei Erfolg.
+   *
+   * @returns {Promise<object|null>}
    */
   const run = async (action, fallbackMessage) => {
     setBusy(true);
@@ -152,8 +157,10 @@ function TeamView({ code }) {
       await load();
       setReloadToken((value) => value + 1);
       setNotice(result?.message || fallbackMessage || null);
+      return result ?? {};
     } catch (err) {
       setError(err.message);
+      return null;
     } finally {
       setBusy(false);
     }
@@ -172,7 +179,7 @@ function TeamView({ code }) {
   // ----------------------------------------------------------- Ladezustand
   if (loading) {
     return (
-      <Shell code={code}>
+      <Shell>
         <HeroSkeleton />
         <div className="mt-6">
           <ListSkeleton rows={3} />
@@ -183,7 +190,7 @@ function TeamView({ code }) {
 
   if (!data) {
     return (
-      <Shell code={code}>
+      <Shell>
         <div role="alert" className="alert alert-error">
           {error ?? 'Mannschaft konnte nicht geladen werden.'}
         </div>
@@ -193,10 +200,9 @@ function TeamView({ code }) {
 
   const { team, members } = data;
   const pendingMembers = data.pendingMembers ?? [];
-  const otherTeams = allTeams.filter((entry) => entry.code !== team.code);
 
   return (
-    <Shell code={team.code} name={team.name}>
+    <Shell name={team.name}>
       {error && (
         <div role="alert" className="alert alert-error mb-4">
           {error}
@@ -371,7 +377,6 @@ function TeamView({ code }) {
             isAdmin={isAdmin}
             pendingMembers={pendingMembers}
             members={members}
-            otherTeams={otherTeams}
             busy={busy}
             onRun={run}
             reloadToken={reloadToken}
@@ -382,17 +387,34 @@ function TeamView({ code }) {
   );
 }
 
-function Shell({ code, name, children }) {
+/**
+ * Rahmen der Mannschaftsseite.
+ *
+ * In der Kopfzeile steht links der Mannschaftsname als Weg zurück zur
+ * Übersicht. Das grüne Kürzel-Abzeichen, das früher davor klebte, ist
+ * ersatzlos entfallen: Es stand direkt neben dem ausgeschriebenen Namen
+ * („MJC  Männliche Jugend C") und sagte dort nichts, was der Name nicht schon
+ * sagte – während es die Kopfzeile bunt machte und auf schmalen Bildschirmen
+ * Platz vom Namen nahm. Wo das Kürzel wirklich trägt (Mannschaftsübersicht,
+ * Chips in der Verwaltung), steht es weiterhin.
+ */
+function Shell({ name, children }) {
   return (
     <AppLayout
       width="max-w-4xl"
       header={
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="badge badge-trainer shrink-0">
-            {code?.toUpperCase()}
-          </span>
+        <Link
+          to="/teams"
+          className="group flex min-w-0 items-center gap-1.5"
+          title="Zurück zur Mannschaftsübersicht"
+        >
+          <ChevronLeft
+            size={18}
+            aria-hidden="true"
+            className="shrink-0 text-ink-muted transition-colors group-hover:text-hsg-green-dark"
+          />
           <span className="header-title">{name ?? 'Mannschaft'}</span>
-        </div>
+        </Link>
       }
     >
       {children}

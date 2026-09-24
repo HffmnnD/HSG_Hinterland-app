@@ -1,17 +1,19 @@
 import { Link } from 'react-router-dom';
+import { ChevronRight } from 'lucide-react';
 
-import { relationLabelPlural } from '../lib/participation';
+import { myRelationLabel } from '../lib/participation';
 
-// Trainer:innen zuerst, dann Spieler:innen, dann Fans.
+// Trainer:innen zuerst, dann Spieler:innen, dann die verfolgten Mannschaften.
 const RELATION_ORDER = ['coach', 'player', 'fan'];
 
 /**
- * Mannschaften des angemeldeten Mitglieds, nach Art der Beteiligung
- * gruppiert. Jeder Chip verlinkt auf die Mannschaftsseite; noch nicht
- * bestätigte Zuordnungen sind bernsteinfarben markiert.
+ * Die Mannschaften des angemeldeten Mitglieds, gruppiert nach der eigenen
+ * Rolle. Jede Karte führt auf die Mannschaftsseite; noch nicht bestätigte
+ * Zuordnungen sind bernsteinfarben gekennzeichnet.
  *
- * Wird sowohl auf dem Dashboard als auch auf der Mannschafts-Übersicht
- * verwendet.
+ * Wird auf der Startseite und auf der Mannschaftsübersicht verwendet – deshalb
+ * liefert die Komponente nur die Liste und keine Umrandung: Die Überschrift und
+ * die Karte drumherum gibt die jeweilige Seite vor.
  *
  * @param {{ teams: {id:number, code:string, name:string,
  *                   relationType:string, isConfirmed:boolean}[],
@@ -39,32 +41,46 @@ export default function MyTeams({ teams, emptyHint }) {
     <div className="space-y-4">
       {groups.map(({ relation, entries }) => (
         <div key={relation}>
-          <p className="eyebrow">{relationLabelPlural(relation)}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <p className="eyebrow">{myRelationLabel(relation)}</p>
+          <ul className="mt-2 space-y-2">
             {entries.map((team) => (
-              <Link
-                key={`${relation}-${team.id}`}
-                to={`/teams/${team.code}`}
-                title={
-                  team.isConfirmed
-                    ? team.name
-                    : `${team.name} – wartet auf Bestätigung durch den/die Trainer:in`
-                }
-                className={`chip ${team.isConfirmed ? '' : 'chip-pending'}`}
-              >
-                {team.name}
-                {!team.isConfirmed && (
-                  <span className="badge badge-pending">ausstehend</span>
-                )}
-              </Link>
+              <li key={`${relation}-${team.id}`}>
+                <Link
+                  to={`/teams/${team.code}`}
+                  className={`flex min-h-12 items-center gap-3 rounded-md border bg-paper px-3 py-2 transition-colors hover:border-hsg-green ${
+                    team.isConfirmed ? 'border-line' : 'border-warn-line'
+                  }`}
+                >
+                  <span
+                    className={`badge shrink-0 ${
+                      team.isConfirmed ? 'badge-trainer' : 'badge-pending'
+                    }`}
+                  >
+                    {team.code}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-display text-sm font-bold uppercase tracking-[0.02em] text-ink">
+                    {team.name}
+                  </span>
+                  {!team.isConfirmed && (
+                    <span className="badge badge-pending shrink-0">
+                      ausstehend
+                    </span>
+                  )}
+                  <ChevronRight
+                    size={15}
+                    aria-hidden="true"
+                    className="shrink-0 text-ink-muted"
+                  />
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       ))}
 
       {hasPending && (
         <p className="text-xs text-warn">
-          „Ausstehend“ bedeutet: der/die Trainer:in muss deine Mitgliedschaft
+          „Ausstehend" bedeutet: der/die Trainer:in muss deine Mitgliedschaft
           noch bestätigen.
         </p>
       )}

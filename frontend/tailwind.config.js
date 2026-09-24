@@ -1,16 +1,28 @@
 /**
- * Corporate Design HSG Hinterland
- * ---------------------------------
+ * Corporate Design HSG Hinterland – Licht- und Dunkelmodus
+ * --------------------------------------------------------
  * Farben und Typografie sind 1:1 von hsg-hinterland.de übernommen:
  *   - Vereinsgrün  #79b636  (Buttons, Links, aktive Navigation)
  *   - Anthrazit    #2e2e2e  (Kopfzeile, dunkle Flächen, Text)
- *   - Flächen      #ffffff / #f8f9fa / #e9ecef
  *   - Headline     "Oswald" (schmal, kräftig, VERSAL)
  *   - Fließtext    "Lato"
  *
+ * ── Warum jede Farbe hier `var(--c-…)` ist ──────────────────────────────────
+ * Die Namen in dieser Datei sind BEDEUTUNGEN, keine Farbwerte: `paper` ist
+ * „die Fläche, auf der eine Karte liegt", `ink` ist „kräftiger Text". Welcher
+ * Farbwert dahinter steckt, entscheidet das Thema – die Werte stehen als
+ * CSS-Variablen in src/index.css, einmal für `:root` (hell) und einmal für
+ * `.dark` (dunkel).
+ *
+ * Damit gilt der Dunkelmodus für die GANZE App, ohne dass an tausend Stellen
+ * ein `dark:`-Gegenstück gepflegt werden muss: `bg-paper` ist im Hellen weiß
+ * und im Dunkeln anthrazit, `text-ink` umgekehrt. `dark:` bleibt für die
+ * wenigen Fälle, in denen im Dunkeln etwas ANDERES gilt und nicht nur eine
+ * andere Farbe (z. B. schwächere Schatten, andere Verläufe).
+ *
  * Tailwind v4 lädt diese Datei über `@config "../tailwind.config.js"` in
- * src/index.css. Alle Werte stehen zusätzlich als CSS-Variablen bereit
- * (z. B. `var(--color-hsg-green)`), die das Komponenten-Layer nutzt.
+ * src/index.css. Deckkraft-Kurzformen (`bg-surface/60`) funktionieren mit
+ * Variablen unverändert – Tailwind setzt daraus ein `color-mix()`.
  */
 const systemSans =
   '"Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif';
@@ -18,49 +30,57 @@ const systemSans =
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  // Der Dunkelmodus hängt an der Klasse `dark` am <html>-Element. Sie setzt
+  // der ThemeProvider (src/context/ThemeContext.jsx) – nicht das
+  // Betriebssystem allein, denn die Wahl steht im Benutzerprofil.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Primärfarbe des Vereins
+        // Primärfarbe des Vereins. `DEFAULT` bleibt in beiden Themen das
+        // Marken-Grün; `dark`/`darker` sind die Textstufen und drehen sich im
+        // Dunkelmodus ins Hellere (dunkles Grün auf dunklem Grund ist nicht
+        // lesbar).
         'hsg-green': {
-          DEFAULT: '#79b636',
-          dark: '#5f9e28', // Hover / aktiver Zustand
-          darker: '#4c7f1f', // gedrückt
-          soft: '#eef6e4', // getönte Fläche (Hinweise, Erfolg)
-          line: '#cfe4b4', // getönte Kontur
+          DEFAULT: 'var(--c-green)',
+          dark: 'var(--c-green-dark)', // Hover / aktiver Zustand, Text
+          darker: 'var(--c-green-darker)', // gedrückt
+          soft: 'var(--c-green-soft)', // getönte Fläche (Hinweise, Erfolg)
+          line: 'var(--c-green-line)', // getönte Kontur
         },
         // Anthrazit – Kopfzeile, sekundäre Buttons, Text
         'hsg-dark': {
-          DEFAULT: '#2e2e2e',
-          hover: '#1f1f1f',
-          soft: '#3d3d3d',
+          DEFAULT: 'var(--c-dark)',
+          hover: 'var(--c-dark-hover)',
+          soft: 'var(--c-dark-soft)',
         },
         // Text
         ink: {
-          DEFAULT: '#2e2e2e', // Überschriften / kräftiger Text
-          soft: '#4b4b4b', // Fließtext
-          muted: '#727579', // Sekundärtext, Tabellenköpfe
+          DEFAULT: 'var(--c-ink)', // Überschriften / kräftiger Text
+          soft: 'var(--c-ink-soft)', // Fließtext
+          muted: 'var(--c-ink-muted)', // Sekundärtext, Tabellenköpfe
         },
         // Flächen & Linien (feine Kontrast-Nuancen)
-        paper: '#ffffff',
+        paper: 'var(--c-paper)',
         surface: {
-          DEFAULT: '#f8f9fa', // Karten-/Tabellen-Hintergrund
-          strong: '#eef1f3', // Zeilen-Hover
+          DEFAULT: 'var(--c-surface)', // Seitenhintergrund, Tabellenkopf
+          strong: 'var(--c-surface-strong)', // Zeilen-Hover
         },
         line: {
-          DEFAULT: '#e9ecef', // feine Trennlinien
-          strong: '#dbe0e4', // kräftigere Kontur (Inputs)
+          DEFAULT: 'var(--c-line)', // feine Trennlinien
+          strong: 'var(--c-line-strong)', // kräftigere Kontur (Inputs)
         },
         // Statusfarben
         warn: {
-          DEFAULT: '#8a6116',
-          soft: '#fdf6e7',
-          line: '#f0d9a8',
+          DEFAULT: 'var(--c-warn)',
+          soft: 'var(--c-warn-soft)',
+          line: 'var(--c-warn-line)',
         },
         danger: {
-          DEFAULT: '#c0392b',
-          soft: '#fdecea',
-          line: '#f2c4bf',
+          DEFAULT: 'var(--c-danger)', // Textfarbe – im Dunkeln heller
+          fill: 'var(--c-danger-fill)', // volle Fläche mit weißer Schrift
+          soft: 'var(--c-danger-soft)',
+          line: 'var(--c-danger-line)',
         },
       },
       fontFamily: {
@@ -81,12 +101,14 @@ export default {
         lg: '8px',
       },
       boxShadow: {
-        card: '0 1px 2px rgb(20 24 28 / 0.05), 0 1px 3px rgb(20 24 28 / 0.08)',
-        header: '0 1px 0 #e9ecef',
-        pop: '0 8px 24px rgb(20 24 28 / 0.12)',
+        // Schatten sind im Dunkeln fast unsichtbar und wirken schmutzig –
+        // deshalb hängen auch sie an Variablen (siehe index.css).
+        card: 'var(--shadow-card)',
+        header: '0 1px 0 var(--c-line)',
+        pop: 'var(--shadow-pop)',
       },
       ringColor: {
-        DEFAULT: '#79b636',
+        DEFAULT: 'var(--c-green)',
       },
     },
   },

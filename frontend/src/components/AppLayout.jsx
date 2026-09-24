@@ -16,6 +16,11 @@ import MainNav from './MainNav';
  * Navigiert wird ab `md` über <MainNav> in der Kopfzeile, darunter über
  * <BottomNav> am unteren Rand – beide speisen sich aus lib/navigation.js.
  *
+ * Rechts steht nur „Abmelden". Das Design gehört bewusst NICHT hierher: Es
+ * wird einmal im Onboarding gewählt und danach unter „Mein Konto" geändert –
+ * eine Einstellung, die man selten anfasst, braucht keinen Dauerplatz in der
+ * Kopfzeile jeder Seite.
+ *
  * @param {string}          [width]   Tailwind max-width der Inhaltsspalte
  * @param {React.ReactNode} [header]  Ersetzt die Marke links (z. B. Mannschaftsname)
  * @param {React.ReactNode} [actions] Zusätzliche Schaltflächen rechts vor „Abmelden"

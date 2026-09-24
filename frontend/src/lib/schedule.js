@@ -10,26 +10,11 @@
 
 // --- Terminarten ------------------------------------------------------------
 
-export const EVENT_TYPES = [
-  'REGULAR_TRAINING',
-  'SINGLE_TRAINING',
-  'EVENT_CAMP',
-  'MATCH',
-];
-
 export const EVENT_TYPE_LABELS = {
   REGULAR_TRAINING: 'Training',
   SINGLE_TRAINING: 'Zusatztraining',
   EVENT_CAMP: 'Sondertermin',
   MATCH: 'Spiel',
-};
-
-/** Beschreibung für die Auswahl im Formular. */
-export const EVENT_TYPE_HINTS = {
-  REGULAR_TRAINING: 'Feste Einheit aus dem wöchentlichen Trainingsplan',
-  SINGLE_TRAINING: 'Zusätzliches Training außer der Reihe',
-  EVENT_CAMP: 'Camp, Turnier, Feier – auch über mehrere Tage',
-  MATCH: 'Punkt-, Pokal- oder Freundschaftsspiel',
 };
 
 /**
@@ -42,11 +27,6 @@ export const EVENT_CATEGORIES = [
   { key: 'match', label: 'Spiele', types: ['MATCH'] },
   { key: 'other', label: 'Sonstiges', types: ['EVENT_CAMP'] },
 ];
-
-/** Kategorie einer Terminart. */
-export function categoryOf(type) {
-  return EVENT_CATEGORIES.find((entry) => entry.types.includes(type))?.key ?? null;
-}
 
 export function eventTypeLabel(type) {
   return EVENT_TYPE_LABELS[type] ?? type;
@@ -262,12 +242,6 @@ export function isRunning(startTime, endTime) {
 export function toDateInput(date = new Date()) {
   const pad = (value) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** Date -> `YYYY-MM-DDTHH:MM` (Wert eines <input type="datetime-local">). */
-export function toDateTimeInput(date = new Date()) {
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${toDateInput(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /** `YYYY-MM-DD` um n Tage verschieben. */

@@ -41,11 +41,13 @@ backend/
     metricsMiddleware.js zählt jeden Request für den System-Status
 
   controllers/           HTTP + Geschäftsregeln, KEIN SQL
-    authController.js    register / login / logout / me
+    authController.js    register / login / logout / me + eigenes Konto
+                          (Design, Onboarding, Profilbild, Passwort)
     adminController.js    listUsers (seitenweise) / getUserStats / updateUser
                           (inkl. Sub-Admin-Sperren) / listTeams / createTeam
-    teamsController.js    listTeams / getTeam / Stammdaten / Foto /
-                          candidates / add / remove / callup / Kaderangaben
+    teamsController.js    listTeams / getTeam / Stammdaten / Foto samt
+                          Bildausschnitt / candidates / add / remove /
+                          Kaderangaben
     newsController.js     listNews / listNewsForAdmin / createNews /
                           archiveNews / deleteNews (inkl. Bild-Aufräumen)
     handballController.js getTable / getSchedule / getTicker
@@ -109,6 +111,15 @@ backend/
       010_nuliga_games.sql               Ligaspiele aus nuLiga als Termine
       011_event_cancellation.sql         Termine absagen statt löschen
       012_nuliga_key_cleanup.sql         Altlasten des ersten nuLiga-Abgleichs
+      013_onboarding_theme.sql           schlanke Registrierung, Onboarding,
+                                         Design-Vorliebe, Bildausschnitt des
+                                         Mannschaftsfotos
+      014_instant_signup_and_profile.sql Registrierung ohne Freigabe (nimmt
+                                         approved_at aus 013 zurück),
+                                         Profilbild und Telefonnummer
+      015_session_invalidation.sql       Passwortwechsel beendet alle anderen
+                                         Sitzungen (sessions_valid_from);
+                                         korrigiert den Kommentar an phone
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -132,8 +143,8 @@ Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
 
 | Tabelle             | Zweck |
 | ------------------- | ----- |
-| `users`             | Konten inkl. `role` (ENUM). `is_approved` = Konto aktiv (Standard 1) bzw. vom Admin gesperrt (0) – bei Login/Session/RBAC geprüft |
-| `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1. Dazu `handball_team_id` (nuLiga) und `photo_path` (Mannschaftsfoto) |
+| `users`             | Konten inkl. `role` (ENUM). `is_approved` = aktiv (Standard 1) bzw. vom Admin gesperrt (0). Dazu `theme` (Design), `onboarding_completed_at` (Einrichtung erledigt), `photo_path` (Profilbild) und `phone` (freiwillige Telefonnummer) |
+| `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1. Dazu `handball_team_id` (nuLiga), `photo_path` (Mannschaftsfoto) und dessen Bildausschnitt im Kopfbereich (`photo_focus_x/y`, `photo_zoom`, alles in Prozent) |
 | `team_sponsors`     | Sponsoren je Mannschaft für den Kopfbereich der Mannschaftsseite |
 | `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)`. Kaderangaben je Mannschaft: `jersey_number`, `position`, `staff_title` |
 | `user_services`     | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
@@ -148,9 +159,15 @@ Alle Verknüpfungstabellen haben `ON DELETE CASCADE` auf `users`.
 ## Rollen (RBAC)
 
 `users.role` ist ein ENUM: `admin`, `sub_admin`, `trainer`, `spieler`,
-`zuschauer` (Standard `spieler`). Die Rolle wird bei Registrierung **nicht**
-vom Client gesetzt, sondern nur von einem Admin/Sub-Admin über
-`/api/admin/users/:id`.
+`zuschauer` (Standard `spieler`). Die Rolle wird bei der Registrierung **nicht**
+vom Client gesetzt. Sie ändert sich an genau drei Stellen:
+
+- **Onboarding** – wer nur zuschaut, wird `zuschauer`; wer Mannschaften als
+  Spieler:in wählt, `spieler`. Nur diese beiden Werte werden getauscht,
+  `trainer`/`sub_admin`/`admin` bleiben unangetastet.
+- **Bestätigte `coach`-Beziehung** – hebt `spieler`/`zuschauer` auf `trainer`.
+- **Verwaltung** – `admin`/`sub_admin` setzen jede Rolle über
+  `/api/admin/users/:id`.
 
 | Rolle       | Darf |
 | ----------- | ---- |
@@ -173,62 +190,170 @@ router.get('/users', authenticate, checkRole('admin'), listUsers);
 // oder mehrere: checkRole(['admin', 'trainer'])
 ```
 
-## Registrierung, Sperre & Team-Bestätigung
+## Registrierung, Onboarding & Team-Bestätigung
 
-**Keine globale Registrierungs-Freigabe.** Nach der Registrierung ist das Konto
-sofort aktiv (`is_approved = 1` per Spalten-Default – die Anwendung setzt das
-Feld beim INSERT nicht).
+**Die Registrierung fragt vier Dinge ab**: Vorname, Nachname, E-Mail,
+Passwort. Mehr nicht. Zusätzliche Felder im Body werden ignoriert, nicht
+abgelehnt.
 
-`is_approved = 0` heisst jetzt **von einem Admin gesperrt** und wird bei
-**Login**, **`/api/auth/me`** und in **`checkRole`** geprüft – eine Sperre
-greift also sofort (nicht erst nach Token-Ablauf). Die Meldung ist bewusst
-„Dieses Konto wurde gesperrt." (nicht „wartet auf Freigabe").
+**Es gibt keine Freigabe.** Der Endpunkt legt das Konto an (`is_approved` per
+Spalten-Default `1`) und setzt in derselben Antwort das Session-Cookie – wer
+sich registriert, ist angemeldet und landet direkt im Onboarding-Assistenten.
+Ein zweites Anmeldeformular direkt nach dem ersten wäre eine Hürde ohne Zweck.
+
+`is_approved = 0` heisst damit ausschliesslich **von einem Admin gesperrt** und
+wird bei **Login**, **`/api/auth/me`** und in **`checkRole`** geprüft – eine
+Sperre greift also sofort und nicht erst nach Token-Ablauf.
+
+**Onboarding.** Nach der Registrierung ist `onboarding_completed_at` noch
+`NULL` – das Frontend führt dann durch vier Schritte (Beteiligung,
+Mannschaften, Profil, Design). Gespeichert wird alles in EINEM Aufruf
+(`POST /api/auth/me/onboarding`, transaktional): Mannschaftswahl, Design,
+Telefonnummer, gegebenenfalls die Grundrolle und der Zeitstempel. Das
+Profilbild lädt der Assistent sofort hoch (eigener Endpunkt, eigene Datei).
+Bricht jemand ab, beginnt der Assistent beim nächsten Login von vorn, statt
+halbe Angaben zu hinterlassen.
+
+Dieselben Angaben lassen sich später unter „Mein Konto" ändern
+(`PATCH /api/auth/me/preferences`). Der Abgleich der Mannschaftswahl
+(`teamRepository.replaceSelfRelations`) arbeitet bewusst als **Differenz** und
+nicht als „löschen und neu anlegen": Eine bereits bestätigte Zuordnung bleibt
+bestätigt, und Rückennummer/Position/Bezeichnung im Betreuerstab (dieselbe
+Zeile in `user_teams`) überleben jede Änderung am Design.
+
+### Das erste Admin-Konto (frische Datenbank)
+
+Die Rolle `admin` kann niemand über die Oberfläche vergeben, solange es keinen
+Admin gibt. Nach der ersten Registrierung in der App also einmal:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'deine@adresse.de';
+```
+
+Danach läuft alles über die Verwaltung.
+
+### Team-Bestätigung
 
 Die **Zugehörigkeit zu einer Mannschaft** bestätigt der/die Trainer:in
 (`user_teams.is_confirmed`):
 
-- Registrierung mit `relationType` `player`/`coach` → `is_confirmed = 0`
-  (offene Anfrage, taucht nur in `pendingMembers` auf)
+- Selbst gewählt (Onboarding / „Mein Konto") mit `relationType`
+  `player`/`coach` → `is_confirmed = 0` (offene Anfrage, taucht nur in
+  `pendingMembers` auf)
 - `relationType = 'fan'` sowie alles, was Trainer/Admin manuell anlegen
   (`addMember`, Admin-`teamIds`) → `is_confirmed = 1`
-- `callup` legt eine **offene Anfrage** in der Zielmannschaft an (der/die
-  dortige Trainer:in bestätigt)
+
+Die `fan`-Beziehung ist reine Anzeigesteuerung („wessen Spiele will ich
+sehen?") und gilt deshalb sofort. Sie wird **nirgends gezählt**: weder in
+`counts` einer Mannschaft noch in der Verwaltung.
 
 **Automatische Rollen-Anhebung:** Wird eine `coach`-Beziehung bestätigt
 (`/confirm` oder `addMember` mit `relationType=coach`), setzt das System die
 globale `users.role` auf `trainer` – **nur** wenn sie vorher `spieler` oder
 `zuschauer` war. `admin`/`sub_admin`/`trainer` bleiben unangetastet.
 
+### Kontaktdaten im Kader
+
+`GET /api/teams/:code` gibt das Profilbild jedes Kadermitglieds an alle
+Mitglieder aus – dafür ist es da. Bei **E-Mail und Telefonnummer** gilt:
+
+| Beziehung | sichtbar für |
+| --------- | ------------ |
+| `coach`   | alle angemeldeten Mitglieder – Trainer:innen sind die Ansprechpartner:innen einer Mannschaft |
+| `player`  | nur das Trainerteam der Mannschaft und admin/sub_admin (`includeContact`) |
+
+Die Telefonnummer ist zusätzlich freiwillig: Sie steht nur dort, wo jemand sie
+selbst unter „Mein Konto" hinterlegt hat.
+
 ## Auth-Endpunkte
 
 | Methode | Pfad                | Body                                      | Beschreibung |
 | ------- | ------------------- | ---------------------------------------- | ------------ |
-| POST    | `/api/auth/register`| `firstName, lastName, email, password, teams?, services?` | Konto sofort aktiv, `role = 'spieler'`. `teams: [{ teamId, relationType }]` und `services: […]` optional, transaktional. player/coach → offene Anfrage, fan → bestätigt. `teamIds: [1,2]` bleibt Kurzform (player). |
-| POST    | `/api/auth/login`   | `email, password`                       | Setzt JWT (inkl. `role`) als HttpOnly-Cookie. Antwort enthält `user.role`, `user.teams` (mit `isConfirmed`) und `user.services`. |
+| POST    | `/api/auth/register`| `firstName, lastName, email, password` | Legt das Konto an, setzt die Sitzung und gibt das Profil zurück – danach steht das Onboarding an. Weitere Felder werden ignoriert. `201`, `409` bei belegter E-Mail. |
+| POST    | `/api/auth/login`   | `email, password`                       | Setzt JWT (inkl. `role`) als HttpOnly-Cookie. `403`, wenn das Konto gesperrt ist. Antwort enthält das Profil. |
 | POST    | `/api/auth/logout`  | –                                       | Löscht den Cookie. |
-| GET     | `/api/auth/me`      | – (Cookie)                              | Daten des angemeldeten Users inkl. `role`, `teams` (`[{ id, code, name, relationType, isConfirmed }]`) und `services`. |
+| GET     | `/api/auth/me`      | – (Cookie)                              | Profil des angemeldeten Users: `role`, `theme`, `onboardingCompleted`, `photoUrl`, `phone`, `teams` (`[{ id, code, name, relationType, isConfirmed }]`) und `services`. |
+
+### Eigenes Konto (angemeldet, jede Rolle)
+
+Alle Endpunkte hängen an `authenticate` **und** `checkRole(ROLES)` – nicht
+wegen der Rolle, sondern weil das den Sperrstatus frisch aus der Datenbank
+liest: `authenticate` prüft nur das sieben Tage gültige Token.
+
+| Methode | Pfad                          | Body                                   | Beschreibung |
+| ------- | ----------------------------- | -------------------------------------- | ------------ |
+| POST    | `/api/auth/me/onboarding`     | `theme?`, `phone?`, `teams?: [{ teamId, relationType }]` | Abschluss des Assistenten: Mannschaftswahl, Design, Telefonnummer, Grundrolle und `onboarding_completed_at` in einer Transaktion. Idempotent. Antwort enthält das frische Profil. |
+| PATCH   | `/api/auth/me/preferences`    | `theme?`, `phone?`, `teams?`           | Dieselben Angaben später ändern. `teams` ist die **vollständige** neue Wahl; weglassen heißt „unverändert", `[]` heißt „alle Zuordnungen aufheben". `phone: ''` löscht die Nummer. |
+| POST    | `/api/auth/me/photo`          | multipart, Feld `photo`                | Profilbild setzen (JPG/PNG/WEBP/GIF, ≤ 5 MB, Signaturprüfung wie bei allen Uploads). Ersetzt ein vorhandenes Bild und löscht die alte Datei. Rate-Limit 10/15 min. |
+| DELETE  | `/api/auth/me/photo`          | –                                      | Profilbild entfernen – danach erscheinen wieder die Initialen. |
+| POST    | `/api/auth/me/password`       | `currentPassword, newPassword`         | Passwortwechsel. Das aktuelle Passwort ist Pflicht (`401`, wenn es nicht stimmt), das neue muss sich unterscheiden. Rate-Limit: 10 Fehlversuche / 15 min. **Beendet alle anderen Sitzungen** (siehe unten); dieses Gerät bekommt sofort einen neuen Cookie. |
+
+Ein eigener Endpunkt nur für das Design (früher `PATCH /api/auth/me/theme`)
+existiert nicht mehr: `PATCH /api/auth/me/preferences` kann dasselbe und
+antwortet mit dem vollen Profil, sodass der Client danach nichts nachladen muss.
+
+### Sitzungen nach einem Passwortwechsel
+
+Ein JWT gilt sieben Tage – auch dann, wenn das Passwort inzwischen geändert
+wurde. Wer es ändert, weil jemand anderes es kennen könnte, erwartet aber genau
+das Gegenteil. Deshalb merkt sich `users.sessions_valid_from` (Unix-Sekunden,
+Migration 015) den Zeitpunkt des Wechsels:
+
+* `checkRole` und `GET /api/auth/me` lesen die Spalte ohnehin mit und
+  vergleichen sie mit dem `iat` des Tokens. Älteres Token → `401` samt
+  Hinweis, sich neu anzumelden. Kein Denylist-Speicher, keine zusätzliche
+  Abfrage.
+* Den Zeitstempel setzt der Server aus **seiner** Uhr (nicht `UNIX_TIMESTAMP()`
+  der Datenbank) – verglichen wird er mit dem `iat` desselben Prozesses.
+* Das Gerät, an dem gewechselt wurde, erhält in derselben Antwort ein frisches
+  Cookie und bleibt angemeldet.
 
 ## Mannschaften
 
 | Methode | Pfad                                   | Auth | Beschreibung |
 | ------- | -------------------------------------- | ---- | ------------ |
-| GET     | `/api/teams`                           | –    | Alle Mannschaften. Öffentlich (Registrierungsformular). |
-| GET     | `/api/teams/:code`                     | angemeldet | `team`, `members` (nur **bestätigte**, nach `player`/`coach`/`fan`), `counts`, `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). E-Mails nur für Verwaltende. |
+| GET     | `/api/teams`                           | angemeldet | Alle Mannschaften (Stammdaten, keine Mitglieder). War öffentlich, solange das Registrierungsformular die Mannschaftswahl enthielt – die steckt jetzt im Onboarding, also hinter dem Login. |
+| GET     | `/api/teams/:code`                     | angemeldet | `team` (inkl. `photoUrl` und Bildausschnitt), `members` (nur **bestätigte** `player`/`coach`, je mit `photoUrl`), `counts` (`player`, `coach` – **keine** Fan-Zahlen), `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). Kontaktdaten siehe unten. |
 | GET     | `/api/teams/:code/candidates`          | Verwaltung | Aktive Mitglieder ohne diese Beziehung (`?relationType=`). |
 | POST    | `/api/teams/:code/members`             | Verwaltung | `{ userId, relationType }` – Beziehung direkt **bestätigt** anlegen. Bei `relationType=coach` wird die globale Rolle ggf. auf `trainer` angehoben (`roleUpgraded` in der Antwort). |
 | POST    | `/api/teams/:code/members/:userId/confirm` | Verwaltung | Offene Anfrage(n) bestätigen. `?relationType=` optional (sonst alle offenen). `404` wenn nichts offen. Antwort: `{ message, roleUpgraded }` – bei bestätigter `coach`-Anfrage wird die globale Rolle ggf. auf `trainer` angehoben. |
 | DELETE  | `/api/teams/:code/members/:userId`     | Verwaltung | `?relationType=` – Beziehung entfernen / offene Anfrage ablehnen. |
-| POST    | `/api/teams/:code/callup`              | Verwaltung | `{ userId, targetTeamCode }` – Spieler:in hochrufen. Legt eine **offene Anfrage** in der Zielmannschaft an (deren Trainer:in bestätigt). Voraussetzung: bestätigte:r Spieler:in der Quellmannschaft. |
+| PATCH   | `/api/teams/:code/photo/frame`         | admin/sub_admin | `{ focusX?, focusY?, zoom? }` – Bildausschnitt des Kopfbereichs in Prozent (Mittelpunkt 0–100, Zoom 100–300). Speichert **Werte, kein zugeschnittenes Bild**: Das Original bleibt erhalten, und der Streifen sitzt auf jedem Bildschirmformat richtig. `409`, wenn kein Foto hinterlegt ist. Ein neues Foto und das Löschen setzen die Werte zurück. |
+
+### Wer sieht die Kontaktdaten im Kader?
+
+`photoUrl` und Name sehen alle angemeldeten Mitglieder. E-Mail und
+Telefonnummer sind personenbezogen und hängen an zwei Stufen:
+
+| Angabe                            | sichtbar für |
+| --------------------------------- | ------------ |
+| Kontakt der **Trainer:innen**     | wer selbst zu **dieser** Mannschaft gehört (bestätigte:r `player` oder `coach`) + Verwaltung |
+| Kontakt der **Spieler:innen**     | nur das Trainerteam dieser Mannschaft + Verwaltung |
+
+Bewusst nicht „jedes angemeldete Konto": Die Registrierung steht offen und
+bestätigt keine E-Mail-Adresse. „Angemeldet" ist damit keine Vertrauensstufe –
+sonst könnte sich jemand in zwei Minuten ein Konto anlegen und die
+Kontaktliste aller Trainer:innen des Vereins abrufen. `fan`-Zuordnungen stehen
+nicht im Kader: Sie sagen nur, wessen Spiele jemand angezeigt bekommt.
+
+Die Telefonnummer ist zusätzlich freiwillig – sie erscheint nur, wo jemand sie
+selbst unter „Mein Konto" hinterlegt hat.
 
 „Verwaltung“ = `admin`, `sub_admin` oder als **bestätigte:r** `coach` dieser
 Mannschaft eingetragen. Sonst `403`. Trainer:innen können sich nicht selbst als
 Trainer:in der eigenen Mannschaft entfernen (sonst verlieren sie den Zugriff).
 
+Das frühere **Hochrufen** (`POST /api/teams/:code/callup`) ist ersatzlos
+entfallen. Es legte aus einer Mannschaft heraus eine offene Anfrage in einer
+FREMDEN Mannschaft an – ein Sonderweg, der kaum benutzt wurde und in jeder
+Kaderzeile ein Auswahlfeld brauchte. Wer jemanden in einer zweiten Mannschaft
+braucht, fügt die Person dort über `POST /api/teams/:code/members` hinzu.
+
 ## Verwaltungs-Endpunkte (`checkRole(['admin', 'sub_admin', 'trainer'])`)
 
 | Methode | Pfad                     | Body / Query                                          | Beschreibung |
 | ------- | ------------------------ | ----------------------------------------------------- | ------------ |
-| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=`              | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. |
+| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=` (`status`: `active`, `inactive`) | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. |
 | GET     | `/api/admin/users/stats` | – (Cookie)                                            | Kennzahlen des **gesamten** Vereins: `{ total, active, inactive, recent, byRole }`. Bewusst getrennt von der Liste, damit die Zahlen im Kopf sich nicht mit den Filtern ändern. |
 | PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (bestätigt; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) nur `admin`+`sub_admin`. Alles transaktional. |
 
@@ -455,10 +580,10 @@ npm run uploads:sweep -- --apply # wirklich löschen
 # Verfügbare Mannschaften
 curl http://localhost:5000/api/teams
 
-# Registrierung mit Mannschaften (teamIds optional)
-curl -X POST http://localhost:5000/api/auth/register \
+# Registrierung – vier Felder. Danach ist man angemeldet (Cookie in cookies.txt).
+curl -c cookies.txt -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"firstName":"Max","lastName":"Muster","email":"max@example.com","password":"geheim1234","teamIds":[1,4]}'
+  -d '{"firstName":"Max","lastName":"Muster","email":"max@example.com","password":"geheim1234"}'
 
 # Login speichert den Cookie in cookies.txt
 curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
@@ -466,6 +591,21 @@ curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
   -d '{"email":"max@example.com","password":"geheim1234"}'
 
 curl -b cookies.txt http://localhost:5000/api/auth/me
+
+# Onboarding abschliessen (Mannschaftswahl, Design, Telefon) und später ändern
+curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/onboarding \
+  -H "Content-Type: application/json" \
+  -d '{"theme":"dark","phone":"0170 1234567","teams":[{"teamId":1,"relationType":"player"},{"teamId":4,"relationType":"fan"}]}'
+curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/photo -F "photo=@portrait.jpg"
+curl -b cookies.txt -X PATCH http://localhost:5000/api/auth/me/preferences \
+  -H "Content-Type: application/json" -d '{"theme":"system"}'
+curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/password \
+  -H "Content-Type: application/json" \
+  -d '{"currentPassword":"geheim1234","newPassword":"nochgeheimer42"}'
+
+# Admin: ein Konto sperren und wieder entsperren
+curl -b cookies.txt -X PATCH http://localhost:5000/api/admin/users/7 \
+  -H "Content-Type: application/json" -d '{"isApproved":false}'
 
 # Trainer: offene Beitrittsanfrage bestätigen bzw. ablehnen
 curl -b cookies.txt -X POST http://localhost:5000/api/teams/MJC/members/5/confirm
@@ -779,7 +919,14 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | Cookie-Lebensdauer wird aus dem `exp` des Tokens abgeleitet | `controllers/authController.js` |
 | Rolle **und Sperrstatus** werden bei jeder RBAC-Prüfung frisch aus der DB gelesen | `middleware/authMiddleware.js` |
 | `/api/auth/me` beendet die Sitzung, wenn das Konto gelöscht oder gesperrt wurde | `controllers/authController.js` |
-| Rate-Limit: Login 10/15 min, Registrierung 5/h pro IP; `trust proxy` konfiguriert (`TRUST_PROXY`) | `routes/authRoutes.js`, `server.js` |
+| Rate-Limit: Login 10/15 min, Registrierung 5/h, Passwortwechsel und Profilbild je 10/15 min pro IP; `trust proxy` konfiguriert (`TRUST_PROXY`) | `routes/authRoutes.js`, `server.js` |
+| Passwortwechsel verlangt das aktuelle Passwort (ein offener Browser genügt nicht) | `controllers/authController.js` |
+| Passwortwechsel **beendet alle anderen Sitzungen** (`sessions_valid_from` gegen `iat`) | `middleware/authMiddleware.js`, `repositories/userRepository.js` |
+| Im JWT stehen nur `sub` und `role` – keine weiteren personenbezogenen Daten | `controllers/authController.js` |
+| Kontaktdaten im Kader in zwei Stufen: Trainer:innen nur für die eigene Mannschaft, Spieler:innen nur für das Trainerteam | `repositories/teamRepository.js`, `controllers/teamsController.js` |
+| Die Mannschaftsliste (`GET /api/teams`) verlangt eine Anmeldung – es gibt keinen öffentlichen Endpunkt mehr | `routes/teamsRoutes.js` |
+| Hochgeladene Bilder werden mit `Cache-Control: private` ausgeliefert (kein gemeinsamer Proxy-Cache) | `server.js` |
+| Endpunkte des eigenen Kontos lesen Rolle **und** Sperrstatus frisch aus der DB (`checkRole(ROLES)`) | `routes/authRoutes.js` |
 | CSRF-Schutz: Origin-Prüfung bei allen schreibenden Requests | `server.js` |
 | Sicherheits-Header via `helmet` | `server.js` |
 | Alle SQL-Queries mit `?`-Platzhaltern; dynamische Spaltennamen nur aus fester Allowlist | überall, `repositories/userRepository.js` |
@@ -797,9 +944,12 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 ### Bekannte Restrisiken
 
 - **Logout ist clientseitig**: Das JWT bleibt bis zum Ablauf (`JWT_EXPIRES_IN`)
-  technisch gültig. Für echte Sofort-Invalidierung wäre eine Token-Denylist
-  oder eine Sitzungstabelle nötig. Kürzeres `JWT_EXPIRES_IN` reduziert das
-  Zeitfenster.
+  technisch gültig; der Cookie ist zwar gelöscht, ein zuvor kopiertes Token
+  gilt weiter. Der Passwortwechsel ist der Ausweg, der ohne Denylist
+  funktioniert: Er verschiebt `sessions_valid_from` und entwertet damit
+  sofort **alle** älteren Tokens. Soll auch der Logout das können, müsste er
+  dieselbe Spalte setzen – dann fliegen allerdings auch die eigenen anderen
+  Geräte heraus, weshalb er es bewusst nicht tut.
 - **User-Enumeration bei der Registrierung**: `409` verrät, dass eine
   E-Mail-Adresse bereits registriert ist. Bewusst beibehalten, weil eine
   generische Meldung die Registrierung unbrauchbar machen würde. Der Login
@@ -810,9 +960,12 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   korrekt gesetzt sein (Standard `loopback` deckt den Vite-Dev-Proxy ab; hinter
   echtem LB `TRUST_PROXY=1`), sonst greift die Zählung pro IP nicht.
 - **Roster-Sichtbarkeit**: Jede:r angemeldete Nutzer:in kann den bestätigten
-  Kader (Namen + Rollen, keine E-Mails) jeder Mannschaft über `GET
+  Kader (Name, Profilbild, Rückennummer, Position) jeder Mannschaft über `GET
   /api/teams/:code` einsehen. Bewusst so – im Vereinskontext sind Kader nicht
-  geheim. E-Mails und offene Beitrittsanfragen sehen nur Verwaltende.
+  geheim. Kontaktdaten sind es: E-Mail und Telefon der Trainer:innen gibt der
+  Endpunkt nur an Mitglieder **dieser** Mannschaft, die der Spieler:innen nur
+  an das Trainerteam. Offene Beitrittsanfragen sehen ausschliesslich
+  Verwaltende.
 - **`GET /api/admin/users` für `trainer`**: Trainer:innen sehen die komplette
   Mitgliederliste inkl. E-Mail, um Spieler:innen Mannschaften zuzuordnen.
   Falls das enger gefasst werden soll, müsste die Antwort für `trainer`

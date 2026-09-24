@@ -32,7 +32,16 @@ const REFERENCE_QUERIES = [
     // Bild für verwaist und würde die komplette Bilderstrecke löschen.
     sql: 'SELECT image_path AS path FROM news_images',
   },
-  { label: 'Mannschaftsfotos', sql: 'SELECT photo_path AS path FROM teams WHERE photo_path IS NOT NULL' },
+  {
+    label: 'Mannschaftsfotos',
+    sql: 'SELECT photo_path AS path FROM teams WHERE photo_path IS NOT NULL',
+  },
+  {
+    // Seit Migration 014. Fehlt diese Abfrage, hält der Lauf JEDES Profilbild
+    // für verwaist und löscht es mit --apply.
+    label: 'Profilbilder',
+    sql: 'SELECT photo_path AS path FROM users WHERE photo_path IS NOT NULL',
+  },
 ];
 
 async function main() {

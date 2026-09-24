@@ -11,7 +11,15 @@ import {
 } from 'recharts';
 
 import { formatNumber, formatTime } from '../../../lib/format';
-import { AXIS, DOT, GRID_PROPS, LINE, SERIES } from './chartTheme';
+import {
+  AXIS,
+  CURSOR_LINE,
+  DOT,
+  GRID_PROPS,
+  INK_SOFT,
+  LINE,
+  SERIES,
+} from './chartTheme';
 
 /**
  * Anfragen und Fehler je Minute im Beobachtungsfenster.
@@ -43,14 +51,14 @@ export default function TrafficChart({ data }) {
           />
           <YAxis allowDecimals={false} width={44} {...AXIS} />
 
-          <Tooltip content={<TrafficTooltip />} cursor={{ stroke: '#dbe0e4', strokeWidth: 1 }} />
+          <Tooltip content={<TrafficTooltip />} cursor={{ stroke: CURSOR_LINE, strokeWidth: 1 }} />
           <Legend
             verticalAlign="top"
             align="right"
             height={28}
             iconType="plainline"
             iconSize={14}
-            wrapperStyle={{ fontSize: 12, color: '#4b4b4b' }}
+            wrapperStyle={{ fontSize: 12, color: INK_SOFT }}
           />
 
           <Area
