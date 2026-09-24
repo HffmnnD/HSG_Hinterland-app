@@ -21,6 +21,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/009_schedule_module.sql` | Termin-Modul: `event_series`, `events`, `attendances`, `long_term_absences`. |
 | `migrations/013_onboarding_theme.sql` | Schlanke Registrierung, Onboarding (`onboarding_completed_at`), Design (`theme`) und der Bildausschnitt des Mannschaftsfotos (`photo_focus_x/y`, `photo_zoom`). |
 | `migrations/014_instant_signup_and_profile.sql` | Registrierung ohne Freigabe: `is_approved` wieder Default `1`, `approved_at` entfällt. Dazu Profilbild (`users.photo_path`) und freiwillige Telefonnummer (`users.phone`). |
+| `migrations/015_session_invalidation.sql` | `users.sessions_valid_from`: Ein Passwortwechsel entwertet alle vorher ausgestellten Tokens und beendet damit die Sitzungen auf anderen Geräten. Korrigiert ausserdem den Spaltenkommentar an `users.phone`: Kontaktdaten sind nicht für jedes angemeldete Konto sichtbar. |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
@@ -66,10 +67,11 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | ------ | --------- |
 | `id` | Primärschlüssel, überall als `user_id` referenziert |
 | `first_name`, `last_name` | Name |
-| `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert. Steht bei Trainer:innen als Kontakt im Kader |
+| `email` | Login-Name, **eindeutig**, klein/getrimmt gespeichert. Erscheint als Kontakt im Kader – bei Trainer:innen für die Mitglieder ihrer Mannschaft, bei Spieler:innen nur für das Trainerteam |
 | `photo_path` | Profilbild in `backend/uploads/`, z. B. `users/ab12.jpg`. `NULL` = Initialen anzeigen |
-| `phone` | Freiwillige Telefonnummer aus den Kontoeinstellungen. Im Kader sichtbar: bei Trainer:innen für alle, bei Spieler:innen nur für das Trainerteam |
+| `phone` | Freiwillige Telefonnummer aus den Kontoeinstellungen. Sichtbar nach derselben Regel wie die E-Mail-Adresse |
 | `password_hash` | bcrypt-Hash – nie im Klartext, nie an den Client |
+| `sessions_valid_from` | Unix-Sekunden: Tokens, die **vorher** ausgestellt wurden, gelten nicht mehr. Der Passwortwechsel setzt die Spalte auf jetzt und beendet so alle anderen Sitzungen. `0` = nie gewechselt. Bewusst eine Zahl und kein `DATETIME` – verglichen wird mit dem `iat` des JWT (UTC) |
 | `is_approved` | `1` = aktiv (Standard), `0` = von einem Admin gesperrt. **Keine** Registrierungs-Freigabe: Wer sich registriert, ist sofort angemeldet. Wird bei Login, `/api/auth/me` und in `checkRole` geprüft, damit eine Sperre sofort wirkt |
 | `role` | RBAC-Rolle, siehe unten. Wird **nicht** bei der Registrierung gesetzt (sondern im Onboarding bzw. von der Verwaltung) |
 | `theme` | Design-Vorliebe: `system` (Standard, folgt dem Gerät), `light`, `dark`. Am Konto und nicht im Browser, damit das Design auf allen Geräten gleich ist |
@@ -126,12 +128,12 @@ mehrere Beziehungen haben (z. B. Trainer der MJC *und* Spieler der H1).
 
 | Wert | Bedeutung |
 | ---- | --------- |
-| `0` | offene Beitrittsanfrage. Nur die Verwaltung sieht sie (`pendingMembers`), nicht der öffentliche Kader. |
+| `0` | offene Beitrittsanfrage. Nur die Verwaltung sieht sie (`pendingMembers`), nicht der Kader. |
 | `1` | vom Trainer bestätigt (oder direkt so angelegt). Teil des Kaders. |
 
 Selbst gewählt (Onboarding, „Mein Konto"): `player`/`coach` → `0`, `fan` → `1`.
-Alles, was Trainer/Admin manuell anlegen (`addMember`, `callup`,
-Admin-`teamIds`), ist sofort `1`.
+Alles, was Trainer/Admin manuell anlegen (`addMember`, Admin-`teamIds`), ist
+sofort `1`.
 
 Die `fan`-Beziehung ist reine Anzeigesteuerung („wessen Spiele will ich
 sehen?") und wird deshalb nirgends gezählt – weder in den `counts` einer

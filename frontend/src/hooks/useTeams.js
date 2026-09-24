@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api';
 
 /**
- * Lädt die Liste aller Mannschaften (`GET /api/teams`, öffentlich).
- * Wird im Registrierungsformular und in der Mitgliederverwaltung genutzt.
+ * Lädt die Liste aller Mannschaften (`GET /api/teams`, Anmeldung nötig).
+ * Genutzt vom Onboarding-Assistenten, der Mannschaftsübersicht, „Mein Konto"
+ * und der Mitgliederverwaltung – alle vier hinter dem Login.
  */
 export function useTeams() {
   const [teams, setTeams] = useState([]);

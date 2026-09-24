@@ -8,7 +8,6 @@ import {
   useSyncExternalStore,
 } from 'react';
 
-import { apiFetch } from '../lib/api';
 import {
   BAR_COLOR,
   THEMES,
@@ -54,7 +53,7 @@ import { useAuth } from './AuthContext';
 const ThemeContext = createContext(null);
 
 export function ThemeProvider({ children }) {
-  const { user, refresh } = useAuth();
+  const { user, updatePreferences } = useAuth();
 
   // Die Wahl aus DIESER Sitzung. null = es gilt Profil bzw. lokale Kopie.
   const [sessionChoice, setSessionChoice] = useState(null);
@@ -101,19 +100,18 @@ export function ThemeProvider({ children }) {
       setSessionChoice(next);
       storeTheme(next);
 
+      // Abgemeldet gibt es kein Profil, in dem etwas zu speichern wäre – die
+      // lokale Kopie oben genügt.
       if (!user) return;
-      try {
-        await apiFetch('/api/auth/me/theme', {
-          method: 'PATCH',
-          body: JSON.stringify({ theme: next }),
-        });
-        // Profil nachziehen, damit „Mein Konto" denselben Stand zeigt.
-        await refresh();
-      } catch {
-        // Nicht gespeichert – die Wahl dieser Sitzung gilt weiter.
-      }
+
+      // Ein Aufruf, der das Profil zurückgibt: `updatePreferences` setzt den
+      // neuen Stand direkt im AuthContext. Vorher waren es zwei Anfragen
+      // (Speichern, dann /api/auth/me nachladen) für eine Zahl im Profil.
+      // Schlägt es fehl (offline), bleibt die Ansicht umgestellt – ein Design
+      // ist nichts, wofür man eine Fehlermeldung braucht.
+      await updatePreferences({ theme: next });
     },
-    [user, refresh]
+    [user, updatePreferences]
   );
 
   const value = useMemo(

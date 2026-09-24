@@ -21,9 +21,11 @@ import PasswordForm from './PasswordForm';
  * bei der Registrierung (also nie wieder), und ein Passwort liess sich gar
  * nicht ändern.
  *
- * Die drei Bereiche liegen hinter einem Umschalter statt untereinander: Eine
- * Startseite soll nicht mit drei Formularen enden. Geöffnet ist zunächst
- * nichts – man kommt hierher, um etwas zu ändern, nicht um zu lesen.
+ * Die vier Bereiche liegen hinter einem Umschalter statt untereinander: Eine
+ * Startseite soll nicht mit vier Formularen enden. Geöffnet ist zunächst
+ * nichts – man kommt hierher, um etwas zu ändern, nicht um zu lesen. Das
+ * spart zugleich Arbeit: Die Mannschaftsliste wird erst geladen, wenn jemand
+ * den Bereich „Mannschaften" wirklich aufklappt.
  */
 
 const TABS = [

@@ -34,11 +34,15 @@ const photoLimiter = rateLimit({
   },
 });
 
-// Öffentlich: wird im Registrierungsformular benötigt (noch kein Login).
-router.get('/', listTeams);
-
-// Ab hier: angemeldet, mit gültiger Rolle (checkRole liest sie frisch aus der DB).
+// Angemeldet, mit gültiger Rolle (checkRole liest sie frisch aus der DB).
 const requireAuth = [authenticate, checkRole(ROLES)];
+
+// Die Mannschaftsliste war früher öffentlich, weil das Registrierungsformular
+// sie ohne Anmeldung gebraucht hat. Das Formular fragt nur noch Name, E-Mail
+// und Passwort ab – die Mannschaftswahl passiert im Onboarding, also nach dem
+// Login. Damit gibt es keinen Grund mehr, die Struktur des Vereins anonym
+// herauszugeben.
+router.get('/', requireAuth, listTeams);
 
 router.get('/:code', requireAuth, getTeam);
 

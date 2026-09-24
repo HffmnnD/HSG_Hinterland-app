@@ -52,8 +52,10 @@ function OnboardingRoute() {
 export default function App() {
   const { loading } = useAuth();
 
-  // Nur der initiale GET /api/auth/me setzt `loading` – danach bleibt der
-  // Router montiert (refresh() löst keinen Vollbild-Ladezustand mehr aus).
+  // `loading` setzt ausschliesslich der initiale GET /api/auth/me. Alle
+  // späteren Aufrufe (Anmelden, Onboarding, Konto-Einstellungen) tauschen nur
+  // das Profil aus – der Router bleibt montiert, es gibt kein zweites
+  // Vollbild-Laden mitten in der Sitzung.
   if (loading) {
     return <FullScreenLoader />;
   }

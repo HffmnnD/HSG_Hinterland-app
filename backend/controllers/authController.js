@@ -15,6 +15,10 @@ const {
 } = require('../config/auth');
 const userRepository = require('../repositories/userRepository');
 const {
+  isTokenCurrent,
+  SESSION_ENDED_MESSAGE,
+} = require('../middleware/authMiddleware');
+const {
   validateRegistration,
   validateTheme,
   validatePhone,
@@ -48,12 +52,20 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
 
 // --- Cookie / Session --------------------------------------------------------
 
+/**
+ * Setzt den Sitzungs-Cookie.
+ *
+ * Im Token stehen nur `sub` und `role` – mehr liest niemand, und was nicht
+ * gebraucht wird, hat in einem Ausweis nichts zu suchen. Die Rolle ist dabei
+ * nur ein Hinweis (Stand der Ausstellung); verbindlich prüft `checkRole` sie
+ * bei jeder Anfrage frisch in der Datenbank.
+ *
+ * @param {{ id:number, role:string }} user
+ */
 function setSessionCookie(res, user) {
-  const token = jwt.sign(
-    { sub: user.id, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
-  );
+  const token = jwt.sign({ sub: user.id, role: user.role }, JWT_SECRET, {
+    expiresIn: JWT_EXPIRES_IN,
+  });
   // Cookie-Lebensdauer exakt aus dem Token ableiten, damit beide nicht
   // auseinanderlaufen, wenn JWT_EXPIRES_IN geändert wird.
   const { exp } = jwt.decode(token);
@@ -77,7 +89,7 @@ async function register(req, res, next) {
 
     const passwordHash = await bcrypt.hash(input.account.password, SALT_ROUNDS);
 
-    const userId = await userRepository.createAccount({
+    const account = await userRepository.createAccount({
       firstName: input.account.firstName,
       lastName: input.account.lastName,
       email: input.account.email,
@@ -87,11 +99,16 @@ async function register(req, res, next) {
     // Sofort anmelden. Ein zweites Formular direkt nach dem ersten wäre eine
     // Hürde ohne Zweck: Die Zugangsdaten sind gerade eingegeben worden, und
     // der Onboarding-Assistent braucht ohnehin eine Sitzung.
-    const user = await userRepository.findById(userId);
-    setSessionCookie(res, user);
+    setSessionCookie(res, account);
 
-    const profile = await userRepository.buildProfile(user);
-    return res.status(201).json({ message: REGISTER_OK_MESSAGE, user: profile });
+    // Das Profil wird hier ZUSAMMENGESETZT und nicht neu geladen: Ein gerade
+    // angelegtes Konto hat keine Mannschaften und keine Dienste, und alle
+    // übrigen Werte stehen fest. Das erspart drei Abfragen auf dem Weg, den
+    // jedes neue Mitglied genau einmal geht.
+    return res.status(201).json({
+      message: REGISTER_OK_MESSAGE,
+      user: userRepository.toNewProfile(account),
+    });
   } catch (err) {
     // Der UNIQUE-Index auf email ist die einzige Quelle der Wahrheit
     // (kein SELECT-dann-INSERT -> keine Race Condition).
@@ -157,6 +174,12 @@ async function me(req, res, next) {
       clearSessionCookie(res); // Konto gelöscht -> Cookie entwerten
       return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
     }
+    // Seit dem Passwortwechsel ausgestellte Tokens sind die einzigen, die noch
+    // gelten – diese Sitzung stammt von vorher.
+    if (!isTokenCurrent(user, req.tokenIssuedAt)) {
+      clearSessionCookie(res);
+      return res.status(401).json({ message: SESSION_ENDED_MESSAGE });
+    }
     if (!user.is_approved) {
       clearSessionCookie(res); // nachträglich gesperrt -> Sitzung beenden
       return res.status(403).json({ message: ACCOUNT_LOCKED_MESSAGE });
@@ -181,24 +204,6 @@ async function me(req, res, next) {
 async function respondWithProfile(res, userId, message, status = 200) {
   const profile = await userRepository.getFullProfile(userId);
   return res.status(status).json({ message, user: profile });
-}
-
-// PATCH /api/auth/me/theme   Body: { theme: 'system' | 'light' | 'dark' }
-//
-// Eigener, schlanker Endpunkt für den Umschalter in der Kopfzeile: Er soll
-// sofort reagieren und nicht die ganze Mannschaftswahl mitschicken müssen.
-async function setTheme(req, res, next) {
-  try {
-    const check = validateTheme(req.body?.theme);
-    if (!check.ok) {
-      return res.status(check.status).json({ message: check.message });
-    }
-
-    await userRepository.setTheme(req.userId, check.theme);
-    return res.json({ message: 'Design gespeichert.', theme: check.theme });
-  } catch (err) {
-    return next(err);
-  }
 }
 
 // POST /api/auth/me/onboarding
@@ -356,12 +361,20 @@ async function changePassword(req, res, next) {
     }
 
     const passwordHash = await bcrypt.hash(check.newPassword, SALT_ROUNDS);
+    // Setzt zugleich `sessions_valid_from` – ALLE bisher ausgestellten Tokens
+    // sind damit ungültig, auch die auf anderen Geräten.
     await userRepository.updatePassword(req.userId, passwordHash);
 
-    // Die Sitzung bleibt bestehen: Das Token hängt am Konto, nicht am
-    // Passwort, und wer gerade selbst das Passwort geändert hat, soll nicht
-    // aus der App fallen.
-    return res.json({ message: 'Passwort geändert.' });
+    // …einschliesslich dieses hier. Deshalb sofort ein frisches Cookie: Wer
+    // gerade selbst das Passwort geändert hat, soll nicht aus der App fallen –
+    // alle ANDEREN Sitzungen sind beendet. Die Rolle steht dank `checkRole`
+    // frisch in `req`, das Konto muss dafür nicht erneut geladen werden.
+    setSessionCookie(res, { id: req.userId, role: req.userRole });
+
+    return res.json({
+      message:
+        'Passwort geändert. Auf anderen Geräten musst du dich neu anmelden.',
+    });
   } catch (err) {
     return next(err);
   }
@@ -372,7 +385,6 @@ module.exports = {
   login,
   logout,
   me,
-  setTheme,
   completeOnboarding,
   updatePreferences,
   setProfilePhoto,

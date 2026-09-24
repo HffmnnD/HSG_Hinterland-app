@@ -51,18 +51,6 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // Auth-Status neu laden, ohne die gesamte App in den Ladezustand zu setzen.
-  const refresh = useCallback(async () => {
-    try {
-      const data = await apiFetch('/api/auth/me');
-      setUser(data?.user ?? null);
-      return data?.user ?? null;
-    } catch {
-      setUser(null);
-      return null;
-    }
-  }, []);
-
   const login = useCallback(async ({ email, password }) => {
     setError(null);
     try {
@@ -183,7 +171,12 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  /** Eigenes Passwort ändern. Die Sitzung bleibt bestehen. */
+  /**
+   * Eigenes Passwort ändern. Der Server erneuert dabei den Sitzungs-Cookie,
+   * damit dieses Gerät angemeldet bleibt – alle anderen Sitzungen enden
+   * (siehe users.sessions_valid_from). Das Profil ändert sich nicht, deshalb
+   * wird hier auch kein `user` gesetzt.
+   */
   const changePassword = useCallback(async ({ currentPassword, newPassword }) => {
     try {
       const data = await apiFetch('/api/auth/me/password', {
@@ -219,7 +212,6 @@ export function AuthProvider({ children }) {
       login,
       register,
       logout,
-      refresh,
       completeOnboarding,
       updatePreferences,
       uploadPhoto,
@@ -234,7 +226,6 @@ export function AuthProvider({ children }) {
       login,
       register,
       logout,
-      refresh,
       completeOnboarding,
       updatePreferences,
       uploadPhoto,

@@ -53,8 +53,6 @@ export function serviceLabel(service) {
 }
 
 // Beziehung Nutzer <-> Mannschaft
-export const RELATION_TYPES = ['player', 'coach', 'fan'];
-
 export const RELATION_LABELS = {
   player: 'Spieler:in',
   coach: 'Trainer:in',

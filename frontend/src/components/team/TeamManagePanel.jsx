@@ -270,11 +270,8 @@ export default function TeamManagePanel({
 
       {/* --------------------------------------------- Zuordnungen verwalten */}
       {/* Eine Zeile je Person: Bild, Name mit Rückennummer, darunter die
-          Kontaktdaten. Das Auswahlfeld „Hochrufen zu …" stand früher hier und
-          ist ersatzlos entfallen – es war ein Sonderweg, den kaum jemand
-          benutzt hat, und hat jede Zeile zu einem Formular gemacht. Wer eine
-          Person in einer zweiten Mannschaft braucht, fügt sie dort über
-          „Mitglied hinzufügen" hinzu. */}
+          Kontaktdaten. Wer in einer zweiten Mannschaft mitspielt, wird dort
+          über „Mitglied hinzufügen" eingetragen. */}
       {SECTIONS.map((relation) =>
         members[relation].length === 0 ? null : (
           <section key={relation}>

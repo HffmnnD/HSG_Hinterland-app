@@ -58,14 +58,14 @@ async function loadManageableTeam(req, code, deniedMessage) {
   }
   const canManage =
     ADMIN_ROLES.includes(req.userRole) ||
-    (await teamRepository.isCoachOf(req.userId, team.id));
+    (await teamRepository.hasConfirmedRelation(req.userId, team.id, 'coach'));
   if (!canManage) {
     return { ok: false, status: 403, message: deniedMessage };
   }
   return { ok: true, team };
 }
 
-// GET /api/teams  (öffentlich)
+// GET /api/teams  (angemeldet)
 async function listTeams(req, res, next) {
   try {
     const teams = await teamRepository.listAll();
@@ -83,18 +83,24 @@ async function getTeam(req, res, next) {
       return res.status(404).json({ message: 'Mannschaft nicht gefunden.' });
     }
 
-    const canManage =
-      ADMIN_ROLES.includes(req.userRole) ||
-      (await teamRepository.isCoachOf(req.userId, team.id));
+    // „Darf verwalten" und „gehört zum Kader" kommen aus EINER Abfrage; für
+    // die Verwaltung erübrigt sie sich, weil dort beides ohnehin gilt.
+    const isAdmin = ADMIN_ROLES.includes(req.userRole);
+    const { isMember, isCoach } = isAdmin
+      ? { isMember: true, isCoach: true }
+      : await teamRepository.getSquadMembership(req.userId, team.id);
+    const canManage = isAdmin || isCoach;
 
-    // Öffentlich: nur bestätigte Mitglieder. Kontaktdaten der Spieler:innen
-    // nur für das Trainerteam; die der Trainer:innen stehen immer dabei, denn
-    // genau dafür ist der Kader da (siehe teamRepository.mapMember).
-    const members = await teamRepository.getConfirmedRoster(team.id, {
-      includeContact: canManage,
-    });
-
-    const sponsors = await teamRepository.getSponsors(team.id);
+    // Der Kader enthält nur bestätigte Mitglieder. Kontaktdaten des
+    // Trainerteams sehen alle, die selbst zu dieser Mannschaft gehören, die
+    // der Spieler:innen nur das Trainerteam (siehe teamRepository.mapMember).
+    const [members, sponsors] = await Promise.all([
+      teamRepository.getConfirmedRoster(team.id, {
+        coachContact: isMember,
+        playerContact: canManage,
+      }),
+      teamRepository.getSponsors(team.id),
+    ]);
 
     const response = {
       team: presentTeam(team),
@@ -113,7 +119,8 @@ async function getTeam(req, res, next) {
     // Verwaltung sieht zusätzlich die offenen Beitrittsanfragen.
     if (canManage) {
       response.pendingMembers = await teamRepository.getPendingMembers(team.id, {
-        includeContact: true,
+        coachContact: true,
+        playerContact: true,
       });
     }
 
@@ -220,10 +227,17 @@ async function confirmMember(req, res, next) {
       return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
     }
 
-    // Optionaler Filter auf einen Beziehungstyp; sonst alle offenen bestätigen.
+    // Der Beziehungstyp ist PFLICHT. Ohne ihn hätte `confirmRelations` alle
+    // offenen Anfragen dieser Person auf einmal bestätigt – wer gleichzeitig
+    // als Spieler:in und als Trainer:in angefragt hat, wäre mit einem Klick
+    // auf „Bestätigen" in der Spielerzeile auch Trainer:in geworden (und
+    // global zur Rolle `trainer` hochgestuft). Eine Rechteerweiterung darf
+    // nicht als Nebenwirkung passieren.
     const relationType = req.query.relationType;
-    if (relationType !== undefined && !isRelationType(relationType)) {
-      return res.status(400).json({ message: 'Ungültiger Beziehungstyp.' });
+    if (!isRelationType(relationType)) {
+      return res.status(400).json({
+        message: `Bitte angeben, welche Anfrage bestätigt wird (relationType: ${RELATION_TYPES.join(', ')}).`,
+      });
     }
 
     const confirmed = await teamRepository.confirmRelations(
@@ -240,7 +254,7 @@ async function confirmMember(req, res, next) {
     // Wurde eine Trainer-Beziehung bestätigt, bekommt der Nutzer auch die
     // globale Rolle 'trainer' (sofern er bisher nur spieler/zuschauer war).
     let roleUpgraded = false;
-    if (relationType === undefined || relationType === 'coach') {
+    if (relationType === 'coach') {
       const nowCoach = await teamRepository.hasConfirmedRelation(
         targetId,
         loaded.team.id,

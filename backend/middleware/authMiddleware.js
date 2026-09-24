@@ -29,10 +29,13 @@ function authenticate(req, res, next) {
     }
 
     req.userId = userId;
-    req.userEmail = payload.email;
     // Rolle aus dem Token (Stand: letzter Login). Die autoritative Prüfung
     // erfolgt in checkRole gegen die Datenbank.
     req.userRole = payload.role;
+    // Ausstellungszeit (Unix-Sekunden). checkRole und /api/auth/me vergleichen
+    // sie mit `users.sessions_valid_from` – ein Passwortwechsel entwertet damit
+    // alle älteren Tokens.
+    req.tokenIssuedAt = Number(payload.iat) || 0;
     return next();
   } catch {
     return res
@@ -40,6 +43,25 @@ function authenticate(req, res, next) {
       .json({ message: 'Ungültiges oder abgelaufenes Token.' });
   }
 }
+
+/**
+ * Gilt das Token noch, oder wurde es durch einen Passwortwechsel entwertet?
+ *
+ * `sessions_valid_from` ist der Zeitpunkt des letzten Passwortwechsels in
+ * Unix-Sekunden, `iat` die Ausstellungszeit des Tokens in derselben Einheit.
+ * Ältere Tokens fallen durch – ohne Denylist und ohne zusätzliche Abfrage, denn
+ * die Zeile wird hier ohnehin gelesen.
+ *
+ * @param {{ sessions_valid_from?: number }} user
+ * @param {number} issuedAt
+ */
+function isTokenCurrent(user, issuedAt) {
+  const validFrom = Number(user.sessions_valid_from) || 0;
+  return validFrom === 0 || issuedAt >= validFrom;
+}
+
+const SESSION_ENDED_MESSAGE =
+  'Diese Sitzung ist nicht mehr gültig. Bitte melde dich erneut an.';
 
 /**
  * Erzeugt eine Middleware, die sicherstellt, dass der angemeldete Nutzer eine
@@ -56,16 +78,19 @@ function checkRole(allowedRoles) {
     }
 
     try {
-      // Rolle + Sperrstatus frisch aus der DB lesen, damit eine Änderung
-      // sofort greift (nicht erst nach Ablauf des 7-Tage-Tokens).
+      // Rolle, Sperrstatus und Sitzungsgrenze frisch aus der DB lesen, damit
+      // eine Änderung sofort greift (nicht erst nach Ablauf des 7-Tage-Tokens).
       const [rows] = await pool.query(
-        'SELECT role, is_approved FROM users WHERE id = ?',
+        'SELECT role, is_approved, sessions_valid_from FROM users WHERE id = ?',
         [req.userId]
       );
       const user = rows[0];
 
       if (!user) {
         return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
+      }
+      if (!isTokenCurrent(user, req.tokenIssuedAt)) {
+        return res.status(401).json({ message: SESSION_ENDED_MESSAGE });
       }
       if (!user.is_approved) {
         return res
@@ -89,4 +114,4 @@ function checkRole(allowedRoles) {
   };
 }
 
-module.exports = { authenticate, checkRole };
+module.exports = { authenticate, checkRole, isTokenCurrent, SESSION_ENDED_MESSAGE };

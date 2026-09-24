@@ -54,7 +54,7 @@ frontend/src/
                                Profil und localStorage ab und setzt die Klasse
                                `dark` am <html> (siehe „Design")
   hooks/
-    useTeams.js                lädt GET /api/teams (öffentlich)
+    useTeams.js                lädt GET /api/teams (Anmeldung nötig)
     useNews.js                 lädt GET /api/news (+ reload nach Anlegen/Löschen)
     useAdminUsers.js           seitenweise Mitgliederliste (entprellte Suche,
                                verwirft überholte Antworten) + useMemberStats
@@ -531,7 +531,7 @@ wählt, ist bei `player`/`coach` eine Anfrage.
 - Auf `/teams/:code` sehen Verwaltende ganz oben „Offene Beitrittsanfragen"
   mit **Bestätigen** (`POST …/members/:id/confirm`) und **Ablehnen**
   (`DELETE …/members/:id`).
-- Der öffentliche Kader (`members`) enthält nur bestätigte Mitglieder.
+- Der Kader (`members`) enthält nur bestätigte Mitglieder.
 - Die `fan`-Zuordnung gilt sofort. Sie steuert nur, wessen Spiele jemand
   sehen will, und wird **nirgends gezählt** – weder auf der Mannschaftsseite
   noch in der Verwaltung.
@@ -550,9 +550,11 @@ bleibt es beim getönten Kreis mit den Initialen.
 
 Die **Kontaktzeile im Kader** zeigt E-Mail und Telefonnummer als `mailto:`-
 bzw. `tel:`-Link – am Handy ist genau das der Zweck. Wer was sieht, entscheidet
-das Backend (siehe `backend/README.md` → „Kontaktdaten im Kader"):
-Trainer:innen sind für alle erreichbar, die Daten der Spieler:innen sieht nur
-das Trainerteam.
+das Backend (siehe `backend/README.md` → „Wer sieht die Kontaktdaten im
+Kader?"): Trainer:innen sind für die Mitglieder **ihrer** Mannschaft
+erreichbar, die Daten der Spieler:innen sieht nur das Trainerteam. Das Frontend
+prüft nichts – es zeigt an, was in der Antwort steht, und lässt die Zeile weg,
+wenn nichts drinsteht.
 
 ## Mein Konto (Startseite, unten)
 
@@ -563,11 +565,15 @@ aufklappbaren Bereichen:
 | ------- | ------ |
 | **Profil** | Profilbild und Telefonnummer |
 | **Mannschaften** | dieselbe Auswahl wie im Onboarding. Gesendet wird die vollständige neue Wahl (`PATCH /api/auth/me/preferences`); der Server gleicht sie ab, statt neu anzulegen – Bestätigungen und Rückennummern bleiben erhalten. |
-| **Design** | Hell / Dunkel / System |
+| **Design** | Hell / Dunkel / System (`PATCH /api/auth/me/preferences`) |
 | **Passwort** | aktuelles Passwort + neues Passwort mit Wiederholung |
 
 Geöffnet ist zunächst keiner: Man kommt hierher, um etwas zu ändern, nicht um
-zu lesen.
+zu lesen. Das spart auch Arbeit – die Mannschaftsliste lädt erst, wenn der
+Bereich „Mannschaften" wirklich aufgeklappt wird.
+
+Ein Passwortwechsel beendet die Sitzungen auf **anderen** Geräten; dieses
+Gerät bleibt angemeldet. Das Formular sagt das in seiner Erfolgsmeldung.
 
 ## Design (Hell & Dunkel)
 
@@ -596,7 +602,9 @@ Dauerplatz auf jeder Seite.
 Drei Dinge, die dabei wichtig sind:
 
 * **Die Wahl liegt im Profil** (`users.theme`), nicht im Browser – damit ist das
-  Design am Handy dasselbe wie am Rechner. `localStorage` hält nur eine Kopie,
+  Design am Handy dasselbe wie am Rechner. Gespeichert wird sie über
+  `PATCH /api/auth/me/preferences`, das das frische Profil zurückgibt: eine
+  Anfrage, kein Nachladen. `localStorage` hält nur eine Kopie,
   damit die Seite nicht hell aufblitzt, solange `GET /api/auth/me` läuft; ein
   Inline-Skript in `index.html` liest sie vor dem ersten Bild.
 * **Die Einstellung wird abgeleitet, nicht kopiert:** Sitzungswahl → Profil →

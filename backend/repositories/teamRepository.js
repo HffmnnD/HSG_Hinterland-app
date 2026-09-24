@@ -8,8 +8,6 @@
 const pool = require('../config/db');
 const { publicUrlFor } = require('../config/uploads');
 
-const RELATION_GROUPS = ['player', 'coach', 'fan'];
-
 // Beziehungen, die ein Mitglied selbst wählen darf (replaceSelfRelations).
 // Muss zu SELF_RELATION_TYPES in utils/roles.js passen.
 const SELF_RELATION_GROUPS = ['player', 'coach', 'fan'];
@@ -338,16 +336,30 @@ async function getTeamsForUser(userId, runner = pool) {
   }));
 }
 
-/** Ist der Nutzer als BESTÄTIGTE:r Trainer:in (`coach`) dieser Mannschaft? */
-async function isCoachOf(userId, teamId, runner = pool) {
+/**
+ * Stellung des Nutzers im KADER dieser Mannschaft – beides in EINER Abfrage,
+ * weil die Mannschaftsseite beide Antworten zugleich braucht: „darf verwalten"
+ * (Trainer:in) und „gehört dazu" (Spieler:in oder Trainer:in).
+ *
+ * `fan` zählt bewusst nicht: Diese Zuordnung darf jede:r für sich selbst
+ * setzen, sie gilt sofort und sagt nur „ich will die Spiele sehen". Als
+ * Schlüssel zu den Kontaktdaten des Trainerteams wäre sie wertlos.
+ *
+ * @returns {Promise<{ isMember: boolean, isCoach: boolean }>}
+ */
+async function getSquadMembership(userId, teamId, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT 1 FROM user_teams
-      WHERE user_id = ? AND team_id = ? AND relation_type = 'coach'
-        AND is_confirmed = 1
-      LIMIT 1`,
+    `SELECT relation_type FROM user_teams
+      WHERE user_id = ? AND team_id = ?
+        AND relation_type IN ('player', 'coach')
+        AND is_confirmed = 1`,
     [userId, teamId]
   );
-  return rows.length > 0;
+
+  return {
+    isMember: rows.length > 0,
+    isCoach: rows.some((row) => row.relation_type === 'coach'),
+  };
 }
 
 /** Hat der Nutzer diese konkrete (bestätigte) Beziehung zur Mannschaft? */
@@ -368,22 +380,29 @@ async function hasConfirmedRelation(userId, teamId, relationType, runner = pool)
  * Eine Kaderzeile für das Frontend.
  *
  * ── Wer sieht die Kontaktdaten? ─────────────────────────────────────────────
- * Das Profilbild sehen alle Mitglieder – dafür ist es da.
+ * Das Profilbild sehen alle angemeldeten Mitglieder – dafür ist es da.
  *
- * E-Mail und Telefonnummer dagegen sind Kontaktdaten, und die Regel ist:
+ * E-Mail und Telefonnummer sind personenbezogene Kontaktdaten und hängen an
+ * ZWEI Stufen:
  *
- *   coach   immer sichtbar. Trainer:innen sind die Ansprechpartner:innen
- *           einer Mannschaft; genau dafür steht der Kontakt im Kader.
- *   player  nur für das Trainerteam (`includeContact`). Die Nummer eines
- *           Mitglieds gehört nicht in eine Liste, die jedes Konto des Vereins
- *           öffnen kann.
+ *   coachContact    Kontakt der Trainer:innen. Sichtbar für alle, die selbst
+ *                   zu DIESER Mannschaft gehören (bestätigte:r Spieler:in oder
+ *                   Trainer:in) sowie für die Verwaltung – sie sind die
+ *                   Ansprechpartner:innen genau dieses Kreises.
+ *   playerContact   Kontakt der Spieler:innen. Nur für das Trainerteam der
+ *                   Mannschaft und die Verwaltung.
+ *
+ * Bewusst NICHT „jedes angemeldete Konto": Die Registrierung steht offen und
+ * bestätigt keine E-Mail-Adresse. „Angemeldet" ist damit keine Vertrauensstufe
+ * – wer sich in zwei Minuten ein Konto anlegt, hätte sonst die komplette
+ * Kontaktliste aller Trainer:innen des Vereins abrufen können.
  *
  * Die Telefonnummer ist zusätzlich freiwillig: Sie steht nur dort, wo sie
  * jemand selbst in den Kontoeinstellungen hinterlegt hat.
  */
-function mapMember(row, includeContact) {
+function mapMember(row, { coachContact = false, playerContact = false } = {}) {
   const isCoach = row.relation_type === 'coach';
-  const showContact = includeContact || isCoach;
+  const showContact = isCoach ? coachContact : playerContact;
 
   return {
     id: row.id,
@@ -402,29 +421,34 @@ function mapMember(row, includeContact) {
 }
 
 /**
- * BESTÄTIGTER Kader einer Mannschaft, gruppiert nach player / coach / fan.
- * @param {{ includeContact?: boolean }} [opts] Kontaktdaten der SPIELER:INNEN
- *   mitgeben (nur für das Trainerteam). Bei Trainer:innen stehen sie ohnehin
- *   immer dabei – siehe mapMember.
+ * BESTÄTIGTER Kader einer Mannschaft: Spieler:innen und Trainerteam.
+ *
+ * `fan` bleibt bewusst AUSSEN VOR – und zwar schon in der Abfrage, nicht erst
+ * in der Anzeige. Wer eine Mannschaft nur verfolgt, gehört nicht zu ihrem
+ * Kader; seine Daten (Name, Bild, für das Trainerteam auch E-Mail und Telefon)
+ * hatten in dieser Antwort nie einen Zweck. Die Zuordnung steuert
+ * ausschliesslich, wessen Spiele jemand angezeigt bekommt.
+ *
+ * @param {{ coachContact?: boolean, playerContact?: boolean }} [contact]
+ *   Welche Kontaktdaten mitgehen – siehe mapMember.
  */
-async function getConfirmedRoster(teamId, { includeContact = false } = {}, runner = pool) {
+async function getConfirmedRoster(teamId, contact = {}, runner = pool) {
   const [rows] = await runner.query(
     `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.photo_path,
             u.role, ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
        FROM user_teams ut
        JOIN users u ON u.id = ut.user_id
       WHERE ut.team_id = ? AND ut.is_confirmed = 1
+        AND ut.relation_type IN ('player', 'coach')
       -- Kader nach Rückennummer sortieren (ohne Nummer ans Ende), danach
       -- alphabetisch. So steht die Liste wie im Spielberichtsbogen.
       ORDER BY ut.jersey_number IS NULL, ut.jersey_number, u.last_name, u.first_name`,
     [teamId]
   );
 
-  const roster = { player: [], coach: [], fan: [] };
+  const roster = { player: [], coach: [] };
   for (const row of rows) {
-    if (roster[row.relation_type]) {
-      roster[row.relation_type].push(mapMember(row, includeContact));
-    }
+    roster[row.relation_type].push(mapMember(row, contact));
   }
   return roster;
 }
@@ -433,7 +457,7 @@ async function getConfirmedRoster(teamId, { includeContact = false } = {}, runne
  * OFFENE Beitrittsanfragen einer Mannschaft (is_confirmed = 0) als flache
  * Liste – eine Zeile pro (Nutzer, Beziehungstyp).
  */
-async function getPendingMembers(teamId, { includeContact = false } = {}, runner = pool) {
+async function getPendingMembers(teamId, contact = {}, runner = pool) {
   const [rows] = await runner.query(
     `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.photo_path,
             u.role, ut.relation_type, ut.jersey_number, ut.position, ut.staff_title
@@ -444,7 +468,7 @@ async function getPendingMembers(teamId, { includeContact = false } = {}, runner
     [teamId]
   );
   return rows.map((row) => ({
-    ...mapMember(row, includeContact),
+    ...mapMember(row, contact),
     relationType: row.relation_type,
   }));
 }
@@ -572,19 +596,22 @@ async function removeRelation(userId, teamId, relationType, runner = pool) {
 }
 
 /**
- * Bestätigt offene Anfragen eines Nutzers für eine Mannschaft.
- * Ohne `relationType` werden alle offenen Beziehungen bestätigt.
- * @returns {Promise<number>} Anzahl bestätigter Zeilen
+ * Bestätigt die offene Anfrage eines Nutzers für EINE Beziehung zu einer
+ * Mannschaft.
+ *
+ * `relationType` ist Pflicht: Würde die Funktion ohne ihn alle offenen
+ * Anfragen bestätigen, machte ein Klick auf „Bestätigen" in der Spielerzeile
+ * aus einer gleichzeitig gestellten Trainer-Anfrage ebenfalls eine bestätigte
+ * – samt Hochstufung der globalen Rolle.
+ *
+ * @returns {Promise<number>} Anzahl bestätigter Zeilen (0 = nichts offen)
  */
 async function confirmRelations(userId, teamId, relationType, runner = pool) {
-  const params = [userId, teamId];
-  let sql =
-    'UPDATE user_teams SET is_confirmed = 1 WHERE user_id = ? AND team_id = ? AND is_confirmed = 0';
-  if (relationType !== undefined) {
-    sql += ' AND relation_type = ?';
-    params.push(relationType);
-  }
-  const [result] = await runner.query(sql, params);
+  const [result] = await runner.query(
+    `UPDATE user_teams SET is_confirmed = 1
+      WHERE user_id = ? AND team_id = ? AND relation_type = ? AND is_confirmed = 0`,
+    [userId, teamId, relationType]
+  );
   return result.affectedRows;
 }
 
@@ -604,6 +631,14 @@ async function confirmRelations(userId, teamId, relationType, runner = pool) {
  *
  * Neue Zuordnungen entstehen mit initialConfirmation(): `fan` gilt sofort,
  * `player`/`coach` sind Anfragen an die Trainer:innen der Mannschaft.
+ *
+ * Eine bestätigte `coach`-Zuordnung lässt sich hier AUCH abwählen – anders als
+ * in der Mannschaftsverwaltung, wo `removeMember` genau das verhindert. Der
+ * Unterschied ist Absicht: Dort schützt die Sperre vor dem Fehlklick in einer
+ * Liste fremder Namen. Hier steht die eigene Mannschaftswahl unter „Mein
+ * Konto" – wer sein eigenes Häkchen entfernt, trainiert die Mannschaft nicht
+ * mehr und gibt die Verwaltungsrechte bewusst ab. Zurück geht es über eine
+ * neue Anfrage, die das übrige Trainerteam oder die Verwaltung bestätigt.
  *
  * @param {import('mysql2/promise').PoolConnection} conn
  * @param {number} userId
@@ -678,7 +713,6 @@ async function replaceRelationTeams(conn, userId, teamIds, relationType) {
 }
 
 module.exports = {
-  RELATION_GROUPS,
   POSITIONS,
   GENDERS,
   listAll,
@@ -694,7 +728,7 @@ module.exports = {
   isJerseyNumberTaken,
   findExistingIds,
   getTeamsForUser,
-  isCoachOf,
+  getSquadMembership,
   hasConfirmedRelation,
   getConfirmedRoster,
   getPendingMembers,

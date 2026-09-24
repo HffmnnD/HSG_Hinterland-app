@@ -6,7 +6,6 @@ const {
   login,
   logout,
   me,
-  setTheme,
   completeOnboarding,
   updatePreferences,
   setProfilePhoto,
@@ -85,7 +84,6 @@ router.get('/me', authenticate, me);
 // gesperrtes Konto mit seinem alten Cookie weiter Mannschaften beitreten.
 const requireActiveAccount = [authenticate, checkRole(ROLES)];
 
-router.patch('/me/theme', requireActiveAccount, setTheme);
 router.post('/me/onboarding', requireActiveAccount, completeOnboarding);
 router.patch('/me/preferences', requireActiveAccount, updatePreferences);
 router.post('/me/password', passwordLimiter, requireActiveAccount, changePassword);

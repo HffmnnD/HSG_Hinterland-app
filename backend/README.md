@@ -117,6 +117,9 @@ backend/
       014_instant_signup_and_profile.sql Registrierung ohne Freigabe (nimmt
                                          approved_at aus 013 zurück),
                                          Profilbild und Telefonnummer
+      015_session_invalidation.sql       Passwortwechsel beendet alle anderen
+                                         Sitzungen (sessions_valid_from);
+                                         korrigiert den Kommentar an phone
     README.md            Tabellen & Beziehungen auf einen Blick
 
   server.js
@@ -279,24 +282,62 @@ liest: `authenticate` prüft nur das sieben Tage gültige Token.
 
 | Methode | Pfad                          | Body                                   | Beschreibung |
 | ------- | ----------------------------- | -------------------------------------- | ------------ |
-| PATCH   | `/api/auth/me/theme`          | `theme` (`system`\|`light`\|`dark`)    | Design speichern. Schlanker Endpunkt für die Auswahl unter „Mein Konto". |
 | POST    | `/api/auth/me/onboarding`     | `theme?`, `phone?`, `teams?: [{ teamId, relationType }]` | Abschluss des Assistenten: Mannschaftswahl, Design, Telefonnummer, Grundrolle und `onboarding_completed_at` in einer Transaktion. Idempotent. Antwort enthält das frische Profil. |
 | PATCH   | `/api/auth/me/preferences`    | `theme?`, `phone?`, `teams?`           | Dieselben Angaben später ändern. `teams` ist die **vollständige** neue Wahl; weglassen heißt „unverändert", `[]` heißt „alle Zuordnungen aufheben". `phone: ''` löscht die Nummer. |
 | POST    | `/api/auth/me/photo`          | multipart, Feld `photo`                | Profilbild setzen (JPG/PNG/WEBP/GIF, ≤ 5 MB, Signaturprüfung wie bei allen Uploads). Ersetzt ein vorhandenes Bild und löscht die alte Datei. Rate-Limit 10/15 min. |
 | DELETE  | `/api/auth/me/photo`          | –                                      | Profilbild entfernen – danach erscheinen wieder die Initialen. |
-| POST    | `/api/auth/me/password`       | `currentPassword, newPassword`         | Passwortwechsel. Das aktuelle Passwort ist Pflicht (`401`, wenn es nicht stimmt), das neue muss sich unterscheiden. Rate-Limit: 10 Fehlversuche / 15 min. Die Sitzung bleibt bestehen. |
+| POST    | `/api/auth/me/password`       | `currentPassword, newPassword`         | Passwortwechsel. Das aktuelle Passwort ist Pflicht (`401`, wenn es nicht stimmt), das neue muss sich unterscheiden. Rate-Limit: 10 Fehlversuche / 15 min. **Beendet alle anderen Sitzungen** (siehe unten); dieses Gerät bekommt sofort einen neuen Cookie. |
+
+Ein eigener Endpunkt nur für das Design (früher `PATCH /api/auth/me/theme`)
+existiert nicht mehr: `PATCH /api/auth/me/preferences` kann dasselbe und
+antwortet mit dem vollen Profil, sodass der Client danach nichts nachladen muss.
+
+### Sitzungen nach einem Passwortwechsel
+
+Ein JWT gilt sieben Tage – auch dann, wenn das Passwort inzwischen geändert
+wurde. Wer es ändert, weil jemand anderes es kennen könnte, erwartet aber genau
+das Gegenteil. Deshalb merkt sich `users.sessions_valid_from` (Unix-Sekunden,
+Migration 015) den Zeitpunkt des Wechsels:
+
+* `checkRole` und `GET /api/auth/me` lesen die Spalte ohnehin mit und
+  vergleichen sie mit dem `iat` des Tokens. Älteres Token → `401` samt
+  Hinweis, sich neu anzumelden. Kein Denylist-Speicher, keine zusätzliche
+  Abfrage.
+* Den Zeitstempel setzt der Server aus **seiner** Uhr (nicht `UNIX_TIMESTAMP()`
+  der Datenbank) – verglichen wird er mit dem `iat` desselben Prozesses.
+* Das Gerät, an dem gewechselt wurde, erhält in derselben Antwort ein frisches
+  Cookie und bleibt angemeldet.
 
 ## Mannschaften
 
 | Methode | Pfad                                   | Auth | Beschreibung |
 | ------- | -------------------------------------- | ---- | ------------ |
-| GET     | `/api/teams`                           | –    | Alle Mannschaften. Öffentlich (Registrierungsformular). |
-| GET     | `/api/teams/:code`                     | angemeldet | `team` (inkl. `photoUrl` und Bildausschnitt), `members` (nur **bestätigte**, nach `player`/`coach`/`fan`, je mit `photoUrl`; Kontaktdaten nach der Tabelle oben), `counts` (`player`, `coach` – **keine** Fan-Zahlen), `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). E-Mails nur für Verwaltende. |
+| GET     | `/api/teams`                           | angemeldet | Alle Mannschaften (Stammdaten, keine Mitglieder). War öffentlich, solange das Registrierungsformular die Mannschaftswahl enthielt – die steckt jetzt im Onboarding, also hinter dem Login. |
+| GET     | `/api/teams/:code`                     | angemeldet | `team` (inkl. `photoUrl` und Bildausschnitt), `members` (nur **bestätigte** `player`/`coach`, je mit `photoUrl`), `counts` (`player`, `coach` – **keine** Fan-Zahlen), `canManage`. Für Verwaltende zusätzlich `pendingMembers` (offene Anfragen, flache Liste mit `relationType`). Kontaktdaten siehe unten. |
 | GET     | `/api/teams/:code/candidates`          | Verwaltung | Aktive Mitglieder ohne diese Beziehung (`?relationType=`). |
 | POST    | `/api/teams/:code/members`             | Verwaltung | `{ userId, relationType }` – Beziehung direkt **bestätigt** anlegen. Bei `relationType=coach` wird die globale Rolle ggf. auf `trainer` angehoben (`roleUpgraded` in der Antwort). |
 | POST    | `/api/teams/:code/members/:userId/confirm` | Verwaltung | Offene Anfrage(n) bestätigen. `?relationType=` optional (sonst alle offenen). `404` wenn nichts offen. Antwort: `{ message, roleUpgraded }` – bei bestätigter `coach`-Anfrage wird die globale Rolle ggf. auf `trainer` angehoben. |
 | DELETE  | `/api/teams/:code/members/:userId`     | Verwaltung | `?relationType=` – Beziehung entfernen / offene Anfrage ablehnen. |
 | PATCH   | `/api/teams/:code/photo/frame`         | admin/sub_admin | `{ focusX?, focusY?, zoom? }` – Bildausschnitt des Kopfbereichs in Prozent (Mittelpunkt 0–100, Zoom 100–300). Speichert **Werte, kein zugeschnittenes Bild**: Das Original bleibt erhalten, und der Streifen sitzt auf jedem Bildschirmformat richtig. `409`, wenn kein Foto hinterlegt ist. Ein neues Foto und das Löschen setzen die Werte zurück. |
+
+### Wer sieht die Kontaktdaten im Kader?
+
+`photoUrl` und Name sehen alle angemeldeten Mitglieder. E-Mail und
+Telefonnummer sind personenbezogen und hängen an zwei Stufen:
+
+| Angabe                            | sichtbar für |
+| --------------------------------- | ------------ |
+| Kontakt der **Trainer:innen**     | wer selbst zu **dieser** Mannschaft gehört (bestätigte:r `player` oder `coach`) + Verwaltung |
+| Kontakt der **Spieler:innen**     | nur das Trainerteam dieser Mannschaft + Verwaltung |
+
+Bewusst nicht „jedes angemeldete Konto": Die Registrierung steht offen und
+bestätigt keine E-Mail-Adresse. „Angemeldet" ist damit keine Vertrauensstufe –
+sonst könnte sich jemand in zwei Minuten ein Konto anlegen und die
+Kontaktliste aller Trainer:innen des Vereins abrufen. `fan`-Zuordnungen stehen
+nicht im Kader: Sie sagen nur, wessen Spiele jemand angezeigt bekommt.
+
+Die Telefonnummer ist zusätzlich freiwillig – sie erscheint nur, wo jemand sie
+selbst unter „Mein Konto" hinterlegt hat.
 
 „Verwaltung“ = `admin`, `sub_admin` oder als **bestätigte:r** `coach` dieser
 Mannschaft eingetragen. Sonst `403`. Trainer:innen können sich nicht selbst als
@@ -556,7 +597,7 @@ curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/onboarding \
   -H "Content-Type: application/json" \
   -d '{"theme":"dark","phone":"0170 1234567","teams":[{"teamId":1,"relationType":"player"},{"teamId":4,"relationType":"fan"}]}'
 curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/photo -F "photo=@portrait.jpg"
-curl -b cookies.txt -X PATCH http://localhost:5000/api/auth/me/theme \
+curl -b cookies.txt -X PATCH http://localhost:5000/api/auth/me/preferences \
   -H "Content-Type: application/json" -d '{"theme":"system"}'
 curl -b cookies.txt -X POST http://localhost:5000/api/auth/me/password \
   -H "Content-Type: application/json" \
@@ -880,7 +921,11 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | `/api/auth/me` beendet die Sitzung, wenn das Konto gelöscht oder gesperrt wurde | `controllers/authController.js` |
 | Rate-Limit: Login 10/15 min, Registrierung 5/h, Passwortwechsel und Profilbild je 10/15 min pro IP; `trust proxy` konfiguriert (`TRUST_PROXY`) | `routes/authRoutes.js`, `server.js` |
 | Passwortwechsel verlangt das aktuelle Passwort (ein offener Browser genügt nicht) | `controllers/authController.js` |
-| Kontaktdaten im Kader: E-Mail/Telefon der Spieler:innen nur für das Trainerteam | `repositories/teamRepository.js` |
+| Passwortwechsel **beendet alle anderen Sitzungen** (`sessions_valid_from` gegen `iat`) | `middleware/authMiddleware.js`, `repositories/userRepository.js` |
+| Im JWT stehen nur `sub` und `role` – keine weiteren personenbezogenen Daten | `controllers/authController.js` |
+| Kontaktdaten im Kader in zwei Stufen: Trainer:innen nur für die eigene Mannschaft, Spieler:innen nur für das Trainerteam | `repositories/teamRepository.js`, `controllers/teamsController.js` |
+| Die Mannschaftsliste (`GET /api/teams`) verlangt eine Anmeldung – es gibt keinen öffentlichen Endpunkt mehr | `routes/teamsRoutes.js` |
+| Hochgeladene Bilder werden mit `Cache-Control: private` ausgeliefert (kein gemeinsamer Proxy-Cache) | `server.js` |
 | Endpunkte des eigenen Kontos lesen Rolle **und** Sperrstatus frisch aus der DB (`checkRole(ROLES)`) | `routes/authRoutes.js` |
 | CSRF-Schutz: Origin-Prüfung bei allen schreibenden Requests | `server.js` |
 | Sicherheits-Header via `helmet` | `server.js` |
@@ -899,9 +944,12 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 ### Bekannte Restrisiken
 
 - **Logout ist clientseitig**: Das JWT bleibt bis zum Ablauf (`JWT_EXPIRES_IN`)
-  technisch gültig. Für echte Sofort-Invalidierung wäre eine Token-Denylist
-  oder eine Sitzungstabelle nötig. Kürzeres `JWT_EXPIRES_IN` reduziert das
-  Zeitfenster.
+  technisch gültig; der Cookie ist zwar gelöscht, ein zuvor kopiertes Token
+  gilt weiter. Der Passwortwechsel ist der Ausweg, der ohne Denylist
+  funktioniert: Er verschiebt `sessions_valid_from` und entwertet damit
+  sofort **alle** älteren Tokens. Soll auch der Logout das können, müsste er
+  dieselbe Spalte setzen – dann fliegen allerdings auch die eigenen anderen
+  Geräte heraus, weshalb er es bewusst nicht tut.
 - **User-Enumeration bei der Registrierung**: `409` verrät, dass eine
   E-Mail-Adresse bereits registriert ist. Bewusst beibehalten, weil eine
   generische Meldung die Registrierung unbrauchbar machen würde. Der Login
@@ -912,9 +960,12 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   korrekt gesetzt sein (Standard `loopback` deckt den Vite-Dev-Proxy ab; hinter
   echtem LB `TRUST_PROXY=1`), sonst greift die Zählung pro IP nicht.
 - **Roster-Sichtbarkeit**: Jede:r angemeldete Nutzer:in kann den bestätigten
-  Kader (Namen + Rollen, keine E-Mails) jeder Mannschaft über `GET
+  Kader (Name, Profilbild, Rückennummer, Position) jeder Mannschaft über `GET
   /api/teams/:code` einsehen. Bewusst so – im Vereinskontext sind Kader nicht
-  geheim. E-Mails und offene Beitrittsanfragen sehen nur Verwaltende.
+  geheim. Kontaktdaten sind es: E-Mail und Telefon der Trainer:innen gibt der
+  Endpunkt nur an Mitglieder **dieser** Mannschaft, die der Spieler:innen nur
+  an das Trainerteam. Offene Beitrittsanfragen sehen ausschliesslich
+  Verwaltende.
 - **`GET /api/admin/users` für `trainer`**: Trainer:innen sehen die komplette
   Mitgliederliste inkl. E-Mail, um Spieler:innen Mannschaften zuzuordnen.
   Falls das enger gefasst werden soll, müsste die Antwort für `trainer`

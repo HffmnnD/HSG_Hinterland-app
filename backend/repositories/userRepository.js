@@ -31,6 +31,10 @@ const PUBLIC_COLUMNS =
   'id, first_name, last_name, email, photo_path, phone, is_approved, role, ' +
   'theme, onboarding_completed_at, created_at';
 
+// Zusätzlich zu PUBLIC_COLUMNS für die Sitzungsprüfung. Steht NICHT im Profil
+// (toProfile lässt das Feld weg) – der Client hat damit nichts zu tun.
+const SESSION_COLUMN = 'sessions_valid_from';
+
 /** Formt eine users-Zeile + Relationen in die oben dokumentierte Struktur. */
 function toProfile(row, teams, services) {
   return {
@@ -65,7 +69,7 @@ async function findByEmail(email, runner = pool) {
 /** Konto per id (ohne password_hash). null wenn unbekannt. */
 async function findById(id, runner = pool) {
   const [rows] = await runner.query(
-    `SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = ?`,
+    `SELECT ${PUBLIC_COLUMNS}, ${SESSION_COLUMN} FROM users WHERE id = ?`,
     [id]
   );
   return rows[0] ?? null;
@@ -273,7 +277,33 @@ async function createAccount(account, runner = pool) {
      VALUES (?, ?, ?, ?)`,
     [account.firstName, account.lastName, account.email, account.passwordHash]
   );
-  return result.insertId;
+
+  // Die angelegte Zeile in der Form, die auch findByEmail/findById liefern –
+  // so kommt der Aufrufer ohne ein SELECT auf die gerade geschriebene Zeile
+  // aus (Session-Cookie und Profil brauchen dieselben Felder).
+  return {
+    id: result.insertId,
+    first_name: account.firstName,
+    last_name: account.lastName,
+    email: account.email,
+    photo_path: null,
+    phone: null,
+    is_approved: 1,
+    role: 'spieler',
+    theme: 'system',
+    onboarding_completed_at: null,
+    created_at: new Date(),
+    sessions_valid_from: 0,
+  };
+}
+
+/**
+ * Profil eines GERADE angelegten Kontos – ohne Mannschaften und Dienste, weil
+ * ein neues Konto beides noch nicht hat. Spart die drei Abfragen, die
+ * getFullProfile dafür stellen würde.
+ */
+function toNewProfile(accountRow) {
+  return toProfile(accountRow, [], []);
 }
 
 /** Nur der Passwort-Hash eines Kontos – ausschliesslich für Login/Wechsel. */
@@ -285,11 +315,32 @@ async function getPasswordHash(userId, runner = pool) {
   return rows[0]?.password_hash ?? null;
 }
 
-/** Neues Passwort setzen. @returns {Promise<boolean>} true, wenn geändert */
+/**
+ * Neues Passwort setzen und dabei ALLE bisherigen Sitzungen entwerten.
+ *
+ * `sessions_valid_from` bekommt den aktuellen Zeitpunkt in Unix-Sekunden;
+ * jedes vorher ausgestellte Token fällt damit in `checkRole` und in
+ * `/api/auth/me` durch. Ohne diese Zeile bliebe ein gestohlenes Token nach dem
+ * Passwortwechsel bis zu sieben Tage gültig – also genau in dem Fall, für den
+ * man das Passwort wechselt.
+ *
+ * Beides in EINER Anweisung, damit es keinen Moment gibt, in dem das neue
+ * Passwort gilt, die alten Sitzungen aber noch laufen.
+ *
+ * @returns {Promise<boolean>} true, wenn geändert
+ */
 async function updatePassword(userId, passwordHash, runner = pool) {
+  // Die Grenze kommt aus der Uhr DIESES Prozesses, nicht aus UNIX_TIMESTAMP():
+  // Verglichen wird sie mit dem `iat` des JWT, das hier ebenfalls entsteht.
+  // Läuft die Datenbank auf einem anderen Rechner und geht deren Uhr ein paar
+  // Sekunden vor, würde sie sonst genau das Token aussperren, das direkt nach
+  // dem Wechsel ausgestellt wird.
   const [result] = await runner.query(
-    'UPDATE users SET password_hash = ? WHERE id = ?',
-    [passwordHash, userId]
+    `UPDATE users
+        SET password_hash = ?,
+            sessions_valid_from = ?
+      WHERE id = ?`,
+    [passwordHash, Math.floor(Date.now() / 1000), userId]
   );
   return result.affectedRows > 0;
 }
@@ -309,24 +360,6 @@ async function setPhotoPath(userId, photoPath, runner = pool) {
     userId,
   ]);
   return row?.photo_path ?? null;
-}
-
-/** Telefonnummer setzen oder entfernen (`null`). */
-async function setPhone(userId, phone, runner = pool) {
-  const [result] = await runner.query('UPDATE users SET phone = ? WHERE id = ?', [
-    phone,
-    userId,
-  ]);
-  return result.affectedRows > 0;
-}
-
-/** Design-Vorliebe speichern ('system' | 'light' | 'dark'). */
-async function setTheme(userId, theme, runner = pool) {
-  const [result] = await runner.query('UPDATE users SET theme = ? WHERE id = ?', [
-    theme,
-    userId,
-  ]);
-  return result.affectedRows > 0;
 }
 
 /**
@@ -486,11 +519,10 @@ module.exports = {
   listPageWithProfiles,
   getMemberStats,
   createAccount,
+  toNewProfile,
   getPasswordHash,
   updatePassword,
   setPhotoPath,
-  setPhone,
-  setTheme,
   completeOnboarding,
   updateOwnPreferences,
   applyAdminChange,
