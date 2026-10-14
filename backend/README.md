@@ -965,9 +965,15 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   an das Trainerteam. Offene Beitrittsanfragen sehen ausschliesslich
   Verwaltende.
 - **`GET /api/admin/users` für `trainer`**: Trainer:innen sehen die komplette
-  Mitgliederliste inkl. E-Mail, um Spieler:innen Mannschaften zuzuordnen.
-  Falls das enger gefasst werden soll, müsste die Antwort für `trainer`
-  reduziert werden.
+  Mitgliederliste mit Namen und Mannschaften, um Spieler:innen zuzuordnen –
+  aber ohne E-Mail und Telefon, und ändern können sie nur Zuordnungen in
+  Mannschaften, die sie selbst trainieren.
+- **Offene Registrierung**: Wer sich registriert, liest sofort News,
+  Mannschaftsliste und Kader (ohne Kontaktdaten). Termine, Abmeldungen und
+  Kontakte gibt es erst nach Bestätigung durch das Trainerteam.
+- **`NODE_ENV=production` im Betrieb setzen**: Sonst enthalten 500er-Antworten
+  die interne Fehlermeldung (`detail`), und der Cookie ist ohne
+  `COOKIE_SECURE=true` nicht auf HTTPS beschränkt.
 - **News haben keine Eigentümerschaft**: Jede:r `admin`/`sub_admin` darf jeden
   Beitrag archivieren und löschen – auch den einer anderen Person. Für ein
   Schwarzes Brett ist das gewollt; soll nur der/die Verfasser:in (plus
