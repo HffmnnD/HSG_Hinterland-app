@@ -11,6 +11,7 @@ import ThemeChoice from '../ThemeChoice';
 import ProfileForm from './ProfileForm';
 import PreferencesForm from './PreferencesForm';
 import PasswordForm from './PasswordForm';
+import { pushAccountTab } from '../../push';
 
 /**
  * Eigenes Segment „Mein Konto" am Fuß der Startseite.
@@ -59,6 +60,7 @@ const TABS = [
     description: 'Zur Bestätigung brauchst du dein aktuelles Passwort.',
     Icon: KeyRound,
   },
+  pushAccountTab,
 ];
 
 export default function AccountPanel() {
@@ -153,6 +155,7 @@ export default function AccountPanel() {
               {active.key === 'teams' && <PreferencesForm />}
               {active.key === 'design' && <ThemeChoice />}
               {active.key === 'passwort' && <PasswordForm />}
+              {active.key === pushAccountTab.key && <pushAccountTab.Component />}
             </div>
           </div>
         )}

@@ -152,6 +152,10 @@ app.use(
   })
 );
 
+// Push-Benachrichtigungen (eigenes Modul, siehe push/README.md). Zum
+// Entfernen diese Zeile und den Ordner push/ löschen.
+require('./push').mount(app);
+
 // Admin-Routen (RBAC: Rolle `admin`, Team-Zuordnung auch `trainer`,
 // News nur `admin`/`sub_admin`)
 app.use('/api/admin', adminRoutes);

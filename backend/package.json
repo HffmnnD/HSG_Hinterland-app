@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "migrate": "node db/migrate.js",
     "uploads:sweep": "node scripts/sweep-uploads.js",
+    "push:keys": "node push/generate-keys.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -27,7 +28,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.3.0",
     "mysql2": "^3.24.3",
-    "node-cache": "^5.1.2"
+    "node-cache": "^5.1.2",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
