@@ -3,7 +3,6 @@ import { CalendarCheck, KeyRound, Palette, UserRound, Users } from 'lucide-react
 
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { serviceLabel } from '../../lib/participation';
 import { formatDate } from '../../lib/format';
 import StatCard from '../ui/StatCard';
 import Avatar from '../ui/Avatar';
@@ -62,7 +61,7 @@ const TABS = [
 ];
 
 export default function AccountPanel() {
-  const { user, services } = useAuth();
+  const { user } = useAuth();
   const { theme } = useTheme();
   const [openTab, setOpenTab] = useState(null);
 
@@ -111,11 +110,7 @@ export default function AccountPanel() {
             icon={UserRound}
             label="Kontakt"
             value={user.phone ? 'Mit Nummer' : 'Nur E-Mail'}
-            hint={
-              services.length > 0
-                ? `Helferdienste: ${services.map(serviceLabel).join(', ')}`
-                : user.phone ?? 'Telefonnummer ist freiwillig'
-            }
+            hint={user.phone ?? 'Telefonnummer ist freiwillig'}
           />
         </div>
 

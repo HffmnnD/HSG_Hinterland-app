@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTeams } from '../../hooks/useTeams';
 import { useAdminUsers, useMemberStats } from '../../hooks/useAdminUsers';
 import { ADMIN_ROLES, ROLES, roleLabel } from '../../lib/roles';
-import { relationLabelPlural, serviceLabel } from '../../lib/participation';
+import { relationLabelPlural } from '../../lib/participation';
 import { formatCount, formatNumber } from '../../lib/format';
 import TeamSelect from '../TeamSelect';
 import StatCard from '../ui/StatCard';
@@ -442,7 +442,7 @@ function MemberRow({
       </td>
 
       <td>
-        {otherRelations.length === 0 && user.services.length === 0 ? (
+        {otherRelations.length === 0 ? (
           <span className="text-xs text-ink-muted">—</span>
         ) : (
           <div className="space-y-1.5">
@@ -459,14 +459,6 @@ function MemberRow({
                 ))}
               </div>
             ))}
-            {user.services.length > 0 && (
-              <div className="text-xs text-ink-muted">
-                Dienste:{' '}
-                <span className="text-ink-soft">
-                  {user.services.map(serviceLabel).join(', ')}
-                </span>
-              </div>
-            )}
           </div>
         )}
       </td>

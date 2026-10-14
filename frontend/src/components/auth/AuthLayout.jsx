@@ -24,7 +24,7 @@ export default function AuthLayout({ children }) {
               HSG Hinterland
             </h1>
             <p className="mt-1.5 text-sm text-white/60">
-              Vereins-App für Mannschaften, Kalender &amp; Dienste
+              Vereins-App für Mannschaften &amp; Kalender
             </p>
           </div>
 

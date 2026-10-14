@@ -11,7 +11,6 @@ const {
   ROLES,
   RELATION_TYPES,
   SELF_RELATION_TYPES,
-  SERVICE_TYPES,
   THEMES,
 } = require('./roles');
 
@@ -259,23 +258,6 @@ function validateRosterPatch(body) {
     return fail('Keine Änderungen übergeben (jerseyNumber, position, staffTitle).');
   }
   return { ok: true, fields };
-}
-
-// --- Helferdienste -------------------------------------------------------
-
-/**
- * @returns {{ ok:true, services: string[] | undefined } | { ok:false, ... }}
- *   `services === undefined` -> Feld war nicht im Request.
- */
-function validateServiceList(services) {
-  if (services === undefined) return { ok: true, services: undefined };
-  if (!Array.isArray(services)) return fail('services muss eine Liste sein.');
-
-  const unique = [...new Set(services)];
-  if (unique.some((s) => !SERVICE_TYPES.includes(s))) {
-    return fail(`Ungültiger Helferdienst. Erlaubt: ${SERVICE_TYPES.join(', ')}.`);
-  }
-  return { ok: true, services: unique };
 }
 
 // --- Mannschafts-Zuordnungen -------------------------------------------------
@@ -542,12 +524,11 @@ function validatePasswordChange(body) {
  * @returns {Promise<{ ok:true,
  *                     accountFields: { role?, is_approved? },
  *                     playerTeamIds: number[] | undefined,
- *                     services: string[] | undefined,
  *                     raw: { role, isApproved } }
  *                  | { ok:false, ... }>}
  */
 async function validateUserPatch(body) {
-  const { role, isApproved, teamIds, services } = body || {};
+  const { role, isApproved, teamIds } = body || {};
   const accountFields = {};
 
   if (role !== undefined) {
@@ -564,24 +545,17 @@ async function validateUserPatch(body) {
   const teamCheck = await validateTeamIdList(teamIds);
   if (!teamCheck.ok) return teamCheck;
 
-  const serviceCheck = validateServiceList(services);
-  if (!serviceCheck.ok) return serviceCheck;
-
   if (
     Object.keys(accountFields).length === 0 &&
-    teamCheck.ids === undefined &&
-    serviceCheck.services === undefined
+    teamCheck.ids === undefined
   ) {
-    return fail(
-      'Keine Änderungen übergeben (role, isApproved, teamIds oder services).'
-    );
+    return fail('Keine Änderungen übergeben (role, isApproved oder teamIds).');
   }
 
   return {
     ok: true,
     accountFields,
     playerTeamIds: teamCheck.ids,
-    services: serviceCheck.services,
     raw: { role, isApproved },
   };
 }
@@ -709,7 +683,6 @@ module.exports = {
   validateTeamPatch,
   validateRosterPatch,
   validatePhotoFrame,
-  validateServiceList,
   validateTeamIdList,
   validateRegistration,
   validateTheme,

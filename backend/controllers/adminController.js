@@ -3,7 +3,8 @@
 // Kein SQL in dieser Datei – Datenzugriff über userRepository, Eingabe-Prüfung
 // über utils/validation. Diese Datei enthält nur noch die Geschäftsregeln:
 //   - Rolle & Freigabe ändern:            admin, sub_admin
-//   - Spieler-Mannschaften & Dienste:     zusätzlich trainer
+//   - Spieler-Mannschaften:               zusätzlich trainer, aber nur in
+//                                         selbst trainierten Mannschaften
 //   - sub_admin darf admin-Konten NICHT bearbeiten und NICHT zum admin machen
 //   - niemand sperrt sich selbst aus; der letzte aktive admin bleibt erhalten
 const userRepository = require('../repositories/userRepository');
@@ -107,7 +108,7 @@ async function getUserStats(req, res, next) {
   }
 }
 
-// PATCH /api/admin/users/:id   Body: role?, isApproved?, teamIds?, services?
+// PATCH /api/admin/users/:id   Body: role?, isApproved?, teamIds?
 async function updateUser(req, res, next) {
   try {
     const userId = parseId(req.params.id);
@@ -121,7 +122,7 @@ async function updateUser(req, res, next) {
 
     const { role, isApproved } = req.body || {};
 
-    // Trainer:innen dürfen ausschliesslich Mannschaften/Dienste ändern.
+    // Trainer:innen dürfen ausschliesslich Mannschaften ändern.
     if (!canManageAccounts && (role !== undefined || isApproved !== undefined)) {
       return res
         .status(403)
@@ -207,7 +208,6 @@ async function updateUser(req, res, next) {
     await userRepository.applyAdminChange(userId, {
       accountFields: patch.accountFields,
       playerTeamIds: patch.playerTeamIds,
-      services: patch.services,
     });
 
     return res.json({ message: 'Benutzer aktualisiert.' });

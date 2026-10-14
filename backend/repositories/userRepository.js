@@ -1,5 +1,5 @@
 // Datenzugriff für Nutzerkonten (`users`) und deren zusammengesetztes Profil
-// (Konto + Mannschaften + Helferdienste).
+// (Konto + Mannschaften).
 //
 // Enthält AUSSCHLIESSLICH SQL / Transaktions-Orchestrierung – keine Validierung,
 // keine HTTP-Logik. Alle "Profil"-Rückgaben haben exakt DIESE Struktur, damit
@@ -13,13 +13,11 @@
 //     theme: 'system' | 'light' | 'dark',
 //     onboardingCompleted: boolean,
 //     teams:    [{ id, code, name, relationType }],
-//     services: [ 'zeitnehmer' | 'verkaufsdienst' ],
 //     createdAt
 //   }
 const pool = require('../config/db');
 const { publicUrlFor } = require('../config/uploads');
 const teamRepository = require('./teamRepository');
-const serviceRepository = require('./serviceRepository');
 
 // Spalten, die an den Client dürfen – NIE password_hash.
 //
@@ -36,7 +34,7 @@ const PUBLIC_COLUMNS =
 const SESSION_COLUMN = 'sessions_valid_from';
 
 /** Formt eine users-Zeile + Relationen in die oben dokumentierte Struktur. */
-function toProfile(row, teams, services) {
+function toProfile(row, teams) {
   return {
     id: row.id,
     firstName: row.first_name,
@@ -50,7 +48,6 @@ function toProfile(row, teams, services) {
     theme: row.theme ?? 'system',
     onboardingCompleted: Boolean(row.onboarding_completed_at),
     teams,
-    services,
     createdAt: row.created_at,
   };
 }
@@ -97,15 +94,12 @@ async function promoteToTrainerIfBasic(userId, runner = pool) {
 }
 
 /**
- * Vollständiges Profil (Konto + Mannschaften + Dienste) zu einer bereits
- * geladenen users-Zeile.
+ * Vollständiges Profil (Konto + Mannschaften) zu einer bereits geladenen
+ * users-Zeile.
  */
 async function buildProfile(userRow, runner = pool) {
-  const [teams, services] = await Promise.all([
-    teamRepository.getTeamsForUser(userRow.id, runner),
-    serviceRepository.getForUser(userRow.id, runner),
-  ]);
-  return toProfile(userRow, teams, services);
+  const teams = await teamRepository.getTeamsForUser(userRow.id, runner);
+  return toProfile(userRow, teams);
 }
 
 /** Vollständiges Profil per id. null wenn das Konto nicht existiert. */
@@ -123,8 +117,8 @@ async function getFullProfile(id, runner = pool) {
  * Gefiltert und begrenzt wird deshalb in SQL; der Browser bekommt nur die
  * Seite, die er wirklich anzeigt.
  *
- * Die Relationen (Mannschaften, Dienste) werden ausschliesslich für die IDs
- * DIESER Seite nachgeladen – zwei Sammelabfragen statt N+1, unabhängig von
+ * Die Mannschaften werden ausschliesslich für die IDs DIESER Seite
+ * nachgeladen – eine Sammelabfrage statt N+1, unabhängig von
  * der Gesamtgröße des Vereins.
  *
  * @param {object} [opts]
@@ -199,10 +193,6 @@ async function listPageWithProfiles(
       ORDER BY t.sort_order, t.name`,
     [ids]
   );
-  const [services] = await runner.query(
-    'SELECT user_id, service_type FROM user_services WHERE user_id IN (?) ORDER BY service_type',
-    [ids]
-  );
 
   const teamsByUser = groupBy(memberships, 'user_id', (m) => ({
     id: m.id,
@@ -210,11 +200,10 @@ async function listPageWithProfiles(
     name: m.name,
     relationType: m.relation_type,
   }));
-  const servicesByUser = groupBy(services, 'user_id', (s) => s.service_type);
 
   return {
     users: rows.map((row) =>
-      toProfile(row, teamsByUser.get(row.id) ?? [], servicesByUser.get(row.id) ?? [])
+      toProfile(row, teamsByUser.get(row.id) ?? [])
     ),
     total,
     page: safePage,
@@ -256,7 +245,7 @@ async function getMemberStats(runner = pool) {
 /**
  * Legt ein neues Konto an.
  *
- * Bewusst NUR das Konto: Mannschaften und Helferdienste kommen nicht mehr aus
+ * Bewusst NUR das Konto: Mannschaften kommen nicht mehr aus
  * dem Registrierungsformular, sondern aus dem Onboarding-Assistenten nach der
  * Freigabe (siehe completeOnboarding). Damit braucht diese Funktion auch keine
  * Transaktion mehr – sie schreibt genau eine Zeile.
@@ -298,12 +287,12 @@ async function createAccount(account, runner = pool) {
 }
 
 /**
- * Profil eines GERADE angelegten Kontos – ohne Mannschaften und Dienste, weil
- * ein neues Konto beides noch nicht hat. Spart die drei Abfragen, die
+ * Profil eines GERADE angelegten Kontos – ohne Mannschaften, weil ein neues
+ * Konto noch keine hat. Spart die zwei Abfragen, die
  * getFullProfile dafür stellen würde.
  */
 function toNewProfile(accountRow) {
-  return toProfile(accountRow, [], []);
+  return toProfile(accountRow, []);
 }
 
 /** Nur der Passwort-Hash eines Kontos – ausschliesslich für Login/Wechsel. */
@@ -450,19 +439,18 @@ async function updateOwnPreferences(userId, { theme, phone, relations }) {
 
 /**
  * Wendet eine Admin-Änderung an – alles in EINER Transaktion.
- * Alle drei Bestandteile sind optional (nur mitgeben, was sich ändern soll).
+ * Beide Bestandteile sind optional (nur mitgeben, was sich ändern soll).
  *
  * @param {object} change
  * @param {{ role?: string, is_approved?: 0|1 }} [change.accountFields]
  * @param {number[]} [change.playerTeamIds]  vollständige neue Spieler-Zuordnung
- * @param {string[]} [change.services]        vollständige neue Dienstliste
  */
 // Nur diese Spalten dürfen über applyAdminChange geschrieben werden.
 // Defense-in-depth: verhindert SQL-Injection über Spaltennamen, falls
 // validateUserPatch je erweitert wird.
 const WRITABLE_USER_COLUMNS = new Set(['role', 'is_approved']);
 
-async function applyAdminChange(userId, { accountFields, playerTeamIds, services }) {
+async function applyAdminChange(userId, { accountFields, playerTeamIds }) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -483,9 +471,6 @@ async function applyAdminChange(userId, { accountFields, playerTeamIds, services
     // Mannschaftsseite.
     if (playerTeamIds !== undefined) {
       await teamRepository.replaceRelationTeams(conn, userId, playerTeamIds, 'player');
-    }
-    if (services !== undefined) {
-      await serviceRepository.replaceForUser(conn, userId, services);
     }
 
     await conn.commit();

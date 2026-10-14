@@ -45,9 +45,9 @@ frontend/src/
   App.jsx                      <Routes>: /login, /willkommen (Onboarding),
                                / (geschützt), /admin (admin+trainer), * -> /
   context/
-    AuthContext.jsx            globaler Auth-State: user, role, teams, services,
+    AuthContext.jsx            globaler Auth-State: user, role, teams,
                                needsOnboarding, loading, error + login() /
-                               register() / logout() / refresh() /
+                               register() / logout() /
                                completeOnboarding() / updatePreferences() /
                                changePassword(); prüft beim Start GET /api/auth/me
     ThemeContext.jsx           Hell/Dunkel: leitet die Einstellung aus Sitzung,
@@ -72,7 +72,7 @@ frontend/src/
                                (setzt bei FormData bewusst KEINEN Content-Type)
     roles.js                   Rollen-Konstanten, Labels und Badges
     participation.js           Beteiligungsarten (die drei Fragen des
-                               Onboardings), Beziehungstypen, Helferdienste
+                               Onboardings) und Beziehungstypen
     teams.js                   Einteilung der Mannschaften (Senioren/Jugend),
                                Beschriftungen und der Bildausschnitt des
                                Kopfbereichs (photoFrameStyle)
@@ -352,7 +352,7 @@ dieselbe Liste – sie können also nicht auseinanderlaufen.
 | ------ | ---- | ------------ |
 | Start | `/` | alle |
 | Teams | `/teams` | alle |
-| Termine | `/termine` | alle |
+| Kalender | `/kalender` | alle |
 | Verwaltung | `/admin` | `admin`, `sub_admin`, `trainer` |
 
 Alle Ziele sind zusätzlich per `<ProtectedRoute>` und im Backend abgesichert –
@@ -369,7 +369,6 @@ Touch-Ziele sind 56 px hoch.
 | `/teams`       | `<ProtectedRoute>` – Übersicht aller Mannschaften |
 | `/teams/:code` | `<ProtectedRoute>` – jeder eingeloggte User; Verwaltung schaltet das Backend per `canManage` frei |
 | `/kalender`    | `<ProtectedRoute>` – jeder eingeloggte User; welche Reiter erscheinen, richtet sich nach der Mannschaftsbeziehung (siehe „Kalender") |
-| `/termine`     | Weiterleitung auf `/kalender` (alter Pfad aus der Vorschau-Version) |
 | `/admin`       | `<ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>` (admin, sub_admin, trainer) |
 | `*`            | Redirect auf `/`                              |
 
@@ -668,8 +667,8 @@ nicht als Sitzungsabbruch behandelt wird.
 4. `logout()` → `POST /api/auth/logout` löscht das Cookie; `user` wird `null`.
 
 `useAuth()` liefert zusätzlich `teams`
-(`[{ id, code, name, relationType, isConfirmed }]`) und `services` des
-angemeldeten Nutzers – befüllt aus `GET /api/auth/me` bzw. der Login-Antwort.
+(`[{ id, code, name, relationType, isConfirmed }]`) des angemeldeten
+Nutzers – befüllt aus `GET /api/auth/me` bzw. der Login-Antwort.
 
 Alle Requests laufen über `apiFetch()` mit `credentials: 'include'`, damit das
 HttpOnly-Cookie gesendet und empfangen wird. Das Backend muss die Origin des
