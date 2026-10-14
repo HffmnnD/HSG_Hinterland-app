@@ -71,6 +71,7 @@ backend/
   repositories/          gesamter Datenbankzugriff (alle SELECT/INSERT/JOINs)
     userRepository.js    users + zusammengesetztes Profil, Transaktionen
     teamRepository.js    teams + user_teams (Kader, Kandidaten, Zuordnungen)
+    serviceRepository.js user_services
     newsRepository.js    news (Feed, Anlegen, Archivieren, Löschen)
     eventRepository.js   events + event_series (Termine, Serien)
     attendanceRepository.js attendances + long_term_absences
@@ -82,7 +83,7 @@ backend/
     news/
 
   utils/
-    roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Design)
+    roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Dienste, Design)
     geo.js               Herkunftsland aus Proxy-Headern (siehe System-Status)
     validation.js        Eingabe-Prüfung -> { ok, ... } | { ok:false, status, message }
     schedule.js          Terminarten, Wochentags-Bitmaske, Serien-Erzeugung
@@ -145,7 +146,7 @@ Vollständig kommentiert in `db/schema.sql`, Kurzüberblick in
 | `teams`             | Mannschaften (`id`, `name`, `code`) – Seed: MJC, MJB, MJA, H1, H2, D1. Dazu `handball_team_id` (nuLiga), `photo_path` (Mannschaftsfoto) und dessen Bildausschnitt im Kopfbereich (`photo_focus_x/y`, `photo_zoom`, alles in Prozent) |
 | `team_sponsors`     | Sponsoren je Mannschaft für den Kopfbereich der Mannschaftsseite |
 | `user_teams`        | n:m Nutzer ↔ Mannschaften mit `relation_type` ENUM(`player`,`coach`,`fan`) und `is_confirmed` (0 = offene Anfrage, 1 = vom Trainer bestätigt); PK `(user_id, team_id, relation_type)`. Kaderangaben je Mannschaft: `jersey_number`, `position`, `staff_title` |
-| `user_services`     | Helferdienste aus der alten Registrierung. Wird vom Code nicht mehr gelesen oder geschrieben; die Tabelle bleibt nur, damit vorhandene Daten erhalten sind |
+| `user_services`     | Helferdienste, `service_type` ENUM(`zeitnehmer`,`verkaufsdienst`) |
 | `event_series`      | Regel einer wiederkehrenden Trainingsserie (Wochentage als Bitmaske, Uhrzeit, Zeitraum) |
 | `events`            | ein konkreter Termin: Training, Sondertermin/Camp oder Spiel. `reasons_visible_to_all` steuert, ob alle die Abmeldegründe sehen |
 | `attendances`       | Zu-/Absagen je (Termin, Person). **Keine Zeile = zugesagt.** `reason` ist bei `DECLINED` Pflicht |
@@ -270,7 +271,7 @@ selbst unter „Mein Konto" hinterlegt hat.
 | POST    | `/api/auth/register`| `firstName, lastName, email, password` | Legt das Konto an, setzt die Sitzung und gibt das Profil zurück – danach steht das Onboarding an. Weitere Felder werden ignoriert. `201`, `409` bei belegter E-Mail. |
 | POST    | `/api/auth/login`   | `email, password`                       | Setzt JWT (inkl. `role`) als HttpOnly-Cookie. `403`, wenn das Konto gesperrt ist. Antwort enthält das Profil. |
 | POST    | `/api/auth/logout`  | –                                       | Löscht den Cookie. |
-| GET     | `/api/auth/me`      | – (Cookie)                              | Profil des angemeldeten Users: `role`, `theme`, `onboardingCompleted`, `photoUrl`, `phone`, und `teams` (`[{ id, code, name, relationType, isConfirmed }]`). |
+| GET     | `/api/auth/me`      | – (Cookie)                              | Profil des angemeldeten Users: `role`, `theme`, `onboardingCompleted`, `photoUrl`, `phone`, `teams` (`[{ id, code, name, relationType, isConfirmed }]`) und `services`. |
 
 ### Eigenes Konto (angemeldet, jede Rolle)
 
@@ -351,9 +352,9 @@ braucht, fügt die Person dort über `POST /api/teams/:code/members` hinzu.
 
 | Methode | Pfad                     | Body / Query                                          | Beschreibung |
 | ------- | ------------------------ | ----------------------------------------------------- | ------------ |
-| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=` (`status`: `active`, `inactive`) | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`). Antwort: `{ users, total, page, pageSize, pageCount }`. Für `trainer` sind `email` und `phone` immer `null` – den Kontakt des eigenen Kaders gibt es auf der Mannschaftsseite. |
+| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=` (`status`: `active`, `inactive`) | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. Für `trainer` sind `email` und `phone` immer `null` – den Kontakt des eigenen Kaders gibt es auf der Mannschaftsseite. |
 | GET     | `/api/admin/users/stats` | – (Cookie)                                            | Kennzahlen des **gesamten** Vereins: `{ total, active, inactive, recent, byRole }`. Bewusst getrennt von der Liste, damit die Zahlen im Kopf sich nicht mit den Filtern ändern. |
-| PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`                    | `teamIds` steuert die **Spieler**-Zuordnung (neue Einträge bestätigt; bestehende behalten Rückennummer, Position und Status; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) nur `admin`+`sub_admin`. `trainer` darf nur Mannschaften hinzufügen oder entfernen, die er/sie selbst bestätigt trainiert (sonst `403`). Alles transaktional. |
+| PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (neue Einträge bestätigt; bestehende behalten Rückennummer, Position und Status; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) und `services` nur `admin`+`sub_admin`. `trainer` darf nur Mannschaften hinzufügen oder entfernen, die er/sie selbst bestätigt trainiert (sonst `403`). Alles transaktional. |
 
 Sperren für `sub_admin` (jeweils `403`):
 
@@ -377,7 +378,7 @@ Gefiltert wird deshalb in SQL (`userRepository.listPageWithProfiles`):
 - eine Seite ausserhalb des Bereichs liefert die **letzte** vorhandene, statt
   einer leeren Tabelle.
 
-Die Mannschaften werden mit einer Sammelabfrage nur für
+Die Relationen (Mannschaften, Dienste) werden mit zwei Sammelabfragen nur für
 die IDs **dieser Seite** nachgeladen – kein N+1, unabhängig von der
 Vereinsgröße.
 

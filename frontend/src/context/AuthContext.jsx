@@ -202,6 +202,8 @@ export function AuthProvider({ children }) {
       // Mannschaften des angemeldeten Nutzers
       // ([{ id, code, name, relationType, isConfirmed }]).
       teams: user?.teams ?? [],
+      // Helferdienste des angemeldeten Nutzers (['zeitnehmer', …]).
+      services: user?.services ?? [],
       // Steht der Onboarding-Assistent noch an?
       needsOnboarding: Boolean(user) && !user.onboardingCompleted,
       loading,

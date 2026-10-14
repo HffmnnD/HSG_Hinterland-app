@@ -102,8 +102,8 @@ async function register(req, res, next) {
     setSessionCookie(res, account);
 
     // Das Profil wird hier ZUSAMMENGESETZT und nicht neu geladen: Ein gerade
-    // angelegtes Konto hat keine Mannschaften, und alle
-    // übrigen Werte stehen fest. Das erspart zwei Abfragen auf dem Weg, den
+    // angelegtes Konto hat keine Mannschaften und keine Dienste, und alle
+    // übrigen Werte stehen fest. Das erspart drei Abfragen auf dem Weg, den
     // jedes neue Mitglied genau einmal geht.
     return res.status(201).json({
       message: REGISTER_OK_MESSAGE,

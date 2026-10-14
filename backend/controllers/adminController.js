@@ -3,6 +3,7 @@
 // Kein SQL in dieser Datei – Datenzugriff über userRepository, Eingabe-Prüfung
 // über utils/validation. Diese Datei enthält nur noch die Geschäftsregeln:
 //   - Rolle & Freigabe ändern:            admin, sub_admin
+//   - Dienste:                            admin, sub_admin
 //   - Spieler-Mannschaften:               zusätzlich trainer, aber nur in
 //                                         selbst trainierten Mannschaften
 //   - sub_admin darf admin-Konten NICHT bearbeiten und NICHT zum admin machen
@@ -108,7 +109,7 @@ async function getUserStats(req, res, next) {
   }
 }
 
-// PATCH /api/admin/users/:id   Body: role?, isApproved?, teamIds?
+// PATCH /api/admin/users/:id   Body: role?, isApproved?, teamIds?, services?
 async function updateUser(req, res, next) {
   try {
     const userId = parseId(req.params.id);
@@ -122,11 +123,14 @@ async function updateUser(req, res, next) {
 
     const { role, isApproved } = req.body || {};
 
-    // Trainer:innen dürfen ausschliesslich Mannschaften ändern.
-    if (!canManageAccounts && (role !== undefined || isApproved !== undefined)) {
+    // Trainer:innen dürfen ausschliesslich Spieler-Mannschaften ändern.
+    if (
+      !canManageAccounts &&
+      (role !== undefined || isApproved !== undefined || req.body?.services !== undefined)
+    ) {
       return res
         .status(403)
-        .json({ message: 'Nur Admins dürfen Rolle oder Freigabe ändern.' });
+        .json({ message: 'Nur Admins dürfen Rolle, Freigabe oder Dienste ändern.' });
     }
 
     const patch = await validateUserPatch(req.body);
@@ -208,6 +212,7 @@ async function updateUser(req, res, next) {
     await userRepository.applyAdminChange(userId, {
       accountFields: patch.accountFields,
       playerTeamIds: patch.playerTeamIds,
+      services: patch.services,
     });
 
     return res.json({ message: 'Benutzer aktualisiert.' });

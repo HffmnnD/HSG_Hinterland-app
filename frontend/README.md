@@ -45,7 +45,7 @@ frontend/src/
   App.jsx                      <Routes>: /login, /willkommen (Onboarding),
                                / (geschützt), /admin (admin+trainer), * -> /
   context/
-    AuthContext.jsx            globaler Auth-State: user, role, teams,
+    AuthContext.jsx            globaler Auth-State: user, role, teams, services,
                                needsOnboarding, loading, error + login() /
                                register() / logout() /
                                completeOnboarding() / updatePreferences() /
@@ -72,7 +72,7 @@ frontend/src/
                                (setzt bei FormData bewusst KEINEN Content-Type)
     roles.js                   Rollen-Konstanten, Labels und Badges
     participation.js           Beteiligungsarten (die drei Fragen des
-                               Onboardings) und Beziehungstypen
+                               Onboardings), Beziehungstypen, Helferdienste
     teams.js                   Einteilung der Mannschaften (Senioren/Jugend),
                                Beschriftungen und der Bildausschnitt des
                                Kopfbereichs (photoFrameStyle)
@@ -667,8 +667,8 @@ nicht als Sitzungsabbruch behandelt wird.
 4. `logout()` → `POST /api/auth/logout` löscht das Cookie; `user` wird `null`.
 
 `useAuth()` liefert zusätzlich `teams`
-(`[{ id, code, name, relationType, isConfirmed }]`) des angemeldeten
-Nutzers – befüllt aus `GET /api/auth/me` bzw. der Login-Antwort.
+(`[{ id, code, name, relationType, isConfirmed }]`) und `services` des
+angemeldeten Nutzers – befüllt aus `GET /api/auth/me` bzw. der Login-Antwort.
 
 Alle Requests laufen über `apiFetch()` mit `credentials: 'include'`, damit das
 HttpOnly-Cookie gesendet und empfangen wird. Das Backend muss die Origin des

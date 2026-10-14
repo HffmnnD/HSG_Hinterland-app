@@ -147,15 +147,10 @@ Bezeichnung im Betreuerstab (dieselbe Zeile) gehen nicht verloren.
 `ON DELETE CASCADE`: Wird ein Mitglied oder ein Team gelöscht, verschwinden
 die Zeilen hier automatisch.
 
-### `user_services` – Helferdienste (stillgelegt)
+### `user_services` – Helferdienste
 
 Verbindungstabelle `users ↔ Dienst`. Primärschlüssel `(user_id, service_type)`.
 `service_type` ∈ { `zeitnehmer`, `verkaufsdienst` }. `ON DELETE CASCADE`.
-
-Stammt aus der alten Registrierung und wird vom Code nicht mehr benutzt. Die
-Tabelle bleibt bestehen, damit vorhandene Einträge nicht verloren gehen. Wer
-sie sicher nicht mehr braucht, kann sie mit `DROP TABLE user_services;`
-entfernen.
 
 ### `news` – Vereins-News & Ankündigungen
 
@@ -284,6 +279,7 @@ Kein Controller enthält rohes SQL. Alle Abfragen liegen in
 | ---------- | ------------- |
 | `userRepository.js` | `users` + zusammengesetztes Profil (`getFullProfile`, seitenweise `listPageWithProfiles`, `getMemberStats`), Kontoanlage, Onboarding/Design/Passwort des eigenen Kontos sowie die Transaktionen der Admin-Änderungen |
 | `teamRepository.js` | `teams` + `user_teams` (Kader, Kandidaten, Zuordnungen) |
+| `serviceRepository.js` | `user_services` |
 | `newsRepository.js` | `news` (Feed, Anlegen, Archivieren, Löschen) |
 | `eventRepository.js` | `events` + `event_series` (Terminliste, Serien anlegen/ändern/beenden) |
 | `attendanceRepository.js` | `attendances` + `long_term_absences` |

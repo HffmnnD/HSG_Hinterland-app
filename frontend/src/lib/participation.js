@@ -1,5 +1,5 @@
-// Beteiligungsarten (Onboarding & „Mein Konto") und Beziehungstypen zu
-// Mannschaften.
+// Beteiligungsarten (Onboarding & „Mein Konto"), Beziehungstypen zu
+// Mannschaften und Helferdienste.
 
 /**
  * Die drei Fragen des Onboarding-Assistenten und des Einstellungsbereichs:
@@ -9,6 +9,12 @@
  * ist `relationType` hier der Schlüssel und nicht ein zusätzliches Kürzel.
  * Mehrfachauswahl ist der Normalfall: Trainer:innen spielen oft selbst, und
  * wer nur zuschaut, tut das meist bei mehreren Mannschaften.
+ *
+ * Die frühere Option „Mitwirkende:r" (Helferdienste) steht bewusst nicht mehr
+ * hier: Sie beantwortete keine Frage über die eigene Beteiligung an einer
+ * Mannschaft, sondern öffnete ein weiteres Formular – und sie hat die
+ * Zuschauer-Option zwangsweise mitaktiviert, was niemand erwartet hat.
+ * Helferdienste pflegt die Verwaltung.
  */
 export const PARTICIPATION_OPTIONS = [
   {
@@ -36,6 +42,15 @@ export const PARTICIPATION_OPTIONS = [
     needsConfirmation: false,
   },
 ];
+
+export const SERVICE_LABELS = {
+  zeitnehmer: 'Zeitnehmer',
+  verkaufsdienst: 'Verkaufsdienst',
+};
+
+export function serviceLabel(service) {
+  return SERVICE_LABELS[service] ?? service;
+}
 
 // Beziehung Nutzer <-> Mannschaft
 export const RELATION_LABELS = {

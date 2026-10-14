@@ -16,6 +16,9 @@ const RELATION_TYPES = ['player', 'coach', 'fan'];
 // Trainer:innen der Mannschaft (siehe teamRepository.initialConfirmation).
 const SELF_RELATION_TYPES = ['player', 'coach', 'fan'];
 
+// Helferdienste.
+const SERVICE_TYPES = ['zeitnehmer', 'verkaufsdienst'];
+
 // Design-Vorliebe (muss zum ENUM in `users.theme` passen).
 const THEMES = ['system', 'light', 'dark'];
 
@@ -25,5 +28,6 @@ module.exports = {
   ADMIN_ROLES,
   RELATION_TYPES,
   SELF_RELATION_TYPES,
+  SERVICE_TYPES,
   THEMES,
 };
