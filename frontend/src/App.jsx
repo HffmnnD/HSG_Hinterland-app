@@ -127,10 +127,6 @@ export default function App() {
           }
         />
 
-        {/* Alter Pfad aus der Vorschau-Version – Lesezeichen sollen nicht
-            ins Leere laufen. */}
-        <Route path="/termine" element={<Navigate to="/kalender" replace />} />
-
         {/* Unbekannte Pfade -> Startseite */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
