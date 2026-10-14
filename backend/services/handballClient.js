@@ -55,6 +55,9 @@ async function loadPage(url) {
       timeout: REQUEST_TIMEOUT_MS,
       headers: HEADERS,
       maxRedirects: 5,
+      // Eine nuLiga-Seite hat rund 50 KB. Die Grenze schützt den Speicher,
+      // falls am anderen Ende statt einer Seite etwas Riesiges zurückkommt.
+      maxContentLength: 2 * 1024 * 1024,
       // Weiterleitungen dürfen den Host NICHT wechseln.
       //
       // Ohne diese Prüfung wäre eine Weiterleitung des Verbandsservers (oder

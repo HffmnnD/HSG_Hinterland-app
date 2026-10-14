@@ -41,6 +41,16 @@ export default function MembersSection() {
   const canManageAccounts = ADMIN_ROLES.includes(actorRole);
   const isSubAdmin = actorRole === 'sub_admin';
 
+  // Trainer:innen ordnen nur in Mannschaften zu, die sie selbst trainieren –
+  // das Backend lehnt alles andere ab (siehe adminController.updateUser).
+  const editableTeams = canManageAccounts
+    ? allTeams
+    : allTeams.filter((team) =>
+        (currentUser?.teams ?? []).some(
+          (own) => own.id === team.id && own.relationType === 'coach' && own.isConfirmed
+        )
+      );
+
   const [search, setSearchValue] = useState('');
   const [role, setRoleValue] = useState('');
   const [status, setStatusValue] = useState('');
@@ -272,7 +282,7 @@ export default function MembersSection() {
                   <tr>
                     <th>Nr.</th>
                     <th>Name</th>
-                    <th>E-Mail</th>
+                    {canManageAccounts && <th>E-Mail</th>}
                     <th>Rolle</th>
                     <th>Mannschaften (Spieler)</th>
                     <th>Weitere</th>
@@ -284,7 +294,7 @@ export default function MembersSection() {
                     <MemberRow
                       key={u.id}
                       user={u}
-                      allTeams={allTeams}
+                      allTeams={editableTeams}
                       isSelf={u.id === currentUser?.id}
                       busy={savingIds.has(u.id)}
                       locked={isLockedRow(u)}
@@ -372,7 +382,9 @@ function MemberRow({
         )}
       </td>
 
-      <td className="whitespace-nowrap text-ink-muted">{user.email}</td>
+      {canManageAccounts && (
+        <td className="whitespace-nowrap text-ink-muted">{user.email}</td>
+      )}
 
       <td>
         {canManageAccounts ? (

@@ -73,7 +73,6 @@ backend/
     teamRepository.js    teams + user_teams (Kader, Kandidaten, Zuordnungen)
     serviceRepository.js user_services
     newsRepository.js    news (Feed, Anlegen, Archivieren, Löschen)
-    newsRepository.js    news (Feed, Anlegen, Löschen)
     eventRepository.js   events + event_series (Termine, Serien)
     attendanceRepository.js attendances + long_term_absences
 
@@ -84,7 +83,7 @@ backend/
     news/
 
   utils/
-    roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Dienste)
+    roles.js             erlaubte Enum-Werte (Rollen, Beziehungen, Dienste, Design)
     geo.js               Herkunftsland aus Proxy-Headern (siehe System-Status)
     validation.js        Eingabe-Prüfung -> { ok, ... } | { ok:false, status, message }
     schedule.js          Terminarten, Wochentags-Bitmaske, Serien-Erzeugung
@@ -353,9 +352,9 @@ braucht, fügt die Person dort über `POST /api/teams/:code/members` hinzu.
 
 | Methode | Pfad                     | Body / Query                                          | Beschreibung |
 | ------- | ------------------------ | ----------------------------------------------------- | ------------ |
-| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=` (`status`: `active`, `inactive`) | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. |
+| GET     | `/api/admin/users`       | `?search=&role=&status=&page=&pageSize=` (`status`: `active`, `inactive`) | **Seitenweise** Nutzerliste inkl. `teams` (mit `relationType`) und `services`. Antwort: `{ users, total, page, pageSize, pageCount }`. Für `trainer` sind `email` und `phone` immer `null` – den Kontakt des eigenen Kaders gibt es auf der Mannschaftsseite. |
 | GET     | `/api/admin/users/stats` | – (Cookie)                                            | Kennzahlen des **gesamten** Vereins: `{ total, active, inactive, recent, byRole }`. Bewusst getrennt von der Liste, damit die Zahlen im Kopf sich nicht mit den Filtern ändern. |
-| PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (bestätigt; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) nur `admin`+`sub_admin`. Alles transaktional. |
+| PATCH   | `/api/admin/users/:id`   | `role?`, `isApproved?`, `teamIds?`, `services?`       | `teamIds` steuert die **Spieler**-Zuordnung (neue Einträge bestätigt; bestehende behalten Rückennummer, Position und Status; Trainer-/Fan-Beziehungen laufen über die Mannschaftsseite). `role` / `isApproved` (= Konto sperren/entsperren) und `services` nur `admin`+`sub_admin`. `trainer` darf nur Mannschaften hinzufügen oder entfernen, die er/sie selbst bestätigt trainiert (sonst `403`). Alles transaktional. |
 
 Sperren für `sub_admin` (jeweils `403`):
 
@@ -967,9 +966,15 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   an das Trainerteam. Offene Beitrittsanfragen sehen ausschliesslich
   Verwaltende.
 - **`GET /api/admin/users` für `trainer`**: Trainer:innen sehen die komplette
-  Mitgliederliste inkl. E-Mail, um Spieler:innen Mannschaften zuzuordnen.
-  Falls das enger gefasst werden soll, müsste die Antwort für `trainer`
-  reduziert werden.
+  Mitgliederliste mit Namen und Mannschaften, um Spieler:innen zuzuordnen –
+  aber ohne E-Mail und Telefon, und ändern können sie nur Zuordnungen in
+  Mannschaften, die sie selbst trainieren.
+- **Offene Registrierung**: Wer sich registriert, liest sofort News,
+  Mannschaftsliste und Kader (ohne Kontaktdaten). Termine, Abmeldungen und
+  Kontakte gibt es erst nach Bestätigung durch das Trainerteam.
+- **`NODE_ENV=production` im Betrieb setzen**: Sonst enthalten 500er-Antworten
+  die interne Fehlermeldung (`detail`), und der Cookie ist ohne
+  `COOKIE_SECURE=true` nicht auf HTTPS beschränkt.
 - **News haben keine Eigentümerschaft**: Jede:r `admin`/`sub_admin` darf jeden
   Beitrag archivieren und löschen – auch den einer anderen Person. Für ein
   Schwarzes Brett ist das gewollt; soll nur der/die Verfasser:in (plus

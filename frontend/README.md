@@ -47,7 +47,7 @@ frontend/src/
   context/
     AuthContext.jsx            globaler Auth-State: user, role, teams, services,
                                needsOnboarding, loading, error + login() /
-                               register() / logout() / refresh() /
+                               register() / logout() /
                                completeOnboarding() / updatePreferences() /
                                changePassword(); prüft beim Start GET /api/auth/me
     ThemeContext.jsx           Hell/Dunkel: leitet die Einstellung aus Sitzung,
@@ -351,7 +351,7 @@ dieselbe Liste – sie können also nicht auseinanderlaufen.
 | ------ | ---- | ------------ |
 | Start | `/` | alle |
 | Teams | `/teams` | alle |
-| Termine | `/termine` | alle |
+| Kalender | `/kalender` | alle |
 | Verwaltung | `/admin` | `admin`, `sub_admin`, `trainer` |
 
 Alle Ziele sind zusätzlich per `<ProtectedRoute>` und im Backend abgesichert –
@@ -368,7 +368,6 @@ Touch-Ziele sind 56 px hoch.
 | `/teams`       | `<ProtectedRoute>` – Übersicht aller Mannschaften |
 | `/teams/:code` | `<ProtectedRoute>` – jeder eingeloggte User; Verwaltung schaltet das Backend per `canManage` frei |
 | `/kalender`    | `<ProtectedRoute>` – jeder eingeloggte User; welche Reiter erscheinen, richtet sich nach der Mannschaftsbeziehung (siehe „Kalender") |
-| `/termine`     | Weiterleitung auf `/kalender` (alter Pfad aus der Vorschau-Version) |
 | `/admin`       | `<ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>` (admin, sub_admin, trainer) |
 | `*`            | Redirect auf `/`                              |
 

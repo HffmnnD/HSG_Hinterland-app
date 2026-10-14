@@ -157,13 +157,6 @@ function meetingReportUrl({ meeting, championship, group }) {
   return buildUrl('meetingReport', { meeting, championship, group });
 }
 
-/** Relative nuLiga-Links (aus href-Attributen) zu absoluten machen. */
-function absoluteUrl(href) {
-  if (!href) return null;
-  if (/^https?:\/\//i.test(href)) return href;
-  return `${BASE_URL}${href.startsWith('/') ? '' : '/'}${href}`;
-}
-
 module.exports = {
   BASE_URL,
   APP_PATH,
@@ -184,5 +177,4 @@ module.exports = {
   teamPortraitUrl,
   groupPageUrl,
   meetingReportUrl,
-  absoluteUrl,
 };
