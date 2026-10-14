@@ -64,8 +64,8 @@ export default function TableWidget({
       ) : visibleRows.length === 0 ? (
         <p className="card-note mt-4">
           {meta?.available === false
-            ? 'Die Tabelle kann gerade nicht vom Verband geladen werden.'
-            : 'Für diese Mannschaft liegt noch keine Tabelle vor.'}
+            ? 'Tabelle nicht erreichbar.'
+            : 'Keine Tabelle vorhanden.'}
         </p>
       ) : (
         <div className="table-wrap mt-4">

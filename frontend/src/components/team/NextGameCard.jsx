@@ -18,9 +18,7 @@ export default function NextGameCard({ game, hasLeague = true }) {
       <section className="card">
         <p className="eyebrow">Nächstes Spiel</p>
         <p className="mt-2 text-sm text-ink-soft">
-          {hasLeague
-            ? 'Aktuell ist kein weiteres Spiel angesetzt.'
-            : 'Für diese Mannschaft sind noch keine Spiele terminiert.'}
+          {hasLeague ? 'Kein Spiel angesetzt.' : 'Keine Spiele terminiert.'}
         </p>
       </section>
     );

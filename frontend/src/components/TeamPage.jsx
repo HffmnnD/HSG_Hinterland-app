@@ -45,19 +45,9 @@ export default function TeamPage() {
  * Bewusst freundlich formuliert: Für eine Jugendmannschaft ohne Ligabetrieb
  * ist das der Normalfall und kein Fehler.
  */
-function LeagueFallback({ canManage }) {
+function LeagueFallback() {
   return (
-    <p className="card-note">
-      Ligaspiele für diese Saison noch nicht terminiert.
-      {canManage && (
-        <>
-          {' '}
-          Sobald die Mannschaft im Spielbetrieb gemeldet ist, kann ein:e
-          Administrator:in die nuLiga-Nummer im Reiter „Verwaltung" eintragen –
-          Tabelle, Spielplan und Live-Ticker erscheinen dann automatisch.
-        </>
-      )}
-    </p>
+    <p className="card-note">Keine Ligaspiele.</p>
   );
 }
 
@@ -232,10 +222,6 @@ function TeamView({ code }) {
             <p className="mt-2 text-sm text-ink-soft">
               {liveGame.home?.name} – {liveGame.away?.name}
             </p>
-            <p className="field-hint">
-              Für dieses Spiel liegt noch kein Ticker vor. Sobald am
-              Zeitnehmertisch die erste Aktion gemeldet wird, erscheint er hier.
-            </p>
           </div>
         ))}
 
@@ -283,7 +269,7 @@ function TeamView({ code }) {
         {activeTab === 'uebersicht' && (
           <div className="space-y-6">
             {!handballTeamId ? (
-              <LeagueFallback canManage={canManage} />
+              <LeagueFallback />
             ) : (
               <>
                 {scheduleLoading ? (
@@ -305,7 +291,7 @@ function TeamView({ code }) {
         {activeTab === 'spielplan' && (
           <div className="space-y-8">
             {!handballTeamId ? (
-              <LeagueFallback canManage={canManage} />
+              <LeagueFallback />
             ) : (
               <>
                 <section>
@@ -349,8 +335,7 @@ function TeamView({ code }) {
 
                 {scheduleMeta?.available === false && (
                   <p className="field-hint">
-                    Hinweis: Die Verbandsseite antwortet gerade nicht. Angezeigt
-                    wird, was zuletzt geladen werden konnte.
+                    nuLiga nicht erreichbar, zuletzt geladener Stand.
                   </p>
                 )}
               </>

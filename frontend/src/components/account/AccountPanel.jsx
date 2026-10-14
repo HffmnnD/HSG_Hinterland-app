@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { CalendarCheck, KeyRound, Palette, UserRound, Users } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
-import { useTheme } from '../../context/ThemeContext';
-import { serviceLabel } from '../../lib/participation';
 import { formatDate } from '../../lib/format';
 import StatCard from '../ui/StatCard';
 import Avatar from '../ui/Avatar';
@@ -33,37 +31,30 @@ const TABS = [
     key: 'profil',
     label: 'Profil',
     title: 'Profilbild & Kontakt',
-    description:
-      'Dein Bild erscheint auf der Startseite und im Kader. Die Telefonnummer ist freiwillig.',
     Icon: UserRound,
   },
   {
     key: 'teams',
     label: 'Mannschaften',
     title: 'Rolle & Mannschaften',
-    description:
-      'Was du im Verein machst und welche Mannschaften dich betreffen. Steuert, welche Termine du siehst.',
     Icon: Users,
   },
   {
     key: 'design',
     label: 'Design',
     title: 'Design',
-    description: 'Hell, dunkel oder wie dein Gerät. Gilt auf allen deinen Geräten.',
     Icon: Palette,
   },
   {
     key: 'passwort',
     label: 'Passwort',
     title: 'Passwort ändern',
-    description: 'Zur Bestätigung brauchst du dein aktuelles Passwort.',
     Icon: KeyRound,
   },
 ];
 
 export default function AccountPanel() {
-  const { user, services } = useAuth();
-  const { theme } = useTheme();
+  const { user } = useAuth();
   const [openTab, setOpenTab] = useState(null);
 
   if (!user) return null;
@@ -80,13 +71,12 @@ export default function AccountPanel() {
             <p className="mt-0.5 truncate text-xs text-ink-muted">{user.email}</p>
           </div>
         </div>
-        <span className="badge badge-confirmed">Aktiv</span>
       </div>
 
       <div className="panel__body space-y-4">
         {/* Kennzahlen des eigenen Kontos – dieselbe Kachel wie im
             System-Status, damit die Startseite eine Sprache spricht. */}
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3">
           <StatCard
             icon={Users}
             label="Mannschaften"
@@ -98,24 +88,6 @@ export default function AccountPanel() {
             label="Mitglied seit"
             value={formatDate(user.createdAt)}
             hint={`Mitgliedsnummer ${user.id}`}
-          />
-          <StatCard
-            icon={Palette}
-            label="Design"
-            value={
-              theme === 'system' ? 'System' : theme === 'dark' ? 'Dunkel' : 'Hell'
-            }
-            hint="Unten unter „Design“ änderbar"
-          />
-          <StatCard
-            icon={UserRound}
-            label="Kontakt"
-            value={user.phone ? 'Mit Nummer' : 'Nur E-Mail'}
-            hint={
-              services.length > 0
-                ? `Helferdienste: ${services.map(serviceLabel).join(', ')}`
-                : user.phone ?? 'Telefonnummer ist freiwillig'
-            }
           />
         </div>
 
@@ -146,7 +118,6 @@ export default function AccountPanel() {
             className="rounded-md border border-line bg-surface/60 p-4"
           >
             <h3 className="section-title text-sm">{active.title}</h3>
-            <p className="mt-1 text-xs text-ink-muted">{active.description}</p>
 
             <div className="mt-4">
               {active.key === 'profil' && <ProfileForm />}
@@ -161,11 +132,10 @@ export default function AccountPanel() {
   );
 }
 
-/** „1 wartet auf Bestätigung" – oder was sonst zur Mannschaftszahl zu sagen ist. */
+/** „1 wartet auf Bestätigung" – nur wenn etwas offen ist. */
 function pendingHint(teams) {
   const pending = teams.filter((team) => !team.isConfirmed).length;
-  if (teams.length === 0) return 'Noch keine Zuordnung';
-  if (pending === 0) return 'Alle bestätigt';
+  if (pending === 0) return undefined;
   return pending === 1
     ? '1 wartet auf Bestätigung'
     : `${pending} warten auf Bestätigung`;

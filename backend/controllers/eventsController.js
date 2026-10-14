@@ -184,7 +184,7 @@ async function deleteSeries(req, res, next) {
 
     const removed = await eventRepository.deleteSeries(id, nowSqlDateTime());
     return res.json({
-      message: `Serie beendet – ${removed} künftige Termine entfernt. Vergangene Einheiten bleiben in der Historie.`,
+      message: `Serie beendet – ${removed} künftige Termine entfernt.`,
       removed,
     });
   } catch (err) {
@@ -237,7 +237,7 @@ async function setNuligaSync(req, res, next) {
         nowSqlDateTime()
       );
       return res.json({
-        message: `Ligaspiele ausgeblendet – ${removed} künftige Spiele entfernt. Vergangene bleiben in der Historie.`,
+        message: `Ligaspiele ausgeblendet – ${removed} künftige Spiele entfernt.`,
         enabled: false,
         removed,
       });
@@ -503,7 +503,7 @@ async function deleteEvent(req, res, next) {
         nowSqlDateTime()
       );
       return res.json({
-        message: `Serie beendet – ${removed} künftige Termine entfernt. Vergangene Einheiten bleiben in der Historie.`,
+        message: `Serie beendet – ${removed} künftige Termine entfernt.`,
         removed,
       });
     }

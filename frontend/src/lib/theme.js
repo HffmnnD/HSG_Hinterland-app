@@ -18,8 +18,25 @@ export const THEME_STORAGE_KEY = 'hsg-theme';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
-/** Farbe der Browser-/Statusleiste je Darstellung (<meta name="theme-color">). */
-export const BAR_COLOR = { light: '#2e2e2e', dark: '#111416' };
+/** Wert einer Variable aus src/design.css (für das aktuelle Thema). */
+export function designValue(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/**
+ * Schriftdatei laden, deren Adresse in src/design.css (`--font-url`) steht.
+ * Ein `@import url(…)` in der CSS-Datei überlebt den Tailwind-Build nicht –
+ * deshalb hängt die App den Link beim Start selbst in den <head>.
+ */
+export function loadDesignFonts() {
+  const href = designValue('--font-url').replace(/^['"]|['"]$/g, '');
+  if (!href || document.querySelector('link[data-design-fonts]')) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.dataset.designFonts = '';
+  document.head.appendChild(link);
+}
 
 /** Gespeicherte Wahl. null, wenn nichts oder Unbekanntes gespeichert ist. */
 export function readStoredTheme() {

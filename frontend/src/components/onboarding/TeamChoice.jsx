@@ -6,9 +6,8 @@ import { groupTeams, teamMeta } from '../../lib/teams';
  * Mehrfachauswahl von Mannschaften als Karten, gruppiert nach Senioren und
  * Jugend.
  *
- * Bewusst nicht <TeamSelect> (Chips mit Kürzeln): Die Chips reichen in der
- * Verwaltung, wo man die Kürzel kennt. Beim ersten Einrichten kennt sie
- * niemand – dort braucht es den ausgeschriebenen Namen samt Altersklasse.
+ * Bewusst nicht <TeamSelect> (kompakte Chips): Beim ersten Einrichten
+ * braucht es den Namen samt Altersklasse.
  *
  * @param {{ teams: object[], selectedIds: number[],
  *           onToggle: (teamId:number) => void, disabled?: boolean,
@@ -24,7 +23,7 @@ export default function TeamChoice({
   if (teams.length === 0) {
     return (
       <p className="card-note">
-        Für diesen Verein sind noch keine Mannschaften hinterlegt.
+        Keine Mannschaften hinterlegt.
       </p>
     );
   }

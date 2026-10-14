@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import Alert from './Alert';
 import TextField from './TextField';
 
-export default function LoginForm({ onSwitchToRegister }) {
+export default function LoginForm() {
   const { login, error, clearError } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [submitting, setSubmitting] = useState(false);
@@ -30,13 +30,6 @@ export default function LoginForm({ onSwitchToRegister }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      <div>
-        <h2 className="section-title">Anmelden</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          Melde dich mit deinem Vereinskonto an.
-        </p>
-      </div>
-
       {error && <Alert variant="error">{error.message}</Alert>}
 
       <TextField
@@ -73,12 +66,6 @@ export default function LoginForm({ onSwitchToRegister }) {
         {submitting ? 'Anmelden …' : 'Anmelden'}
       </button>
 
-      <p className="text-center text-sm text-ink-muted">
-        Noch kein Konto?{' '}
-        <button type="button" onClick={onSwitchToRegister} className="link">
-          Jetzt registrieren
-        </button>
-      </p>
     </form>
   );
 }

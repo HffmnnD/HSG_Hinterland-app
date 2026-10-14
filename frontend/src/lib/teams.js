@@ -43,21 +43,9 @@ export function teamGroupKey(team) {
  * einordnen lässt.
  */
 export const TEAM_GROUPS = [
-  {
-    key: 'senior',
-    label: 'Senioren',
-    hint: 'Herren- und Damenmannschaften im Erwachsenenbereich',
-  },
-  {
-    key: 'youth',
-    label: 'Jugend',
-    hint: 'Von den Minis bis zur A-Jugend',
-  },
-  {
-    key: 'other',
-    label: 'Weitere Mannschaften',
-    hint: 'Ohne hinterlegte Altersklasse',
-  },
+  { key: 'senior', label: 'Senioren' },
+  { key: 'youth', label: 'Jugend' },
+  { key: 'other', label: 'Weitere Mannschaften' },
 ];
 
 /**
@@ -70,7 +58,7 @@ export const TEAM_GROUPS = [
  *
  * @param {{id:number, name:string, code:string, ageGroup:string|null,
  *          gender:string|null}[]} teams
- * @returns {{key:string, label:string, hint:string, teams:object[]}[]}
+ * @returns {{key:string, label:string, teams:object[]}[]}
  */
 export function groupTeams(teams) {
   return TEAM_GROUPS.map((group) => ({
@@ -131,4 +119,39 @@ export function photoFrameStyle(source = {}) {
       ? { transform: `scale(${zoom / 100})`, transformOrigin: position }
       : null),
   };
+}
+
+/**
+ * Kürzel aus dem Mannschaftsnamen ableiten („Weibliche Jugend C" -> „WJC").
+ *
+ * Das Kürzel ist nur noch technischer Schlüssel (Adresse der Mannschaftsseite)
+ * und wird nirgends mehr angezeigt – deshalb erzeugt es die App selbst, statt
+ * es beim Anlegen abzufragen. Ist es schon vergeben, wird hochgezählt
+ * („WJC-2"). Erlaubt sind wie im Backend A–Z, 0–9 und Bindestrich, 2–20
+ * Zeichen.
+ *
+ * @param {string} name
+ * @param {string[]} takenCodes
+ */
+export function codeFromName(name, takenCodes = []) {
+  const plain = name
+    .toUpperCase()
+    .replace(/Ä/g, 'AE')
+    .replace(/Ö/g, 'OE')
+    .replace(/Ü/g, 'UE')
+    .replace(/ß/g, 'SS')
+    .normalize('NFD')
+    .replace(/[^A-Z0-9 ]/g, ' ');
+  const words = plain.split(/\s+/).filter(Boolean);
+
+  // Zahlen bleiben ganz („Herren 2" -> „H2"), Wörter liefern ihren Anfangsbuchstaben.
+  let base = words.map((word) => (/^\d+$/.test(word) ? word : word[0])).join('');
+  if (base.length < 2) base = words.join('').slice(0, 10);
+  if (base.length < 2) base = 'TEAM';
+  base = base.slice(0, 16);
+
+  const taken = new Set(takenCodes);
+  let code = base;
+  for (let n = 2; taken.has(code); n += 1) code = `${base}-${n}`;
+  return code;
 }

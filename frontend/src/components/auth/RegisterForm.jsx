@@ -30,7 +30,7 @@ const MAX_PASSWORD_LENGTH = 72;
  * sofort an, deshalb gibt es hier keine Erfolgsansicht und kein zweites
  * Anmeldeformular – nach dem Klick geht es in die App.
  */
-export default function RegisterForm({ onSwitchToLogin }) {
+export default function RegisterForm() {
   const { register, error, clearError } = useAuth();
 
   const [form, setForm] = useState(EMPTY_FORM);
@@ -77,14 +77,6 @@ export default function RegisterForm({ onSwitchToLogin }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      <div>
-        <h2 className="section-title">Registrieren</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          Vier Angaben genügen – Mannschaften und Design richtest du gleich
-          danach in der App ein.
-        </p>
-      </div>
-
       {shownError && <Alert variant="error">{shownError}</Alert>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -143,25 +135,14 @@ export default function RegisterForm({ onSwitchToLogin }) {
         disabled={submitting}
       />
 
-      <p className="field-hint">
-        Nach dem Anlegen bist du angemeldet und wirst in zwei Minuten durch die
-        Einrichtung geführt.
-      </p>
-
       <button
         type="submit"
         disabled={submitting}
         className="btn btn-primary btn-block"
       >
-        {submitting ? 'Konto wird erstellt …' : 'Konto erstellen & loslegen'}
+        {submitting ? 'Konto wird erstellt …' : 'Konto erstellen'}
       </button>
 
-      <p className="text-center text-sm text-ink-muted">
-        Bereits registriert?{' '}
-        <button type="button" onClick={onSwitchToLogin} className="link">
-          Zur Anmeldung
-        </button>
-      </p>
     </form>
   );
 }

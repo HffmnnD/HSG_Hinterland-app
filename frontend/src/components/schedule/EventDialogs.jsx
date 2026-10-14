@@ -22,11 +22,7 @@ export function CancelDialog({ event, busy = false, onConfirm, onClose }) {
   if (cancelled) {
     return (
       <Modal title="Absage zurücknehmen?" onClose={onClose}>
-        <p className="mt-2 text-sm text-ink-soft">
-          „{event.title}" findet dann wieder statt und zählt erneut in die
-          Beteiligung. Die bisherigen Rückmeldungen bleiben erhalten.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
             disabled={busy}
@@ -50,17 +46,12 @@ export function CancelDialog({ event, busy = false, onConfirm, onClose }) {
 
   return (
     <Modal title="Termin absagen" onClose={onClose}>
-      <p className="mt-2 text-sm text-ink-soft">
-        „{event.title}" bleibt im Kalender stehen und wird für alle groß als
-        abgesagt gekennzeichnet. In die Beteiligung zählt er nicht mehr.
-      </p>
-
       <form
         onSubmit={(submitEvent) => {
           submitEvent.preventDefault();
           if (trimmed) onConfirm(true, trimmed);
         }}
-        className="mt-4"
+        className="mt-2"
       >
         <label className="field-label" htmlFor="cancel-reason">
           Grund
@@ -75,7 +66,6 @@ export function CancelDialog({ event, busy = false, onConfirm, onClose }) {
           placeholder="z. B. Halle belegt"
           className="field-control"
         />
-        <p className="field-hint">Sehen alle in der Mannschaft.</p>
 
         <div className="mt-5 flex flex-wrap gap-2">
           <button
@@ -113,13 +103,7 @@ export function DeleteDialog({ event, busy = false, onConfirm, onClose }) {
   return (
     <Modal title="Termin löschen?" onClose={onClose}>
       <p className="mt-2 text-sm text-ink-soft">
-        „{event.title}" verschwindet mitsamt allen Rückmeldungen aus dem
-        Kalender und aus jeder Statistik. Das lässt sich nicht rückgängig
-        machen.
-      </p>
-      <p className="field-hint">
-        Fällt der Termin nur aus? Dann ist „Absagen" besser – so bleibt er
-        sichtbar.
+        „{event.title}" wird mit allen Rückmeldungen gelöscht.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2">

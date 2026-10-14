@@ -39,14 +39,12 @@ import { X } from 'lucide-react';
  *                            nicht zu setzen.
  * @param {() => void} onClose
  * @param {string}     title
- * @param {string}     [description]
  * @param {'sm'|'md'|'lg'} [size]
  */
 export default function Modal({
   open = true,
   onClose,
   title,
-  description,
   size = 'md',
   children,
 }) {
@@ -108,12 +106,7 @@ export default function Modal({
         className={`modal-panel ${width}`}
       >
         <div className="modal-header">
-          <div className="min-w-0">
-            <h2 className="section-title text-base">{title}</h2>
-            {description && (
-              <p className="mt-1 text-xs text-ink-muted">{description}</p>
-            )}
-          </div>
+          <h2 className="section-title min-w-0 text-base">{title}</h2>
           <button
             type="button"
             onClick={onClose}

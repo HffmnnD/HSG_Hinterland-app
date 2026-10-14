@@ -9,7 +9,7 @@ import {
 } from 'react';
 
 import {
-  BAR_COLOR,
+  designValue,
   THEMES,
   getSystemDark,
   readStoredTheme,
@@ -78,7 +78,8 @@ export function ThemeProvider({ children }) {
     root.dataset.theme = resolved;
 
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', BAR_COLOR[resolved]);
+    const barColor = designValue('--c-browser-bar');
+    if (meta && barColor) meta.setAttribute('content', barColor);
   }, [resolved]);
 
   // Profil-Einstellung auch lokal festhalten, damit der nächste Seitenaufruf

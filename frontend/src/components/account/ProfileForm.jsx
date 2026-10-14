@@ -142,16 +142,14 @@ export default function ProfileForm({ phone, onPhoneChange }) {
           </div>
         </div>
         <p className="field-hint">
-          Zu sehen auf deiner Startseite und im Kader deiner Mannschaften. JPG,
-          PNG, WEBP oder GIF, höchstens {MAX_PHOTO_MB} MB. Ohne Bild erscheinen
-          deine Initialen.
+          JPG, PNG, WEBP oder GIF, max. {MAX_PHOTO_MB} MB
         </p>
       </div>
 
       {/* --------------------------------------------------- Telefonnummer */}
       <div>
         <label htmlFor="profile-phone" className="field-label">
-          Telefonnummer <span className="font-normal text-ink-muted">(freiwillig)</span>
+          Telefonnummer
         </label>
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative min-w-0 flex-1">
@@ -184,11 +182,6 @@ export default function ProfileForm({ phone, onPhoneChange }) {
             </button>
           )}
         </div>
-        <p className="field-hint">
-          Steht im Kader neben deiner E-Mail – bei Trainer:innen für alle
-          Mitglieder, bei Spieler:innen nur für das Trainerteam. Leer lassen
-          heißt: keine Nummer anzeigen.
-        </p>
       </div>
     </div>
   );

@@ -6,6 +6,10 @@ import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import { loadDesignFonts } from './lib/theme.js'
+
+// Schriften aus src/design.css laden (Adresse steht dort in --font-url).
+loadDesignFonts()
 
 // Reihenfolge der Provider: <ThemeProvider> liegt INNERHALB von
 // <AuthProvider>, weil das gewählte Design am Benutzerprofil hängt – der

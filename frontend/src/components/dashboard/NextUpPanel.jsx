@@ -56,14 +56,9 @@ export default function NextUpPanel({
             ))}
           </ul>
         ) : !hasTeams ? (
-          <p className="text-sm text-ink-muted">
-            Sobald du einer Mannschaft als Spieler:in oder Trainer:in
-            zugeordnet bist, stehen hier die nächsten Trainings und Spiele.
-          </p>
+          <p className="text-sm text-ink-muted">Keine Mannschaft zugeordnet.</p>
         ) : upcoming.length === 0 ? (
-          <p className="text-sm text-ink-muted">
-            In den nächsten Wochen ist nichts eingetragen.
-          </p>
+          <p className="text-sm text-ink-muted">Keine anstehenden Termine.</p>
         ) : (
           <ul className="space-y-2">
             {upcoming.map((event) => (

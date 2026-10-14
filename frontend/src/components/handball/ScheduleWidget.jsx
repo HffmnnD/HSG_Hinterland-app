@@ -204,8 +204,8 @@ export default function ScheduleWidget({
       ) : games.length === 0 ? (
         <p className="card-note mt-3">
           {meta?.available === false
-            ? 'Der Spielplan kann gerade nicht vom Verband geladen werden. Die Termine hängen wie gewohnt in der Halle aus.'
-            : 'Für diese Mannschaft sind noch keine Spiele angesetzt.'}
+            ? 'Spielplan nicht erreichbar.'
+            : 'Keine Spiele angesetzt.'}
         </p>
       ) : (
         <>
@@ -241,8 +241,8 @@ export default function ScheduleWidget({
           {!showLive && !showUpcoming && !showPast && !showAll && (
             <p className="card-note mt-3">
               {mode === 'past'
-                ? 'Für diese Mannschaft liegen noch keine Ergebnisse vor.'
-                : 'Für diese Mannschaft sind aktuell keine Spiele angesetzt.'}
+                ? 'Keine Ergebnisse.'
+                : 'Keine Spiele angesetzt.'}
             </p>
           )}
         </>

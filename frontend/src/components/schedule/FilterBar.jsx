@@ -193,8 +193,7 @@ export default function FilterBar({
 
       {invalidRange && (
         <p role="alert" className="mt-2 text-xs text-danger">
-          „Bis" liegt vor „Von" – bis dahin zeigt die Liste die anstehenden
-          Termine.
+          „Bis" liegt vor „Von".
         </p>
       )}
     </section>

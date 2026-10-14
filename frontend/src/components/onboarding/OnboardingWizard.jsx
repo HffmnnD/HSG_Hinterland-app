@@ -111,7 +111,7 @@ export default function OnboardingWizard() {
 
   const goNext = () => {
     if (step.key === 'rollen' && roles.size === 0) {
-      setError('Bitte wähle mindestens eine Möglichkeit – auch „Zuschauer:in" zählt.');
+      setError('Bitte wähle mindestens eine Möglichkeit.');
       return;
     }
     setError(null);
@@ -141,21 +141,15 @@ export default function OnboardingWizard() {
       <div className="brand-ribbon" />
 
       <header className="border-b border-line bg-paper">
-        <div className="mx-auto flex h-14 w-full max-w-2xl items-center justify-between gap-3 px-4">
+        <div className="mx-auto flex h-14 w-full max-w-2xl items-center px-4">
           <Brand />
-          <span className="eyebrow">Einrichtung</span>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-6 sm:py-10">
-        <p className="eyebrow text-hsg-green-dark">
+        <h1 className="page-title">
           Willkommen{user?.firstName ? `, ${user.firstName}` : ''}!
-        </p>
-        <h1 className="page-title mt-1">Zwei Minuten, dann passt alles</h1>
-        <p className="mt-2 text-sm text-ink-muted">
-          Damit die App dir die richtigen Termine zeigt, brauchen wir ein paar
-          Angaben. Ändern kannst du sie später jederzeit unter „Mein Konto".
-        </p>
+        </h1>
 
         {/* Fortschritt: drei Schritte, keine Prozentzahl – bei drei Schritten
             sagt „Schritt 2 von 3" mehr als ein Balken. */}
@@ -206,10 +200,6 @@ export default function OnboardingWizard() {
               <h2 className="section-title text-base">
                 Wie machst du im Verein mit?
               </h2>
-              <p className="mt-1 text-sm text-ink-muted">
-                Mehrfachauswahl – viele trainieren eine Mannschaft und spielen
-                selbst in einer anderen.
-              </p>
 
               <div className="mt-4 space-y-2">
                 {PARTICIPATION_OPTIONS.map((option) => {
@@ -218,7 +208,7 @@ export default function OnboardingWizard() {
                     <label
                       key={option.relationType}
                       htmlFor={`role-${option.relationType}`}
-                      className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-md border p-3.5 transition-colors ${
+                      className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-md border p-3.5 transition-colors ${
                         active
                           ? 'border-hsg-green bg-hsg-green-soft'
                           : 'border-line bg-paper hover:border-hsg-green'
@@ -233,7 +223,7 @@ export default function OnboardingWizard() {
                       />
                       <span
                         aria-hidden="true"
-                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border ${
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border ${
                           active
                             ? 'border-hsg-green bg-hsg-green text-white'
                             : 'border-line-strong bg-paper'
@@ -241,13 +231,8 @@ export default function OnboardingWizard() {
                       >
                         {active && <Check size={13} strokeWidth={3} />}
                       </span>
-                      <span className="min-w-0">
-                        <span className="block font-display text-sm font-bold uppercase tracking-[0.03em] text-ink">
-                          {option.question}
-                        </span>
-                        <span className="mt-1 block text-sm text-ink-muted">
-                          {option.hint}
-                        </span>
+                      <span className="font-display text-sm font-bold uppercase tracking-[0.03em] text-ink">
+                        {option.question}
                       </span>
                     </label>
                   );
@@ -260,10 +245,6 @@ export default function OnboardingWizard() {
           {step.key === 'mannschaften' && (
             <>
               <h2 className="section-title text-base">Welche Mannschaften?</h2>
-              <p className="mt-1 text-sm text-ink-muted">
-                Danach richtet sich, welche Trainingszeiten und Spiele du in
-                Kalender und Startseite siehst.
-              </p>
 
               {teamsLoading ? (
                 <p className="mt-4 text-sm text-ink-muted">
@@ -274,12 +255,6 @@ export default function OnboardingWizard() {
                   {activeRoles.map((option) => (
                     <div key={option.relationType}>
                       <h3 className="field-label">{option.teamPrompt}</h3>
-                      {option.needsConfirmation && (
-                        <p className="field-hint mb-2">
-                          Wird dem Trainerteam der Mannschaft zur Bestätigung
-                          vorgelegt.
-                        </p>
-                      )}
                       <TeamChoice
                         teams={teams}
                         selectedIds={selection[option.relationType]}
@@ -291,12 +266,6 @@ export default function OnboardingWizard() {
                     </div>
                   ))}
 
-                  {relations.length === 0 && (
-                    <p className="field-hint">
-                      Du kannst diesen Schritt auch überspringen und
-                      Mannschaften später unter „Mein Konto" auswählen.
-                    </p>
-                  )}
                 </div>
               )}
             </>
@@ -305,11 +274,7 @@ export default function OnboardingWizard() {
           {/* ------------------------------------------------- 3. Profil */}
           {step.key === 'profil' && (
             <>
-              <h2 className="section-title text-base">Wie sollen dich andere sehen?</h2>
-              <p className="mt-1 text-sm text-ink-muted">
-                Beides ist freiwillig – du kannst den Schritt überspringen und
-                später unter „Mein Konto" nachholen.
-              </p>
+              <h2 className="section-title text-base">Profil</h2>
 
               <div className="mt-4">
                 <ProfileForm phone={phone} onPhoneChange={setPhone} />
@@ -320,44 +285,12 @@ export default function OnboardingWizard() {
           {/* ------------------------------------------------- 4. Design */}
           {step.key === 'design' && (
             <>
-              <h2 className="section-title text-base">Wie soll die App aussehen?</h2>
-              <p className="mt-1 text-sm text-ink-muted">
-                Die Wahl gilt auf allen deinen Geräten – sie hängt an deinem
-                Konto, nicht am Browser.
-              </p>
+              <h2 className="section-title text-base">Design</h2>
 
               <div className="mt-4">
                 <ThemeChoice value={theme} onChange={chooseTheme} />
               </div>
 
-              <div className="mt-6 border-t border-line pt-4">
-                <h3 className="eyebrow">Das speichern wir</h3>
-                <dl className="mt-2 space-y-1.5 text-sm">
-                  <Summary label="Beteiligung">
-                    {activeRoles.length === 0
-                      ? 'keine Angabe'
-                      : activeRoles.map((option) => option.label).join(', ')}
-                  </Summary>
-                  <Summary label="Mannschaften">
-                    {relations.length === 0
-                      ? 'keine'
-                      : `${relations.length} Zuordnung${relations.length === 1 ? '' : 'en'}`}
-                  </Summary>
-                  <Summary label="Profilbild">
-                    {user?.photoUrl ? 'hochgeladen' : 'keins – Initialen'}
-                  </Summary>
-                  <Summary label="Telefon">
-                    {phone.trim() || 'keine Angabe'}
-                  </Summary>
-                  <Summary label="Design">
-                    {theme === 'system'
-                      ? 'wie das Gerät'
-                      : theme === 'dark'
-                        ? 'dunkel'
-                        : 'hell'}
-                  </Summary>
-                </dl>
-              </div>
             </>
           )}
         </section>
@@ -383,7 +316,7 @@ export default function OnboardingWizard() {
               disabled={saving}
               className="btn btn-primary"
             >
-              {saving ? 'Wird gespeichert …' : 'Fertig – los geht’s'}
+              {saving ? 'Speichert …' : 'Fertig'}
             </button>
           ) : (
             <button type="button" onClick={goNext} className="btn btn-primary">
@@ -393,16 +326,6 @@ export default function OnboardingWizard() {
           )}
         </div>
       </main>
-    </div>
-  );
-}
-
-/** Eine Zeile der Zusammenfassung im letzten Schritt. */
-function Summary({ label, children }) {
-  return (
-    <div className="flex flex-wrap gap-x-2">
-      <dt className="text-ink-muted">{label}:</dt>
-      <dd className="font-semibold text-ink">{children}</dd>
     </div>
   );
 }

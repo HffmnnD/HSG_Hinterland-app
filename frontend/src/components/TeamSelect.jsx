@@ -36,12 +36,11 @@ export default function TeamSelect({
             aria-checked={active}
             disabled={disabled}
             onClick={() => onToggle(team.id)}
-            title={team.name}
             className={`chip ${size === 'sm' ? 'chip-sm' : ''} ${
               active ? 'chip-active' : ''
             }`}
           >
-            {team.code}
+            {team.name}
           </button>
         );
       })}

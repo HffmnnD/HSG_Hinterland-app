@@ -122,7 +122,6 @@ export default function PhotoFrameDialog({ code, team, onClose, onSaved }) {
   return (
     <Modal
       title="Bildausschnitt anpassen"
-      description="Ziehe das Bild an die richtige Stelle und zoome heran, damit keine Köpfe abgeschnitten werden."
       size="lg"
       onClose={onClose}
     >
@@ -206,9 +205,6 @@ export default function PhotoFrameDialog({ code, team, onClose, onSaved }) {
               ↓
             </button>
           </div>
-          <p className="field-hint">
-            0 % zeigt den oberen Bildrand, 100 % den unteren.
-          </p>
         </div>
 
         <div>
@@ -246,10 +242,6 @@ export default function PhotoFrameDialog({ code, team, onClose, onSaved }) {
             onChange={(event) => update({ zoom: Number(event.target.value) })}
             className="w-full accent-hsg-green"
           />
-          <p className="field-hint">
-            100 % passt das Bild in den Streifen ein. Mehr zoomt heran – der
-            Rand fällt dann weg.
-          </p>
         </div>
       </div>
 

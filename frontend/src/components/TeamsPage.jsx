@@ -70,9 +70,6 @@ export default function TeamsPage() {
     <AppLayout width="max-w-4xl">
       <header>
         <h1 className="page-title">Mannschaften</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Deine Zuordnungen und alle Mannschaften der HSG Hinterland.
-        </p>
       </header>
 
       <div className="tabs mt-6" role="tablist" aria-label="Ansicht der Mannschaften">
@@ -88,9 +85,6 @@ export default function TeamsPage() {
             className={`tab ${activeTab === tab.key ? 'tab--active' : ''}`}
           >
             {tab.label}
-            {tab.key === 'meine' && myTeams.length > 0 && (
-              <span className="badge badge-neutral ml-2">{myTeams.length}</span>
-            )}
           </button>
         ))}
       </div>
@@ -125,11 +119,7 @@ function MyTeamsView({ teams, onShowAll }) {
     return (
       <div className="panel">
         <div className="panel__body">
-          <p className="card-note">
-            Du bist noch keiner Mannschaft zugeordnet. Unter „Mein Konto“ legst
-            du fest, wo du mitspielst, trainierst oder zuschaust – danach
-            erscheinen hier deine Mannschaften samt Terminen.
-          </p>
+          <p className="card-note">Du bist noch keiner Mannschaft zugeordnet.</p>
           <button
             type="button"
             onClick={onShowAll}
@@ -147,17 +137,12 @@ function MyTeamsView({ teams, onShowAll }) {
     entries: teams.filter((team) => team.relationType === relation),
   })).filter((group) => group.entries.length > 0);
 
-  const hasPending = teams.some((team) => !team.isConfirmed);
-
   return (
     <div className="space-y-6">
       {groups.map(({ relation, entries }) => (
         <section key={relation} className="panel">
           <div className="panel__header">
             <h2 className="section-title text-base">{myRelationLabel(relation)}</h2>
-            <span className="eyebrow">
-              {entries.length === 1 ? '1 Mannschaft' : `${entries.length} Mannschaften`}
-            </span>
           </div>
           <div className="panel__body">
             <ul className="grid gap-3 sm:grid-cols-2">
@@ -170,13 +155,6 @@ function MyTeamsView({ teams, onShowAll }) {
           </div>
         </section>
       ))}
-
-      {hasPending && (
-        <p className="text-xs text-warn">
-          „Ausstehend" bedeutet: der/die Trainer:in muss deine Mitgliedschaft
-          noch bestätigen.
-        </p>
-      )}
     </div>
   );
 }
@@ -211,7 +189,6 @@ function AllTeamsView({ teams, myTeamIds, loading, error }) {
         <section key={group.key} className="panel">
           <div className="panel__header">
             <h2 className="section-title text-base">{group.label}</h2>
-            <span className="eyebrow">{group.hint}</span>
           </div>
           <div className="panel__body">
             <ul className="grid gap-3 sm:grid-cols-2">
@@ -229,7 +206,7 @@ function AllTeamsView({ teams, myTeamIds, loading, error }) {
 }
 
 /**
- * Eine Mannschaftskarte: Kürzel, Name, Altersklasse und Geschlecht.
+ * Eine Mannschaftskarte: Name, Altersklasse und Geschlecht.
  *
  * Dieselbe Karte in beiden Reitern. `isMine` markiert in der Gesamtliste die
  * eigenen Mannschaften, `pending` in der eigenen Liste eine Zuordnung, die das
@@ -245,21 +222,10 @@ function TeamCard({ team, isMine = false, pending = false }) {
   return (
     <Link
       to={`/teams/${team.code}`}
-      className={`flex min-h-20 items-center gap-3 rounded-md border bg-paper p-3.5 shadow-card transition-colors hover:border-hsg-green ${
+      className={`flex min-h-16 items-center gap-3 rounded-md border bg-paper p-3.5 shadow-card transition-colors hover:border-hsg-green ${
         pending ? 'border-warn-line' : 'border-line'
       }`}
     >
-      <span
-        aria-hidden="true"
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-md font-display text-sm font-bold uppercase leading-none tracking-[0.02em] ${
-          pending
-            ? 'bg-warn-soft text-warn'
-            : 'bg-hsg-green-soft text-hsg-green-darker'
-        }`}
-      >
-        {team.code}
-      </span>
-
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="truncate font-display text-base font-bold uppercase tracking-[0.02em] text-ink">
@@ -271,12 +237,6 @@ function TeamCard({ team, isMine = false, pending = false }) {
         {meta && (
           <span className="mt-0.5 block truncate text-xs text-ink-muted">
             {meta}
-          </span>
-        )}
-        {team.handballTeamId && (
-          <span className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
-            <span className="status-dot bg-hsg-green" aria-hidden="true" />
-            Im Spielbetrieb
           </span>
         )}
       </span>

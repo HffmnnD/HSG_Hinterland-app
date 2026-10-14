@@ -60,10 +60,6 @@ export default function DeclineForm({
         placeholder="z. B. Krank, Beruflich, Auswärtstermin …"
         className="field-control"
       />
-      <p className="field-hint">
-        Ohne Grund ist keine Abmeldung möglich. Wer den Grund sieht, legt
-        der/die Trainer:in je Termin fest.
-      </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
