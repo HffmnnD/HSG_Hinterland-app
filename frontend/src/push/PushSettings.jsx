@@ -65,12 +65,15 @@ export default function PushSettings() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      apiFetch('/api/push/config'),
-      apiFetch('/api/push/settings'),
-      support === 'supported' ? currentSubscription() : null,
-    ])
-      .then(([cfg, settings, subscription]) => {
+    apiFetch('/api/push/config')
+      .then(async (cfg) => {
+        // Ohne Push auf dem Server gibt es nichts einzustellen.
+        const [settings, subscription] = cfg.enabled
+          ? await Promise.all([
+              apiFetch('/api/push/settings'),
+              support === 'supported' ? currentSubscription() : null,
+            ])
+          : [null, null];
         if (!alive) return;
         setConfig(cfg);
         setData(settings);
@@ -127,6 +130,10 @@ export default function PushSettings() {
     );
   };
 
+  if (config && !config.enabled) {
+    return <div className="alert alert-info">Push ist auf diesem Server noch nicht eingerichtet.</div>;
+  }
+
   if (!config || !data) {
     return error ? (
       <div role="alert" className="alert alert-error">{error}</div>
@@ -151,9 +158,7 @@ export default function PushSettings() {
         </div>
       )}
 
-      {!config.enabled ? (
-        <div className="alert alert-info">Push ist auf diesem Server noch nicht eingerichtet.</div>
-      ) : support !== 'supported' ? (
+      {support !== 'supported' ? (
         <div className="alert alert-info">{SUPPORT_HINTS[support]}</div>
       ) : (
         <div className="flex flex-wrap items-center gap-3">

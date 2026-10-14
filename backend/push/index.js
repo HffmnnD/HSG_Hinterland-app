@@ -6,19 +6,34 @@
 //
 // Was es tut und wie man es wieder entfernt: siehe README.md in diesem Ordner.
 const config = require('./config');
-const routes = require('./routes');
-const triggers = require('./triggers');
-const reminders = require('./reminders');
+
+/** Ist das Paket `web-push` installiert? */
+function hasWebPush() {
+  try {
+    require.resolve('web-push');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function mount(app) {
-  app.use('/api/push', routes);
+  // Fehlt das Paket (z. B. nach dem Einspielen ohne `npm install`), darf das
+  // den Server nicht umwerfen: Push bleibt dann aus, alles andere läuft.
+  if (!hasWebPush()) {
+    console.warn('Push: Paket „web-push" fehlt – im Ordner backend `npm install` ausführen. Push ist aus.');
+    app.get('/api/push/config', (req, res) => res.json({ enabled: false, publicKey: null }));
+    return;
+  }
+
+  app.use('/api/push', require('./routes'));
 
   if (!config.enabled) {
     console.log('Push: keine VAPID-Schlüssel gesetzt – Benachrichtigungen sind aus (npm run push:keys).');
     return;
   }
-  triggers.register();
-  reminders.start();
+  require('./triggers').register();
+  require('./reminders').start();
   console.log('Push: Benachrichtigungen aktiv.');
 }
 
