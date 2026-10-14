@@ -17,7 +17,8 @@ const {
   attendancesRouter,
   absencesRouter,
 } = require('./routes/scheduleRoutes');
-const { authenticate } = require('./middleware/authMiddleware');
+const { authenticate, checkRole } = require('./middleware/authMiddleware');
+const { ROLES } = require('./utils/roles');
 const { metricsMiddleware } = require('./middleware/metricsMiddleware');
 const { UPLOAD_ROOT, describeUploadError } = require('./config/uploads');
 
@@ -100,11 +101,6 @@ app.use((req, res, next) => {
   return res.status(403).json({ message: 'Ungültige Origin.' });
 });
 
-// Test-Endpunkt
-app.get('/api/test', (req, res) => {
-  res.json({ message: 'Backend verbindung steht!' });
-});
-
 // Auth-Routen (inkl. Rate-Limiting auf Login/Registrierung)
 app.use('/api/auth', authRoutes);
 
@@ -128,11 +124,14 @@ app.use('/api/absences', absencesRouter);
 // Hochgeladene Bilder: Beiträge, Mannschaftsfotos und Profilbilder.
 //
 // Bewusst unter /api/, damit der Vite-Dev-Proxy sie ohne Zusatzkonfiguration
-// mitausliefert. `authenticate` davor, weil die Inhalte vereinsintern sind –
-// der Browser schickt den HttpOnly-Cookie bei same-origin <img>-Requests mit.
+// mitausliefert. Anmeldung davor, weil die Inhalte vereinsintern sind – der
+// Browser schickt den HttpOnly-Cookie bei same-origin <img>-Requests mit.
+// `checkRole` zusätzlich, damit gesperrte Konten und durch einen
+// Passwortwechsel beendete Sitzungen auch keine Bilder mehr abrufen.
 app.use(
   '/api/uploads',
   authenticate,
+  checkRole(ROLES),
   express.static(UPLOAD_ROOT, {
     index: false,
     // Bilddateien haben zufällige, unveränderliche Namen -> lange cachebar.

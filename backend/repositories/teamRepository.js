@@ -694,20 +694,38 @@ async function replaceSelfRelations(conn, userId, relations) {
 }
 
 /**
- * Ersetzt für EINEN Beziehungstyp alle Mannschaften eines Nutzers
- * (andere Beziehungstypen bleiben unberührt). Von Admin/Trainer ausgelöst ->
- * die neuen Einträge gelten als bestätigt. Muss in einer Transaktion laufen.
+ * Setzt für EINEN Beziehungstyp die Mannschaften eines Nutzers auf genau
+ * `teamIds` (andere Beziehungstypen bleiben unberührt). Von Admin/Trainer
+ * ausgelöst -> neue Einträge gelten als bestätigt. Muss in einer Transaktion
+ * laufen.
+ *
+ * Abgleich statt „alles löschen und neu anlegen": Bestehende Zeilen behalten
+ * Rückennummer, Position und ihren Bestätigungsstatus. Vorher hat ein Klick
+ * auf EINEN Mannschafts-Chip die Kaderangaben in ALLEN Mannschaften der
+ * Person gelöscht.
  * @param {import('mysql2/promise').PoolConnection} conn
  */
 async function replaceRelationTeams(conn, userId, teamIds, relationType) {
-  await conn.query(
-    'DELETE FROM user_teams WHERE user_id = ? AND relation_type = ?',
+  const [current] = await conn.query(
+    'SELECT team_id FROM user_teams WHERE user_id = ? AND relation_type = ?',
     [userId, relationType]
   );
-  if (teamIds.length > 0) {
+  const existing = new Set(current.map((row) => row.team_id));
+  const wanted = new Set(teamIds);
+
+  const removed = [...existing].filter((id) => !wanted.has(id));
+  if (removed.length > 0) {
+    await conn.query(
+      'DELETE FROM user_teams WHERE user_id = ? AND relation_type = ? AND team_id IN (?)',
+      [userId, relationType, removed]
+    );
+  }
+
+  const added = [...wanted].filter((id) => !existing.has(id));
+  if (added.length > 0) {
     await conn.query(
       'INSERT INTO user_teams (user_id, team_id, relation_type, is_confirmed) VALUES ?',
-      [teamIds.map((teamId) => [userId, teamId, relationType, 1])]
+      [added.map((teamId) => [userId, teamId, relationType, 1])]
     );
   }
 }

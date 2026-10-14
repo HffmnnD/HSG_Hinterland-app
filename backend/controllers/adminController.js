@@ -62,10 +62,35 @@ async function listUsers(req, res, next) {
       }),
     });
 
+    // Trainer:innen sehen hier den ganzen Verein, um Spieler:innen ihrer
+    // Mannschaft zuordnen zu können. E-Mail und Telefon aller Mitglieder
+    // brauchen sie dafür nicht; den Kontakt ihres eigenen Kaders bekommen sie
+    // auf der Mannschaftsseite (siehe teamRepository.mapMember).
+    if (!ADMIN_ROLES.includes(req.userRole)) {
+      result.users = result.users.map(withoutContact);
+    }
+
     return res.json(result);
   } catch (err) {
     return next(err);
   }
+}
+
+function withoutContact(profile) {
+  return { ...profile, email: null, phone: null };
+}
+
+/**
+ * Welche Mannschaften ändert diese Spieler-Zuordnung? Hinzugekommene und
+ * entfernte zusammen – nur die muss jemand verantworten dürfen.
+ */
+function changedTeamIds(currentIds, nextIds) {
+  const current = new Set(currentIds);
+  const next = new Set(nextIds);
+  return [
+    ...nextIds.filter((id) => !current.has(id)),
+    ...currentIds.filter((id) => !next.has(id)),
+  ];
 }
 
 // GET /api/admin/users/stats
@@ -152,6 +177,29 @@ async function updateUser(req, res, next) {
         return res.status(409).json({
           message:
             'Der letzte aktive Admin kann nicht herabgestuft oder gesperrt werden.',
+        });
+      }
+    }
+
+    // Trainer:innen ordnen nur in Mannschaften zu, die sie selbst bestätigt
+    // trainieren – sonst könnte jede:r Trainer:in fremde Kader umbauen.
+    if (!canManageAccounts && patch.playerTeamIds !== undefined) {
+      const [actorTeams, targetTeams] = await Promise.all([
+        teamRepository.getTeamsForUser(req.userId),
+        teamRepository.getTeamsForUser(userId),
+      ]);
+      const coached = new Set(
+        actorTeams
+          .filter((t) => t.relationType === 'coach' && t.isConfirmed)
+          .map((t) => t.id)
+      );
+      const currentPlayerIds = targetTeams
+        .filter((t) => t.relationType === 'player')
+        .map((t) => t.id);
+      const touched = changedTeamIds(currentPlayerIds, patch.playerTeamIds);
+      if (touched.some((id) => !coached.has(id))) {
+        return res.status(403).json({
+          message: 'Du kannst nur Mannschaften ändern, die du selbst trainierst.',
         });
       }
     }
