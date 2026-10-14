@@ -60,5 +60,18 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    // `npm run preview` (gebaute App, mit Service Worker und Push). Gleicher
+    // API-Proxy wie oben; Test-Tunnel (Cloudflare) dürfen als Host durch,
+    // damit sich Push auch auf dem Handy über https testen lässt.
+    preview: {
+      host: true,
+      allowedHosts: ['.trycloudflare.com'],
+      proxy: {
+        '/api': {
+          target: apiTarget,
+          changeOrigin: false,
+        },
+      },
+    },
   }
 })
