@@ -6,7 +6,6 @@ import {
   positionLabel,
   positionLabelLong,
 } from '../../lib/participation';
-import { roleLabel } from '../../lib/roles';
 import Avatar from '../ui/Avatar';
 
 /**
@@ -52,7 +51,7 @@ function PlayerCard({ member }) {
         <span className="block truncate text-xs text-ink-muted">
           {/* Nummer für Vorlesehilfen: Bild und Trikot-Kreis sind aria-hidden. */}
           {number !== null && <span className="sr-only">Rückennummer {number}. </span>}
-          {position ?? 'Position offen'}
+          {position}
         </span>
       </span>
     </li>
@@ -263,9 +262,7 @@ export default function RosterSection({
         </div>
 
         {staff.length === 0 ? (
-          <p className="card-note mt-3">
-            Für diese Mannschaft ist noch kein Trainerstab eingetragen.
-          </p>
+          <p className="card-note mt-3">Keine Einträge.</p>
         ) : (
           <ul className="list-panel mt-3">
             {editing
@@ -348,9 +345,7 @@ export default function RosterSection({
         )}
 
         {players.length === 0 ? (
-          <p className="card-note mt-3">
-            Für diese Mannschaft ist noch kein Kader eingetragen.
-          </p>
+          <p className="card-note mt-3">Keine Einträge.</p>
         ) : editing ? (
           <ul className="list-panel mt-3">
             {players.map((member) => (
@@ -364,23 +359,13 @@ export default function RosterSection({
             ))}
           </ul>
         ) : visiblePlayers.length === 0 ? (
-          <p className="card-note mt-3">
-            Auf dieser Position ist niemand eingetragen.
-          </p>
+          <p className="card-note mt-3">Keine Einträge.</p>
         ) : (
           <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visiblePlayers.map((member) => (
               <PlayerCard key={`player-${member.id}`} member={member} />
             ))}
           </ul>
-        )}
-
-        {/* Rollen-Hinweis nur für die Verwaltung: Fans interessiert die
-            App-Rolle nicht, Trainer:innen schon (wer darf was). */}
-        {canManage && !editing && visiblePlayers.length > 0 && (
-          <p className="field-hint">
-            App-Rollen: {[...new Set(visiblePlayers.map((m) => roleLabel(m.role)))].join(', ')}
-          </p>
         )}
       </section>
     </div>

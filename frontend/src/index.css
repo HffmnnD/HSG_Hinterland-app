@@ -1,122 +1,22 @@
 @import 'tailwindcss';
+@import './design.css';
 @config '../tailwind.config.js';
 
 /* ==========================================================================
-   HSG Hinterland – Corporate Design
-   Vereinsgrün #79b636 · Anthrazit #2e2e2e · Headline "Oswald" · Text "Lato"
+   Bauteile der App (Buttons, Karten, Tabellen …).
+   Alle Design-Werte (Farben, Schriften, Größen, Rundungen) kommen aus
+   src/design.css – dort ändern, nicht hier.
    ========================================================================== */
 
 @layer base {
-  /* ==========================================================================
-     Farbwerte der Themen
-     --------------------------------------------------------------------------
-     tailwind.config.js kennt nur BEDEUTUNGEN (`paper`, `ink`, `line`, …) und
-     verweist für jede auf eine Variable von hier. Der Dunkelmodus tauscht
-     deshalb nur diesen Block aus – jede Karte, jede Tabelle, jedes Modal und
-     jede Navigation zieht automatisch mit.
-
-     Die Klasse `dark` am <html> setzt der ThemeProvider
-     (src/context/ThemeContext.jsx). Absichtlich KEIN
-     `@media (prefers-color-scheme: dark)`: bei „System" liest der Provider die
-     Einstellung des Geräts aus und setzt dieselbe Klasse. So gibt es genau
-     eine Stelle, die über das Thema entscheidet.
-     ========================================================================== */
+  /* Farben, Schriften, Größen und Rundungen stehen in src/design.css. Hier
+     nur, was nicht zur Gestaltung gehört. */
   :root {
-    color-scheme: light;
     /* Safe-Area (PWA im Standalone-Modus, viewport-fit=cover) */
     --safe-t: env(safe-area-inset-top, 0px);
     --safe-b: env(safe-area-inset-bottom, 0px);
     --safe-l: env(safe-area-inset-left, 0px);
     --safe-r: env(safe-area-inset-right, 0px);
-
-    /* Vereinsgrün. `green` ist die Markenfarbe (Flächen, Balken),
-       `green-dark`/`darker` sind die Textstufen. */
-    --c-green: #79b636;
-    --c-green-dark: #5f9e28;
-    --c-green-darker: #4c7f1f;
-    --c-green-soft: #eef6e4;
-    --c-green-line: #cfe4b4;
-
-    /* Anthrazit: Anmeldeseite, sekundäre Buttons, Admin-Badge */
-    --c-dark: #2e2e2e;
-    --c-dark-hover: #1f1f1f;
-    --c-dark-soft: #3d3d3d;
-
-    /* Text */
-    --c-ink: #2e2e2e;
-    --c-ink-soft: #4b4b4b;
-    --c-ink-muted: #727579;
-
-    /* Flächen & Linien */
-    --c-paper: #ffffff;
-    --c-surface: #f8f9fa;
-    --c-surface-strong: #eef1f3;
-    --c-line: #e9ecef;
-    --c-line-strong: #dbe0e4;
-
-    /* Status */
-    --c-warn: #8a6116;
-    --c-warn-soft: #fdf6e7;
-    --c-warn-line: #f0d9a8;
-    --c-danger: #c0392b;
-    /* Volle rote Fläche MIT weißer Schrift (Absage-Banner, LIVE-Chip). Im
-       Dunkeln bleibt sie kräftig, während `--c-danger` als Textfarbe heller
-       wird – beides aus derselben Variable ginge nicht auf. */
-    --c-danger-fill: #c0392b;
-    --c-danger-soft: #fdecea;
-    --c-danger-line: #f2c4bf;
-
-    /* Abdunklung hinter Dialogen und im Vollbild */
-    --c-scrim: rgb(46 46 46 / 0.45);
-    --c-scrim-strong: rgb(24 24 24 / 0.95);
-
-    /* Schatten. Im Dunkeln deutlich kräftiger, sonst verschwinden sie. */
-    --shadow-card: 0 1px 2px rgb(20 24 28 / 0.05), 0 1px 3px rgb(20 24 28 / 0.08);
-    --shadow-pop: 0 8px 24px rgb(20 24 28 / 0.12);
-  }
-
-  .dark {
-    color-scheme: dark;
-
-    /* Das Marken-Grün bleibt das Marken-Grün. Nur die Textstufen drehen sich
-       ins Hellere – #4c7f1f auf anthrazit wäre nicht lesbar. */
-    --c-green: #79b636;
-    --c-green-dark: #8ec94c;
-    --c-green-darker: #a5d873;
-    --c-green-soft: #1c2a13;
-    --c-green-line: #3a5a22;
-
-    --c-dark: #0f1214;
-    --c-dark-hover: #191d20;
-    --c-dark-soft: #2a3035;
-
-    --c-ink: #f2f4f5;
-    --c-ink-soft: #cfd4d8;
-    --c-ink-muted: #98a0a6;
-
-    /* Karten (`paper`) liegen HELLER auf dem Seitenhintergrund (`surface`) –
-       im Dunkeln genau andersherum als im Hellen, damit „erhöht" erhöht
-       bleibt. `surface-strong` (Zeilen-Hover) ist entsprechend die hellste
-       der drei Flächen. */
-    --c-paper: #1a1d20;
-    --c-surface: #111416;
-    --c-surface-strong: #24292d;
-    --c-line: #2a2f33;
-    --c-line-strong: #3b4147;
-
-    --c-warn: #e3b457;
-    --c-warn-soft: #2c2310;
-    --c-warn-line: #5a4622;
-    --c-danger: #f08579;
-    --c-danger-fill: #b43326;
-    --c-danger-soft: #2e1815;
-    --c-danger-line: #5e2a24;
-
-    --c-scrim: rgb(0 0 0 / 0.65);
-    --c-scrim-strong: rgb(0 0 0 / 0.95);
-
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.35);
-    --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.6);
   }
 
   * {
@@ -130,8 +30,8 @@
 
   body {
     @apply bg-paper font-sans text-ink-soft antialiased;
-    font-size: 0.9375rem;
-    line-height: 1.6;
+    font-size: var(--text-base);
+    line-height: var(--line-height-body);
     text-rendering: optimizeLegibility;
   }
 
@@ -153,12 +53,12 @@
   :focus-visible {
     outline: 2px solid var(--c-green);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-small);
   }
 
   ::selection {
     background: var(--c-green);
-    color: #fff;
+    color: white;
   }
 
   /* native Formularfelder erben die Schrift */
@@ -189,7 +89,8 @@
 
   /* Grüner Marken-Streifen ganz oben (das durchgehende Akzent-Element) */
   .brand-ribbon {
-    @apply h-1 w-full bg-hsg-green;
+    @apply w-full bg-hsg-green;
+    height: var(--ribbon-height);
   }
 
   .app-header {
@@ -262,8 +163,7 @@
   }
 
   .brand__mark {
-    @apply flex h-9 w-9 shrink-0 items-center justify-center bg-hsg-green font-display text-lg font-bold leading-none text-white;
-    border-radius: 4px;
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded bg-hsg-green font-display text-lg font-bold leading-none text-white;
   }
 
   .brand__name {
@@ -433,7 +333,7 @@
   }
 
   .lightbox__btn:focus-visible {
-    outline: 2px solid #ffffff;
+    outline: 2px solid white;
     outline-offset: 2px;
   }
 
@@ -721,37 +621,11 @@
   }
 
   /* -------------------------------------------------- Mannschafts-Kopf */
-  /* Ohne Foto: diagonaler Verlauf im Anthrazit der Marke, dazu ein dezenter
-     grüner Schimmer oben rechts. Bewusst KEINE fremde Farbfamilie (Slate o. ä.)
-     – die Fläche steht direkt unter der Kopfzeile, und zwei verschiedene
-     Grautöne nebeneinander sähen nach Versehen aus. Das Ergebnis hat Tiefe,
-     bleibt aber dieselbe Farbwelt wie Kopfzeile und Navigation.
-     Mit Foto liegt das Bild darüber (siehe .team-hero__image). */
+  /* Ohne Foto: schlichte Fläche (--c-hero). Mit Foto liegt das Bild darüber
+     (siehe .team-hero__image). */
   .team-hero {
-    @apply relative overflow-hidden rounded-md border border-white/10 text-white shadow-card;
-    background-color: #2e2e2e;
-    background-image:
-      radial-gradient(
-        120% 140% at 88% -15%,
-        rgb(121 182 54 / 0.3) 0%,
-        rgb(121 182 54 / 0.08) 38%,
-        transparent 62%
-      ),
-      linear-gradient(135deg, #1c1c1c 0%, #343434 45%, #212121 100%);
-  }
-
-  /* Im Dunkelmodus darf der Kopfbereich nicht heller sein als die Seite –
-     sonst leuchtet er wie ein Fremdkörper unter der Kopfzeile. */
-  .dark .team-hero {
-    background-color: #0d0f10;
-    background-image:
-      radial-gradient(
-        120% 140% at 88% -15%,
-        rgb(121 182 54 / 0.22) 0%,
-        rgb(121 182 54 / 0.06) 38%,
-        transparent 62%
-      ),
-      linear-gradient(135deg, #0b0d0e 0%, #1c2124 45%, #121516 100%);
+    @apply relative overflow-hidden rounded-md text-white shadow-card;
+    background-color: var(--c-hero);
   }
 
   /* Das Foto selbst wird über `object-position` und `scale` ausgerichtet –
@@ -763,12 +637,7 @@
 
   .team-hero__scrim {
     @apply absolute inset-0;
-    background: linear-gradient(
-      to top,
-      rgb(30 30 30 / 0.92) 0%,
-      rgb(30 30 30 / 0.65) 45%,
-      rgb(30 30 30 / 0.25) 100%
-    );
+    background: linear-gradient(to top, var(--c-hero-scrim), transparent);
   }
 
   .team-hero__body {

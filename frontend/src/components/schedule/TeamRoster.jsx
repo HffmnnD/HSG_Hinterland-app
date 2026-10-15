@@ -80,9 +80,7 @@ export default function TeamRoster({
 
   if (detail.counts.rosterSize === 0) {
     return (
-      <p className="card-note mt-3">
-        Für diese Mannschaft ist noch kein Kader bestätigt.
-      </p>
+      <p className="card-note mt-3">Noch kein Kader.</p>
     );
   }
 

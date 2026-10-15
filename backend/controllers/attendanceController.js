@@ -11,6 +11,7 @@ const userRepository = require('../repositories/userRepository');
 const teamAccess = require('../services/teamAccess');
 const scheduleService = require('../services/scheduleService');
 const { applyReasonVisibility } = require('../services/attendanceService');
+const appEvents = require('../services/appEvents');
 const { parseId } = require('../utils/validation');
 const { validateRespond, validateRange } = require('../utils/scheduleValidation');
 const {
@@ -100,6 +101,13 @@ async function respond(req, res, next) {
       status: input.status,
       reason: input.reason,
       setByUserId: req.userId,
+    });
+    appEvents.publish('attendance.changed', {
+      event,
+      userId: targetId,
+      status: input.status,
+      reason: input.reason,
+      actorId: req.userId,
     });
 
     // Gültigen Status zurückgeben: Eine dauerhafte Abwesenheit kann die soeben

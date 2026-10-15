@@ -69,8 +69,7 @@ export default function UpcomingPanel({
   if (events.length === 0) {
     return (
       <p className="card-note">
-        {emptyHint ??
-          'Hier steht nichts an. Sobald das Trainerteam Trainingszeiten einträgt, erscheinen sie hier.'}
+        {emptyHint ?? 'Keine Termine.'}
       </p>
     );
   }

@@ -14,6 +14,7 @@ const {
   cookieOptions,
 } = require('../config/auth');
 const userRepository = require('../repositories/userRepository');
+const appEvents = require('../services/appEvents');
 const {
   isTokenCurrent,
   SESSION_ENDED_MESSAGE,
@@ -224,6 +225,7 @@ async function completeOnboarding(req, res, next) {
       phone: check.phone,
       relations: check.relations,
     });
+    appEvents.publish('membership.changed', { userId: req.userId });
 
     const pending = check.relations.filter((rel) => rel.relationType !== 'fan');
     return respondWithProfile(
@@ -283,6 +285,9 @@ async function updatePreferences(req, res, next) {
     }
 
     await userRepository.updateOwnPreferences(req.userId, patch);
+    if (patch.relations) {
+      appEvents.publish('membership.changed', { userId: req.userId });
+    }
     return respondWithProfile(res, req.userId, 'Einstellungen gespeichert.');
   } catch (err) {
     return next(err);

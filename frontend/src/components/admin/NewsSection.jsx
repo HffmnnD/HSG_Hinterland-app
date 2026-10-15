@@ -112,12 +112,7 @@ export default function NewsSection() {
 
       <section className="panel">
         <div className="panel__header">
-          <div className="min-w-0">
-            <h2 className="section-title text-base">Vereins-News</h2>
-            <p className="mt-0.5 text-xs text-ink-muted">
-              Aktive Beiträge erscheinen auf dem Dashboard aller Mitglieder.
-            </p>
-          </div>
+          <h2 className="section-title text-base">Vereins-News</h2>
 
           <button
             type="button"
@@ -163,11 +158,6 @@ export default function NewsSection() {
           <EmptyState
             icon={isArchive ? Archive : Newspaper}
             title={isArchive ? 'Archiv ist leer' : 'Noch keine Beiträge'}
-            hint={
-              isArchive
-                ? 'Hier landen Beiträge, die du aus dem Feed genommen hast.'
-                : 'Veröffentliche den ersten Beitrag – er erscheint sofort auf dem Dashboard.'
-            }
           >
             {!isArchive && (
               <button
@@ -566,8 +556,7 @@ function NewsComposer({ open, onClose, onPublished }) {
     <Modal
       open={open}
       onClose={close}
-      title="Neuen Beitrag veröffentlichen"
-      description="Erscheint sofort auf dem Dashboard aller Mitglieder."
+      title="Neuer Beitrag"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {formError && <ErrorNote>{formError}</ErrorNote>}
@@ -604,14 +593,13 @@ function NewsComposer({ open, onClose, onPublished }) {
             required
           />
           <p className="field-hint">
-            {content.length} / {MAX_CONTENT_LENGTH} Zeichen · Zeilenumbrüche
-            bleiben erhalten.
+            {content.length} / {MAX_CONTENT_LENGTH}
           </p>
         </div>
 
         <div>
           <div className="flex items-baseline justify-between gap-2">
-            <span className="field-label mb-0">Bilder (optional)</span>
+            <span className="field-label mb-0">Bilder</span>
             {images.length > 0 && (
               <span className="text-xs text-ink-muted">
                 {images.length} von {MAX_IMAGES_PER_UPLOAD}
@@ -659,9 +647,7 @@ function NewsComposer({ open, onClose, onPublished }) {
           )}
 
           <p className="field-hint">
-            Mehrfachauswahl möglich · JPG, PNG, WEBP oder GIF · je max.{' '}
-            {MAX_IMAGE_MB} MB · die Reihenfolge hier ist die Reihenfolge im
-            Beitrag
+            JPG, PNG, WEBP oder GIF, je max. {MAX_IMAGE_MB} MB
           </p>
         </div>
 

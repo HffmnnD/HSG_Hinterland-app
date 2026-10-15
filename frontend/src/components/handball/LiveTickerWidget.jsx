@@ -83,7 +83,7 @@ export default function LiveTickerWidget({
   durationMinutes = 60,
   maxEvents = 50,
 }) {
-  const { ticker, events, meta, loading, error, isPolling, refresh } =
+  const { ticker, events, meta, loading, error, refresh } =
     useLiveTicker(gameId);
 
   const game = ticker?.game ?? null;
@@ -155,22 +155,16 @@ export default function LiveTickerWidget({
               )}
             </div>
 
-            {isLive && ticker?.clock && (
-              <p className="mt-2 text-center text-[0.6875rem] leading-snug text-ink-muted">
-                Zeiten sind der Stand der letzten gemeldeten Aktion, keine
-                laufende Uhr.
-              </p>
-            )}
           </div>
 
           {/* ------------------------------------------------ Ereignisliste */}
           {visibleEvents.length === 0 ? (
             <p className="card-note mt-4">
               {meta?.available === false
-                ? 'Der Ticker ist gerade nicht erreichbar.'
+                ? 'Ticker nicht erreichbar.'
                 : state === 'upcoming'
-                  ? 'Das Spiel hat noch nicht begonnen. Die Ereignisse erscheinen hier automatisch, sobald angeworfen wird.'
-                  : 'Für dieses Spiel wurden keine Ereignisse gemeldet.'}
+                  ? 'Noch nicht angepfiffen.'
+                  : 'Keine Ereignisse.'}
             </p>
           ) : (
             <ul className="mt-4 space-y-1.5">
@@ -190,7 +184,6 @@ export default function LiveTickerWidget({
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <p className="field-hint mt-0">
           {sourceNote}
-          {isPolling && isLive ? ' · aktualisiert sich alle 10 Sekunden' : ''}
         </p>
         {/* Immer erreichbar: nach dem Zurückkehren aus dem Hintergrund oder
             bei stockender Verbindung will man selbst nachladen können. */}

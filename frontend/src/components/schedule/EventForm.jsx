@@ -260,7 +260,6 @@ export default function EventForm({
                 disabled={busy}
                 className="field-control"
               />
-              <p className="field-hint">Üblicherweise das Saisonende.</p>
             </div>
           </div>
         </div>
@@ -293,28 +292,20 @@ export default function EventForm({
               disabled={busy}
               className="field-control"
             />
-            <p className="field-hint">
-              Für ein mehrtägiges Camp hier den letzten Tag eintragen.
-            </p>
           </div>
         </div>
       )}
 
-      <label className="flex cursor-pointer items-start gap-3">
+      <label className="flex cursor-pointer items-center gap-3">
         <input
           type="checkbox"
           checked={reasonsVisible}
           onChange={(changed) => setReasonsVisible(changed.target.checked)}
           disabled={busy}
-          className="mt-0.5 h-5 w-5 shrink-0 accent-hsg-green"
+          className="h-5 w-5 shrink-0 accent-hsg-green"
         />
-        <span>
-          <span className="block text-sm font-bold text-ink">
-            Abmeldegründe für alle sichtbar
-          </span>
-          <span className="field-hint">
-            Aus: Der Kader sieht nur, wer fehlt. An: auch warum.
-          </span>
+        <span className="text-sm font-bold text-ink">
+          Abmeldegründe für alle sichtbar
         </span>
       </label>
 

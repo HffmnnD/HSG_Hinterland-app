@@ -1,32 +1,14 @@
 /**
- * Corporate Design HSG Hinterland – Licht- und Dunkelmodus
- * --------------------------------------------------------
- * Farben und Typografie sind 1:1 von hsg-hinterland.de übernommen:
- *   - Vereinsgrün  #79b636  (Buttons, Links, aktive Navigation)
- *   - Anthrazit    #2e2e2e  (Kopfzeile, dunkle Flächen, Text)
- *   - Headline     "Oswald" (schmal, kräftig, VERSAL)
- *   - Fließtext    "Lato"
+ * Tailwind-Anbindung des Designs.
  *
- * ── Warum jede Farbe hier `var(--c-…)` ist ──────────────────────────────────
- * Die Namen in dieser Datei sind BEDEUTUNGEN, keine Farbwerte: `paper` ist
- * „die Fläche, auf der eine Karte liegt", `ink` ist „kräftiger Text". Welcher
- * Farbwert dahinter steckt, entscheidet das Thema – die Werte stehen als
- * CSS-Variablen in src/index.css, einmal für `:root` (hell) und einmal für
- * `.dark` (dunkel).
- *
- * Damit gilt der Dunkelmodus für die GANZE App, ohne dass an tausend Stellen
- * ein `dark:`-Gegenstück gepflegt werden muss: `bg-paper` ist im Hellen weiß
- * und im Dunkeln anthrazit, `text-ink` umgekehrt. `dark:` bleibt für die
- * wenigen Fälle, in denen im Dunkeln etwas ANDERES gilt und nicht nur eine
- * andere Farbe (z. B. schwächere Schatten, andere Verläufe).
+ * Hier stehen keine Werte, nur Namen: `paper` ist „Fläche einer Karte",
+ * `ink` „kräftiger Text". Alle Werte (Farben für Hell und Dunkel, Schriften,
+ * Rundungen, Schatten) stehen in src/design.css – dort ändern.
  *
  * Tailwind v4 lädt diese Datei über `@config "../tailwind.config.js"` in
  * src/index.css. Deckkraft-Kurzformen (`bg-surface/60`) funktionieren mit
  * Variablen unverändert – Tailwind setzt daraus ein `color-mix()`.
  */
-const systemSans =
-  '"Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif';
-
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
@@ -83,22 +65,21 @@ export default {
           line: 'var(--c-danger-line)',
         },
       },
+      // Schriften, Schriftgrößen, Abstand und Rundungen stehen als Variablen
+      // in src/design.css. Schriftgrößen (`--text-*`) und der Grundabstand
+      // (`--spacing`) sind Tailwinds eigene Variablen und werden dort direkt
+      // überschrieben.
       fontFamily: {
         // Fließtext
-        sans: ['"Lato"', systemSans],
-        // Headlines / Navigation / Buttons – schmale Groteske, VERSAL
-        display: ['"Oswald"', systemSans],
-      },
-      fontSize: {
-        // etwas kompakter – „sportlich", wie auf der Vereinsseite
-        base: ['0.9375rem', { lineHeight: '1.6' }],
+        sans: 'var(--font-body)',
+        // Headlines / Navigation / Buttons
+        display: 'var(--font-heading)',
       },
       borderRadius: {
-        // milde, klare Kanten – nichts „aufgeblasenes"
-        sm: '3px',
-        DEFAULT: '4px',
-        md: '6px',
-        lg: '8px',
+        sm: 'var(--radius-small)',
+        DEFAULT: 'var(--radius-default)',
+        md: 'var(--radius-medium)',
+        lg: 'var(--radius-large)',
       },
       boxShadow: {
         // Schatten sind im Dunkeln fast unsichtbar und wirken schmutzig –

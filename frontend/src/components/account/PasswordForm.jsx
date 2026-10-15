@@ -135,10 +135,6 @@ export default function PasswordForm() {
         {saving ? 'Wird geändert …' : 'Passwort ändern'}
       </button>
 
-      <p className="field-hint">
-        Du bleibst nach der Änderung angemeldet. Auf anderen Geräten musst du
-        dich beim nächsten Mal mit dem neuen Passwort anmelden.
-      </p>
     </form>
   );
 }

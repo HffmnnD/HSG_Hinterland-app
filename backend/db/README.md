@@ -281,7 +281,6 @@ Kein Controller enthält rohes SQL. Alle Abfragen liegen in
 | `teamRepository.js` | `teams` + `user_teams` (Kader, Kandidaten, Zuordnungen) |
 | `serviceRepository.js` | `user_services` |
 | `newsRepository.js` | `news` (Feed, Anlegen, Archivieren, Löschen) |
-| `newsRepository.js` | `news` (Feed, Anlegen, Löschen) |
 | `eventRepository.js` | `events` + `event_series` (Terminliste, Serien anlegen/ändern/beenden) |
 | `attendanceRepository.js` | `attendances` + `long_term_absences` |
 

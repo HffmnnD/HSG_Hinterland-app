@@ -5,13 +5,9 @@ import { THEMES } from '../lib/theme';
 
 /** Beschriftungen und Icons der drei Einstellungen. */
 const OPTIONS = {
-  system: {
-    label: 'System',
-    hint: 'Folgt der Einstellung deines Geräts.',
-    Icon: MonitorCog,
-  },
-  light: { label: 'Hell', hint: 'Immer heller Hintergrund.', Icon: Sun },
-  dark: { label: 'Dunkel', hint: 'Immer dunkler Hintergrund.', Icon: Moon },
+  system: { label: 'System', Icon: MonitorCog },
+  light: { label: 'Hell', Icon: Sun },
+  dark: { label: 'Dunkel', Icon: Moon },
 };
 
 /**
@@ -39,7 +35,7 @@ export default function ThemeChoice({ value, onChange, disabled = false }) {
   return (
     <div role="radiogroup" aria-label="Design" className="grid gap-2 sm:grid-cols-3">
       {THEMES.map((key) => {
-        const { label, hint, Icon } = OPTIONS[key];
+        const { label, Icon } = OPTIONS[key];
         const active = current === key;
         return (
           <button
@@ -49,7 +45,7 @@ export default function ThemeChoice({ value, onChange, disabled = false }) {
             aria-checked={active}
             disabled={disabled}
             onClick={() => select(key)}
-            className={`flex items-start gap-2.5 rounded-md border p-3 text-left transition-colors ${
+            className={`flex items-center gap-2.5 rounded-md border p-3 text-left transition-colors ${
               active
                 ? 'border-hsg-green bg-hsg-green-soft'
                 : 'border-line bg-paper hover:border-hsg-green'
@@ -58,15 +54,12 @@ export default function ThemeChoice({ value, onChange, disabled = false }) {
             <Icon
               size={18}
               aria-hidden="true"
-              className={`mt-0.5 shrink-0 ${
+              className={`shrink-0 ${
                 active ? 'text-hsg-green-dark' : 'text-ink-muted'
               }`}
             />
-            <span className="min-w-0">
-              <span className="block font-display text-sm font-bold uppercase tracking-[0.04em] text-ink">
-                {label}
-              </span>
-              <span className="mt-0.5 block text-xs text-ink-muted">{hint}</span>
+            <span className="font-display text-sm font-bold uppercase tracking-[0.04em] text-ink">
+              {label}
             </span>
           </button>
         );

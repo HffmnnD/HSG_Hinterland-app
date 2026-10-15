@@ -107,11 +107,6 @@ export default function PreferencesForm() {
         PARTICIPATION_OPTIONS.map((option) => (
           <fieldset key={option.relationType}>
             <legend className="field-label">{option.teamPrompt}</legend>
-            {option.needsConfirmation && (
-              <p className="field-hint mb-2">
-                Neue Zuordnungen bestätigt das Trainerteam der Mannschaft.
-              </p>
-            )}
             <TeamChoice
               teams={allTeams}
               selectedIds={selection[option.relationType]}
@@ -123,19 +118,14 @@ export default function PreferencesForm() {
         ))
       )}
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+      <div className="border-t border-line pt-4">
         <button
           type="submit"
           disabled={saving || !dirty}
           className="btn btn-primary btn-sm"
         >
-          {saving ? 'Wird gespeichert …' : 'Zuordnungen speichern'}
+          {saving ? 'Speichert …' : 'Speichern'}
         </button>
-        {dirty && !saving && (
-          <span className="text-xs text-ink-muted">
-            Es gibt ungespeicherte Änderungen.
-          </span>
-        )}
       </div>
     </form>
   );

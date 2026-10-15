@@ -29,10 +29,7 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
 
   if (teams.length === 0) {
     return (
-      <p className="card-note">
-        Du verwaltest aktuell keine Mannschaft. Planen können Trainer:innen der
-        jeweiligen Mannschaft sowie die Administration.
-      </p>
+      <p className="card-note">Du verwaltest keine Mannschaft.</p>
     );
   }
 
@@ -154,9 +151,7 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
         {loading ? (
           <span className="skeleton mt-3 h-20 w-full" />
         ) : series.length === 0 ? (
-          <p className="card-note mt-3">
-            Noch keine feste Trainingszeit hinterlegt.
-          </p>
+          <p className="card-note mt-3">Keine Trainingszeiten.</p>
         ) : (
           <ul className="list-panel mt-3">
             {series.map((entry) => (
@@ -195,11 +190,7 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
         <h2 className="section-title">Ligaspiele aus nuLiga</h2>
 
         {!team?.handballTeamId ? (
-          <p className="card-note mt-3">
-            Für diese Mannschaft ist keine nuLiga-Nummer hinterlegt. Ein:e
-            Administrator:in kann sie auf der Mannschaftsseite eintragen –
-            danach lassen sich die Ligaspiele hier übernehmen.
-          </p>
+          <p className="card-note mt-3">Keine nuLiga-Nummer hinterlegt.</p>
         ) : (
           /* Auf dem Handy untereinander, ab `sm` nebeneinander.
              Vorher stand hier eine einzige Reihe mit `flex-wrap`: Der Text
@@ -219,11 +210,6 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
                 <span className="font-display text-sm font-bold uppercase tracking-[0.04em] text-ink">
                   {team.nuligaSyncEnabled ? 'Übernahme läuft' : 'Übernahme aus'}
                 </span>
-              </p>
-              <p className="mt-1.5 text-sm text-ink-soft">
-                Ligaspiele automatisch in den Kalender übernehmen. Sie zählen
-                dann wie jeder andere Termin: Der Kader kann sich abmelden, und
-                die Beteiligung lässt sich getrennt auswerten.
               </p>
               {team.nuligaSyncEnabled && team.nuligaSyncedAt && (
                 <p className="field-hint">

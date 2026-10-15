@@ -68,12 +68,7 @@ export default function Dashboard() {
       {/* ------------------------------------------------------- Begrüßung */}
       <header className="flex items-center gap-4">
         <Avatar person={user} size="lg" />
-        <div className="min-w-0">
-          <h1 className="page-title">Hallo, {user.firstName}!</h1>
-          <p className="mt-0.5 text-sm text-ink-muted">
-            Alles Wichtige aus der HSG Hinterland auf einen Blick.
-          </p>
-        </div>
+        <h1 className="page-title min-w-0">Hallo, {user.firstName}!</h1>
       </header>
 
       {/* -------------------------------------------- Aktuelles aus dem Verein */}
@@ -83,11 +78,6 @@ export default function Dashboard() {
             <Newspaper size={16} aria-hidden="true" className="text-ink-muted" />
             Aktuelles aus dem Verein
           </h2>
-          {news.length > 0 && !newsLoading && (
-            <span className="eyebrow">
-              {showAllNews ? 'Alle Beiträge' : 'Neueste Beiträge'}
-            </span>
-          )}
         </div>
 
         <div className="panel__body">
@@ -104,7 +94,7 @@ export default function Dashboard() {
             </div>
           ) : news.length === 0 ? (
             <p className="card-note">
-              Noch keine Ankündigungen veröffentlicht.
+              Keine Beiträge.
             </p>
           ) : (
             <div className="space-y-4">
@@ -149,10 +139,7 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="panel__body">
-            <MyTeams
-              teams={teams}
-              emptyHint="Du bist noch keiner Mannschaft zugeordnet. Unter „Mein Konto“ kannst du auswählen, wo du mitmachst."
-            />
+            <MyTeams teams={teams} emptyHint="Du bist noch keiner Mannschaft zugeordnet." />
           </div>
         </section>
 
@@ -179,16 +166,7 @@ export default function Dashboard() {
               {isAdmin || isSubAdmin ? 'Administration' : 'Mannschaftsverwaltung'}
             </h2>
           </div>
-          <div className="panel__body flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-xl text-sm text-ink-soft">
-              {isAdmin &&
-                'Rollen und Mannschaften pflegen, News veröffentlichen und den Systemzustand prüfen.'}
-              {isSubAdmin &&
-                'Rollen und Mannschaften pflegen sowie News veröffentlichen. Admin-Konten sind für dich gesperrt.'}
-              {!isAdmin &&
-                !isSubAdmin &&
-                'Mannschaftszuordnungen der Mitglieder verwalten.'}
-            </p>
+          <div className="panel__body">
             <Link to="/admin" className="btn btn-primary btn-sm">
               Zur Verwaltung
               <ArrowRight size={14} aria-hidden="true" />

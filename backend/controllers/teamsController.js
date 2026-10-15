@@ -18,6 +18,7 @@
 // Mannschaft eingetragen.
 const teamRepository = require('../repositories/teamRepository');
 const userRepository = require('../repositories/userRepository');
+const appEvents = require('../services/appEvents');
 const {
   parseId,
   isRelationType,
@@ -192,6 +193,12 @@ async function addMember(req, res, next) {
 
     // Vom Trainer/Admin manuell hinzugefügt -> direkt bestätigt.
     await teamRepository.addRelation(targetId, loaded.team.id, relationType, 1);
+    appEvents.publish('membership.confirmed', {
+      userId: targetId,
+      teamId: loaded.team.id,
+      relationType,
+      actorId: req.userId,
+    });
 
     // Wie bei /confirm: bestätigte Trainer-Beziehung -> globale Rolle anheben.
     let roleUpgraded = false;
@@ -264,6 +271,13 @@ async function confirmMember(req, res, next) {
         roleUpgraded = await userRepository.promoteToTrainerIfBasic(targetId);
       }
     }
+
+    appEvents.publish('membership.confirmed', {
+      userId: targetId,
+      teamId: loaded.team.id,
+      relationType,
+      actorId: req.userId,
+    });
 
     return res.json({
       message: roleUpgraded

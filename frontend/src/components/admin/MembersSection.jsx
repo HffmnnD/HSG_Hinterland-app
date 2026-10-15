@@ -41,6 +41,16 @@ export default function MembersSection() {
   const canManageAccounts = ADMIN_ROLES.includes(actorRole);
   const isSubAdmin = actorRole === 'sub_admin';
 
+  // Trainer:innen ordnen nur in Mannschaften zu, die sie selbst trainieren –
+  // das Backend lehnt alles andere ab (siehe adminController.updateUser).
+  const editableTeams = canManageAccounts
+    ? allTeams
+    : allTeams.filter((team) =>
+        (currentUser?.teams ?? []).some(
+          (own) => own.id === team.id && own.relationType === 'coach' && own.isConfirmed
+        )
+      );
+
   const [search, setSearchValue] = useState('');
   const [role, setRoleValue] = useState('');
   const [status, setStatusValue] = useState('');
@@ -174,13 +184,12 @@ export default function MembersSection() {
           icon={Users}
           label="Mitglieder"
           value={formatNumber(stats?.total ?? total)}
-          hint={`${formatNumber(stats?.recent ?? 0)} in den letzten 30 Tagen dazugekommen`}
+          hint={`+${formatNumber(stats?.recent ?? 0)} in 30 Tagen`}
         />
         <StatCard
           icon={ShieldCheck}
           label="Verwaltung"
           value={formatNumber(countRoles(stats, ['admin', 'sub_admin', 'trainer']))}
-          hint="Admins, Sub-Admins und Trainer:innen"
         />
       </div>
 
@@ -188,14 +197,7 @@ export default function MembersSection() {
 
       <section className="panel">
         <div className="panel__header">
-          <div className="min-w-0">
-            <h2 className="section-title text-base">Mitglieder</h2>
-            <p className="mt-0.5 text-xs text-ink-muted">
-              {canManageAccounts
-                ? 'Rollen, Sperren und Mannschaftszuordnungen verwalten.'
-                : 'Mannschaftszuordnung der Mitglieder verwalten.'}
-            </p>
-          </div>
+          <h2 className="section-title text-base">Mitglieder</h2>
           <span className="badge badge-neutral">
             {formatCount(total, 'Treffer', 'Treffer')}
           </span>
@@ -265,11 +267,6 @@ export default function MembersSection() {
           <EmptyState
             icon={hasFilters ? SearchX : Users}
             title={hasFilters ? 'Keine Treffer' : 'Noch keine Mitglieder'}
-            hint={
-              hasFilters
-                ? 'Für diese Suche und Filter gibt es kein Mitglied. Andere Schreibweise probieren oder Filter zurücksetzen.'
-                : 'Sobald sich jemand registriert, erscheint das Konto hier.'
-            }
           >
             {hasFilters && (
               <button type="button" onClick={resetFilters} className="btn btn-outline btn-sm mt-2">
@@ -285,7 +282,7 @@ export default function MembersSection() {
                   <tr>
                     <th>Nr.</th>
                     <th>Name</th>
-                    <th>E-Mail</th>
+                    {canManageAccounts && <th>E-Mail</th>}
                     <th>Rolle</th>
                     <th>Mannschaften (Spieler)</th>
                     <th>Weitere</th>
@@ -297,7 +294,7 @@ export default function MembersSection() {
                     <MemberRow
                       key={u.id}
                       user={u}
-                      allTeams={allTeams}
+                      allTeams={editableTeams}
                       isSelf={u.id === currentUser?.id}
                       busy={savingIds.has(u.id)}
                       locked={isLockedRow(u)}
@@ -385,7 +382,9 @@ function MemberRow({
         )}
       </td>
 
-      <td className="whitespace-nowrap text-ink-muted">{user.email}</td>
+      {canManageAccounts && (
+        <td className="whitespace-nowrap text-ink-muted">{user.email}</td>
+      )}
 
       <td>
         {canManageAccounts ? (
@@ -440,8 +439,8 @@ function MemberRow({
                 {entries.map((t, i) => (
                   <span key={t.id}>
                     {i > 0 && ', '}
-                    <Link to={`/teams/${t.code}`} className="link" title={t.name}>
-                      {t.code}
+                    <Link to={`/teams/${t.code}`} className="link">
+                      {t.name}
                     </Link>
                   </span>
                 ))}

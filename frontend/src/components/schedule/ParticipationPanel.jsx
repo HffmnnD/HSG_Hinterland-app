@@ -186,7 +186,7 @@ export default function ParticipationPanel({ teams, defaultTeamId = null }) {
 
           {players.length === 0 ? (
             <p className="card-note mt-3">
-              In diesem Zeitraum hat kein Termin stattgefunden.
+              Keine Termine in diesem Zeitraum.
             </p>
           ) : (
             <ul className="list-panel mt-3">

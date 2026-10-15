@@ -13,6 +13,7 @@ import {
 import { apiFetch } from '../../lib/api';
 import { useAdminTeams } from '../../hooks/useAdminTeams';
 import { formatNumber } from '../../lib/format';
+import { codeFromName } from '../../lib/teams';
 import Modal from '../ui/Modal';
 import { EmptyState, ErrorNote, Loading, SuccessNote } from './ui/Feedback';
 
@@ -84,13 +85,7 @@ export default function TeamsSection() {
 
       <section className="panel">
         <div className="panel__header">
-          <div className="min-w-0">
-            <h2 className="section-title text-base">Mannschaften</h2>
-            <p className="mt-0.5 text-xs text-ink-muted">
-              nuLiga anklicken öffnet die Stammdaten, Kader anklicken die
-              Kaderverwaltung.
-            </p>
-          </div>
+          <h2 className="section-title text-base">Mannschaften</h2>
 
           <button
             type="button"
@@ -111,7 +106,6 @@ export default function TeamsSection() {
           <EmptyState
             icon={Shield}
             title="Noch keine Mannschaft"
-            hint="Lege die erste Mannschaft an – danach können sich Mitglieder ihr zuordnen."
           >
             <button
               type="button"
@@ -124,10 +118,9 @@ export default function TeamsSection() {
           </EmptyState>
         ) : (
           <div className="w-full overflow-x-auto">
-            <table className="data-table min-w-[760px]">
+            <table className="data-table min-w-[680px]">
               <thead>
                 <tr>
-                  <th>Kürzel</th>
                   <th>Name</th>
                   <th>Altersklasse</th>
                   <th>Geschlecht</th>
@@ -138,9 +131,6 @@ export default function TeamsSection() {
               <tbody>
                 {teams.map((team) => (
                   <tr key={team.id}>
-                    <td>
-                      <span className="badge badge-trainer">{team.code}</span>
-                    </td>
                     <td>
                       <Link
                         to={`/teams/${team.code}`}
@@ -290,23 +280,20 @@ function TeamComposer({ open, existingTeams, onClose, onCreated }) {
     onClose();
   };
 
-  // Doppeltes Kürzel schon beim Tippen melden – das Backend lehnt es ohnehin
-  // ab (UNIQUE-Index), aber vor dem Absenden Bescheid zu wissen ist besser.
-  const code = form.code.trim().toUpperCase();
-  const codeTaken = existingTeams.some((team) => team.code === code);
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (submitting) return;
 
-    if (!form.name.trim() || !code) {
-      setFormError('Name und Kürzel sind Pflichtfelder.');
+    if (!form.name.trim()) {
+      setFormError('Bitte einen Namen angeben.');
       return;
     }
-    if (codeTaken) {
-      setFormError(`Das Kürzel „${code}“ ist bereits vergeben.`);
-      return;
-    }
+    // Das Kürzel (Adresse der Mannschaftsseite) wird nicht mehr abgefragt,
+    // sondern aus dem Namen erzeugt – siehe codeFromName().
+    const code = codeFromName(
+      form.name,
+      existingTeams.map((team) => team.code)
+    );
 
     setSubmitting(true);
     setFormError(null);
@@ -335,7 +322,6 @@ function TeamComposer({ open, existingTeams, onClose, onCreated }) {
       open={open}
       onClose={close}
       title="Neue Mannschaft anlegen"
-      description="Nur Name und Kürzel sind Pflicht – alles andere lässt sich nachtragen."
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {formError && <ErrorNote>{formError}</ErrorNote>}
@@ -356,27 +342,6 @@ function TeamComposer({ open, existingTeams, onClose, onCreated }) {
           />
         </div>
 
-        <div>
-          <label htmlFor="team-code" className="field-label">
-            Kürzel
-          </label>
-          <input
-            id="team-code"
-            className="field-control uppercase"
-            value={form.code}
-            onChange={update('code')}
-            maxLength={20}
-            placeholder="z. B. WJC"
-            disabled={submitting}
-            required
-          />
-          <p className={`field-hint ${codeTaken ? 'text-danger' : ''}`}>
-            {codeTaken
-              ? `„${code}“ ist bereits vergeben – bitte ein anderes Kürzel wählen.`
-              : 'Steht in der Adresse der Mannschaftsseite und auf den Chips. Später nicht mehr änderbar.'}
-          </p>
-        </div>
-
         <StammdatenFelder form={form} update={update} disabled={submitting} />
 
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
@@ -390,7 +355,7 @@ function TeamComposer({ open, existingTeams, onClose, onCreated }) {
           </button>
           <button
             type="submit"
-            disabled={submitting || codeTaken}
+            disabled={submitting}
             className="btn btn-primary"
           >
             {submitting ? 'Wird angelegt …' : 'Mannschaft anlegen'}
@@ -413,7 +378,6 @@ function TeamEditor({ team, onClose, onSaved }) {
       open={Boolean(team)}
       onClose={onClose}
       title={team ? `${team.name} bearbeiten` : 'Mannschaft bearbeiten'}
-      description="Kader, Foto und Sponsoren pflegt die Mannschaftsseite."
     >
       {team && <TeamEditorForm key={team.code} team={team} onSaved={onSaved} onClose={onClose} />}
     </Modal>
@@ -485,16 +449,6 @@ function TeamEditorForm({ team, onSaved, onClose }) {
           disabled={submitting}
           required
         />
-      </div>
-
-      <div>
-        <span className="field-label">Kürzel</span>
-        <p className="flex min-h-11 items-center gap-2 rounded-sm border border-line bg-surface px-3.5 text-sm">
-          <span className="badge badge-trainer">{team.code}</span>
-          <span className="text-xs text-ink-muted">
-            Nicht änderbar – steht in Links und Lesezeichen.
-          </span>
-        </p>
       </div>
 
       <StammdatenFelder form={form} update={update} disabled={submitting} idPrefix="edit-" />
@@ -585,10 +539,7 @@ function StammdatenFelder({ form, update, disabled, idPrefix = '' }) {
           disabled={disabled}
         />
         <p className="field-hint">
-          Die Zahl hinter <code>teamtable=</code> in der Adresse der
-          Mannschaftsseite auf hhv-handball.liga.nu. Sobald sie hinterlegt ist,
-          holen sich Tabelle, Spielplan und Live-Ticker ihre Daten von selbst;
-          leer lassen hebt die Verknüpfung wieder auf.{' '}
+          <code>teamtable=…</code> aus der nuLiga-Adresse ·{' '}
           <a
             href="https://hhv-handball.liga.nu"
             target="_blank"
@@ -607,7 +558,6 @@ function StammdatenFelder({ form, update, disabled, idPrefix = '' }) {
 function emptyForm() {
   return {
     name: '',
-    code: '',
     ageGroup: '',
     gender: '',
     handballTeamId: '',

@@ -13,6 +13,7 @@
 const handballService = require('./handballService');
 const eventRepository = require('../repositories/eventRepository');
 const teamRepository = require('../repositories/teamRepository');
+const appEvents = require('./appEvents');
 const { utcIsoToLocalSql, addMinutesToSql, nowSqlDateTime } =
   require('../utils/schedule');
 
@@ -124,7 +125,18 @@ async function syncTeam(team) {
   }
 
   const rows = games.map(toEventRow).filter(Boolean);
+
+  // Stand VOR dem Abgleich merken: Verlegt der Verband ein Spiel, sollen es
+  // die Betroffenen erfahren (siehe reportMovedGames).
+  const upcoming = await eventRepository.listForTeams(
+    [team.id],
+    nowSqlDateTime(),
+    '9999-12-31 23:59:59',
+    ['MATCH']
+  );
+
   const imported = await eventRepository.upsertNuligaEvents(team.id, rows);
+  reportMovedGames(upcoming, rows);
 
   // Spiele, die nuLiga nicht mehr führt (abgesagt, zurückgezogen), aus dem
   // Kalender nehmen – aber nur künftige. Vergangene sind Historie.
@@ -136,6 +148,31 @@ async function syncTeam(team) {
 
   await teamRepository.markNuligaSynced(team.id, nowSqlDateTime());
   return { ok: true, imported, removed };
+}
+
+/**
+ * Meldet übernommene Spiele, deren Anwurf sich geändert hat, als fachliches
+ * Ereignis. Neue Spiele zählen nicht dazu – sonst käme beim ersten Abgleich
+ * eine Meldung je Saisonspiel.
+ *
+ * @param {object[]} before Termine vor dem Abgleich (camelCase)
+ * @param {{nuligaGameId:string, startTime:string}[]} rows neuer Stand
+ */
+function reportMovedGames(before, rows) {
+  const startByKey = new Map(rows.map((row) => [row.nuligaGameId, row.startTime]));
+  for (const event of before) {
+    if (!event.nuligaGameId || event.cancelledAt) continue;
+    const next = startByKey.get(event.nuligaGameId);
+    if (!next) continue;
+    const nextIso = next.replace(' ', 'T');
+    if (nextIso !== event.startTime) {
+      appEvents.publish('event.rescheduled', {
+        event,
+        previousStart: event.startTime,
+        newStart: nextIso,
+      });
+    }
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 // Gemeinsame Gestaltung aller Diagramme im System-Status.
 //
-// Die Farben stehen HIER und nirgends sonst, damit jedes Diagramm dieselben
-// benutzt. Flächen, Linien und Schrift verweisen auf die Theme-Variablen aus
+// Alle Farben kommen aus src/design.css (`--c-chart-*`, `--c-…`) und werden
+// hier nur den Diagrammen zugeordnet. Flächen, Linien und Schrift verweisen auf die Theme-Variablen aus
 // index.css (`var(--c-…)`) – dadurch tragen die Diagramme den Dunkelmodus mit,
 // ohne dass Recharts etwas davon wissen muss: Es schreibt die Werte als
 // SVG-Attribute in die Seite, und der Browser löst die Variable auf.
@@ -28,18 +28,18 @@
 
 /** Farben der Datenreihen. */
 export const SERIES = {
-  requests: '#5f9e28',
-  errors: '#c0392b',
-  latency: '#5f9e28',
+  requests: 'var(--c-chart-main)',
+  errors: 'var(--c-chart-error)',
+  latency: 'var(--c-chart-main)',
 };
 
 /** Reservierte Zustandsfarben – nie als „Reihe 4" zweckentfremden. */
 export const STATUS = {
-  '2xx': '#5f9e28', // gut
-  '3xx': '#727579', // weder gut noch schlecht (Umleitungen)
-  '4xx': '#8a6116', // Warnung – Anfragefehler des Clients
-  '5xx': '#c0392b', // kritisch – Serverfehler
-  other: '#727579',
+  '2xx': 'var(--c-chart-main)', // gut
+  '3xx': 'var(--c-chart-neutral)', // weder gut noch schlecht (Umleitungen)
+  '4xx': 'var(--c-chart-warn)', // Warnung – Anfragefehler des Clients
+  '5xx': 'var(--c-chart-error)', // kritisch – Serverfehler
+  other: 'var(--c-chart-neutral)',
 };
 
 /** Beschriftungen der Statusklassen (Farbe steht nie allein). */

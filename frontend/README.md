@@ -47,7 +47,7 @@ frontend/src/
   context/
     AuthContext.jsx            globaler Auth-State: user, role, teams, services,
                                needsOnboarding, loading, error + login() /
-                               register() / logout() / refresh() /
+                               register() / logout() /
                                completeOnboarding() / updatePreferences() /
                                changePassword(); prüft beim Start GET /api/auth/me
     ThemeContext.jsx           Hell/Dunkel: leitet die Einstellung aus Sitzung,
@@ -104,7 +104,7 @@ frontend/src/
     ProtectedRoute.jsx         Routen-Schutz nach Login-Status, Rolle und
                                offenem Onboarding
     TeamSelect.jsx             Mannschafts-Mehrfachauswahl als Toggle-Chips
-                               (Verwaltung – dort sind die Kürzel bekannt)
+                               (Verwaltung, mit Mannschaftsnamen)
     MyTeams.jsx                eigene Mannschaften, nach eigener Rolle gruppiert
                                (Startseite + Mannschafts-Übersicht)
     NewsCard.jsx               eine Ankündigung (Datum, Titel, Bilder, Text);
@@ -220,11 +220,10 @@ Weitere Entscheidungen, die beim Weiterbauen wichtig sind:
   werden drei Prozentwerte (`PATCH /api/teams/:code/photo/frame`), kein
   zugeschnittenes Bild – das Original bleibt erhalten, der Ausschnitt lässt sich
   jederzeit korrigieren, und Handy wie Rechner schneiden keine Köpfe ab.
-* **Ohne Foto** trägt der Kopfbereich einen Verlauf im Anthrazit der Marke mit
-  grünem Schimmer (`.team-hero` in `index.css`), keine fremde Farbfamilie.
+* **Ohne Foto** trägt der Kopfbereich eine schlichte Fläche (`--c-hero` in
+  `design.css`).
 * **Ohne `handballTeamId`** erscheint statt Tabelle und Spielplan der Hinweis
-  „Ligaspiele für diese Saison noch nicht terminiert.". Für Verwaltende steht
-  dabei, wo sich die Nummer eintragen lässt.
+  „Keine Ligaspiele.".
 * **Der Positionsfilter erscheint nur, wenn er etwas bringt** (mindestens zwei
   verschiedene Positionen im Kader).
 * **Profilbilder gibt es noch nicht.** Die Karte zeigt die Rückennummer im
@@ -352,7 +351,7 @@ dieselbe Liste – sie können also nicht auseinanderlaufen.
 | ------ | ---- | ------------ |
 | Start | `/` | alle |
 | Teams | `/teams` | alle |
-| Termine | `/termine` | alle |
+| Kalender | `/kalender` | alle |
 | Verwaltung | `/admin` | `admin`, `sub_admin`, `trainer` |
 
 Alle Ziele sind zusätzlich per `<ProtectedRoute>` und im Backend abgesichert –
@@ -369,7 +368,6 @@ Touch-Ziele sind 56 px hoch.
 | `/teams`       | `<ProtectedRoute>` – Übersicht aller Mannschaften |
 | `/teams/:code` | `<ProtectedRoute>` – jeder eingeloggte User; Verwaltung schaltet das Backend per `canManage` frei |
 | `/kalender`    | `<ProtectedRoute>` – jeder eingeloggte User; welche Reiter erscheinen, richtet sich nach der Mannschaftsbeziehung (siehe „Kalender") |
-| `/termine`     | Weiterleitung auf `/kalender` (alter Pfad aus der Vorschau-Version) |
 | `/admin`       | `<ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>` (admin, sub_admin, trainer) |
 | `*`            | Redirect auf `/`                              |
 
@@ -577,22 +575,28 @@ Gerät bleibt angemeldet. Das Formular sagt das in seiner Erfolgsmeldung.
 
 ## Design (Hell & Dunkel)
 
+**Alle Design-Werte stehen in `src/design.css`**: Farben für Hell und Dunkel,
+Schriftarten (samt Google-Fonts-Adresse), Schriftgrößen, Grundabstand,
+Rundungen, Schatten, Diagrammfarben und die Farbe der Browser-Leiste. Wer dort
+einen Wert ändert, ändert ihn in der ganzen App.
+
 Das Thema hängt an **einer** Klasse: `dark` am `<html>`-Element, gesetzt vom
 `ThemeProvider`.
 
 ```
-tailwind.config.js        Farbnamen sind Bedeutungen: paper, ink, line, surface …
-      │                   und verweisen alle auf var(--c-…)
+src/design.css            :root { --c-paper: #ffffff; --radius-medium: 6px; … }
+      │                   .dark { --c-paper: #1a1d20; … }
       ▼
-src/index.css             :root { --c-paper: #ffffff; … }
-                          .dark { --c-paper: #1a1d20; … }
+tailwind.config.js        Namen sind Bedeutungen: paper, ink, line, surface …
+      │                   und verweisen alle auf var(--…)
+      ▼
+src/index.css             Bauteile (.btn, .card, .panel …) aus diesen Namen
 ```
 
 Damit gilt der Dunkelmodus für Karten, Tabellen, Dialoge, Formulare und
 Navigation, **ohne** an jeder Komponente ein `dark:`-Gegenstück zu pflegen.
 `dark:` bleibt für die wenigen Stellen, an denen im Dunkeln etwas anderes gilt
-als eine andere Farbe (Verlauf des Mannschafts-Kopfbereichs, aktiver Knopf im
-Umschalter).
+als eine andere Farbe (aktiver Knopf im Umschalter).
 
 Gewählt wird das Design an genau zwei Stellen: im Onboarding und unter „Mein
 Konto". Einen Ein-Klick-Umschalter in der Kopfzeile gibt es bewusst nicht mehr –
@@ -612,10 +616,8 @@ Drei Dinge, die dabei wichtig sind:
 * **„System" hört zu:** Die Media Query hängt über `useSyncExternalStore` am
   Browser, ein Wechsel der Systemeinstellung wirkt sofort.
 
-Die Diagramme des System-Status ziehen mit: `chartTheme.js` gibt Flächen,
-Linien und Schrift als `var(--c-…)` an Recharts weiter. Die Farben der
-Datenreihen bleiben feste Werte – sie sind Bedeutung (grün = Menge, rot =
-Fehler), nicht Gestaltung.
+Die Diagramme des System-Status ziehen mit: `chartTheme.js` gibt alle Farben
+als `var(--c-…)` an Recharts weiter, auch die Datenreihen (`--c-chart-*`).
 
 ## Startseite (`/`)
 

@@ -52,7 +52,7 @@ const PLATFORM_LABELS = {
  * von selbst auf (siehe hooks/useSystemStatus.js).
  */
 export default function SystemSection() {
-  const { status, loading, refreshing, error, setError, reload, refreshSeconds } =
+  const { status, loading, refreshing, error, setError, reload } =
     useSystemStatus();
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -101,8 +101,7 @@ export default function SystemSection() {
               aria-hidden="true"
               className={refreshing ? 'animate-spin' : ''}
             />
-            Aktualisiert alle {refreshSeconds} Sekunden · Stand{' '}
-            {formatDateTime(status.generatedAt)}
+            Stand {formatDateTime(status.generatedAt)}
           </p>
         </div>
 
@@ -162,10 +161,6 @@ export default function SystemSection() {
       {/* -------------------------------------------------- API-Kennzahlen */}
       <section>
         <h2 className="section-title text-base">API</h2>
-        <p className="mt-0.5 text-xs text-ink-muted">
-          Beobachtungsfenster seit {formatDateTime(api.collectedSince)} · Verlauf
-          der letzten {api.windowMinutes} Minuten.
-        </p>
 
         <div className="mt-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
           <StatCard
@@ -246,7 +241,7 @@ export default function SystemSection() {
           <div className="panel__body">
             {api.countries.length === 0 ? (
               <p className="py-4 text-sm text-ink-muted">
-                Noch keine Anfragen im Beobachtungsfenster.
+                Keine Daten.
               </p>
             ) : (
               <CountryChart countries={api.countries} />
@@ -261,7 +256,7 @@ export default function SystemSection() {
           </div>
           <div className="panel__body">
             {api.routes.length === 0 ? (
-              <p className="py-4 text-sm text-ink-muted">Noch keine Anfragen erfasst.</p>
+              <p className="py-4 text-sm text-ink-muted">Keine Daten.</p>
             ) : (
               <div className="w-full overflow-x-auto">
                 <table className="data-table data-table-compact">

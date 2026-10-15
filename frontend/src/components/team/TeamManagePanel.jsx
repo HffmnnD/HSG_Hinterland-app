@@ -263,9 +263,6 @@ export default function TeamManagePanel({
             Hinzufügen
           </button>
         </div>
-        <p className="field-hint">
-          Manuell hinzugefügte Mitglieder sind sofort bestätigt.
-        </p>
       </form>
 
       {/* --------------------------------------------- Zuordnungen verwalten */}
@@ -371,10 +368,7 @@ export default function TeamManagePanel({
               </button>
             </div>
             <p className="field-hint">
-              Die Zahl aus der Adresse der Mannschaftsseite auf
-              hhv-handball.liga.nu (<code>…teamPortrait?teamtable=2086554</code>).
-              Sie steuert Tabelle, Spielplan und Live-Ticker. Leer lassen, wenn
-              die Mannschaft keine Ligaspiele bestreitet.
+              <code>teamtable=…</code> aus der nuLiga-Adresse
             </p>
           </form>
 
@@ -413,12 +407,7 @@ export default function TeamManagePanel({
                 </div>
               )}
             </div>
-            <p className="field-hint">
-              Querformat wirkt im Kopfbereich am besten. JPG, PNG, WEBP oder
-              GIF, höchstens 5 MB. Nach dem Hochladen lässt sich der Ausschnitt
-              verschieben und heranzoomen, damit keine Köpfe abgeschnitten
-              werden.
-            </p>
+            <p className="field-hint">JPG, PNG, WEBP oder GIF, max. 5 MB</p>
           </div>
         </section>
       )}

@@ -184,7 +184,7 @@ export function describeSource(meta) {
   if (!meta) return null;
 
   if (!meta.available) {
-    return 'Die Verbandsseite (nuLiga) ist gerade nicht erreichbar. Sobald sie wieder antwortet, erscheinen die Daten hier automatisch.';
+    return 'nuLiga nicht erreichbar';
   }
 
   const stamp = meta.fetchedAt
@@ -195,10 +195,8 @@ export function describeSource(meta) {
     : null;
 
   if (meta.stale) {
-    return stamp
-      ? `Verbandsdaten derzeit nicht erreichbar – angezeigt wird der Stand von ${stamp} Uhr.`
-      : 'Verbandsdaten derzeit nicht erreichbar – angezeigt wird der letzte bekannte Stand.';
+    return stamp ? `nuLiga nicht erreichbar · Stand ${stamp} Uhr` : 'nuLiga nicht erreichbar';
   }
 
-  return stamp ? `Quelle: nuLiga (HHV) · Stand ${stamp} Uhr` : 'Quelle: nuLiga (HHV)';
+  return stamp ? `Stand ${stamp} Uhr` : null;
 }

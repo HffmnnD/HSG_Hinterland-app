@@ -1,0 +1,163 @@
+/* ==========================================================================
+   DESIGN-EINSTELLUNGEN DER HSG HINTERLAND APP
+   --------------------------------------------------------------------------
+   Diese Datei ist die einzige Stelle für Farben, Schriften, Schriftgrößen,
+   Abstände, Rundungen und Schatten. Wer hier einen Wert ändert, ändert ihn in
+   der ganzen App – Buttons, Karten, Tabellen, Diagramme, Hell- und
+   Dunkelmodus.
+
+   Aufbau:
+     1. Schriften          (Schriftart + Google-Fonts-Adresse)
+     2. Größen & Formen    (Schriftgrößen, Abstand, Rundungen)
+     3. Farben Hellmodus   (:root)
+     4. Farben Dunkelmodus (.dark)
+
+   Hinweis zur Schriftart: Wird eine andere Google-Schrift gewünscht, die
+   Adresse bei --font-url UND den Namen bei --font-body bzw. --font-heading
+   anpassen.
+   ========================================================================== */
+
+@layer base {
+  :root {
+    /* ------------------------------------------------------ 1. Schriften */
+    /* Schriftdatei (Google Fonts). Wird beim Start der App geladen. */
+    --font-url: 'https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Oswald:wght@400;600;700&display=swap';
+    --font-body: 'Lato', 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    --font-heading: 'Oswald', 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+
+    /* ----------------------------------------------- 2. Größen & Formen */
+    /* Schriftgrößen (rem = 16 px) */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 0.9375rem;
+    --text-base--line-height: var(--line-height-body);
+    --text-lg: 1.125rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+    --text-3xl: 1.875rem;
+    /* Zeilenhöhe des Fließtexts */
+    --line-height-body: 1.6;
+
+    /* Grundabstand. Alle Abstände (p-4, gap-3, mt-6 …) sind Vielfache davon:
+       0.25rem = 4 px. Größer = luftiger, kleiner = kompakter. */
+    --spacing: 0.25rem;
+
+    /* Rundungen der Ecken */
+    --radius-small: 3px; /* Felder, Chips, Bilder */
+    --radius-default: 4px; /* Buttons, Hinweise */
+    --radius-medium: 6px; /* Karten, Tabellen */
+    --radius-large: 8px; /* Dialoge */
+
+    /* Höhe des grünen Streifens ganz oben (0 = aus) */
+    --ribbon-height: 4px;
+
+    /* ------------------------------------------------ 3. Farben (hell) */
+    color-scheme: light;
+
+    /* Vereinsgrün: `green` für Flächen und Buttons, die dunkleren Stufen
+       für grüne Schrift. */
+    --c-green: #79b636;
+    --c-green-dark: #5f9e28;
+    --c-green-darker: #4c7f1f;
+    --c-green-soft: #eef6e4;
+    --c-green-line: #cfe4b4;
+
+    /* Anthrazit: Anmeldeseite, sekundäre Buttons, Admin-Badge */
+    --c-dark: #2e2e2e;
+    --c-dark-hover: #1f1f1f;
+    --c-dark-soft: #3d3d3d;
+
+    /* Schrift */
+    --c-ink: #2e2e2e; /* Überschriften */
+    --c-ink-soft: #4b4b4b; /* Fließtext */
+    --c-ink-muted: #727579; /* Nebentext */
+
+    /* Flächen & Linien */
+    --c-paper: #ffffff; /* Karten */
+    --c-surface: #f8f9fa; /* Seitenhintergrund */
+    --c-surface-strong: #eef1f3; /* Hover */
+    --c-line: #e9ecef;
+    --c-line-strong: #dbe0e4;
+
+    /* Status */
+    --c-warn: #8a6116;
+    --c-warn-soft: #fdf6e7;
+    --c-warn-line: #f0d9a8;
+    --c-danger: #c0392b; /* rote Schrift */
+    --c-danger-fill: #c0392b; /* rote Fläche mit weißer Schrift */
+    --c-danger-soft: #fdecea;
+    --c-danger-line: #f2c4bf;
+
+    /* Kopfbereich der Mannschaftsseite ohne Foto */
+    --c-hero: #2e2e2e;
+    /* Abdunklung über dem Mannschaftsfoto */
+    --c-hero-scrim: rgb(30 30 30 / 0.75);
+
+    /* Abdunklung hinter Dialogen und im Vollbild */
+    --c-scrim: rgb(46 46 46 / 0.45);
+    --c-scrim-strong: rgb(24 24 24 / 0.95);
+
+    /* Diagramme im System-Status */
+    --c-chart-main: #5f9e28;
+    --c-chart-error: #c0392b;
+    --c-chart-neutral: #727579;
+    --c-chart-warn: #8a6116;
+
+    /* Browser-Leiste auf dem Handy (<meta name="theme-color">) */
+    --c-browser-bar: #2e2e2e;
+
+    /* Schatten. `none` = flach. */
+    --shadow-card: none;
+    --shadow-pop: 0 8px 24px rgb(20 24 28 / 0.12);
+  }
+
+  /* ------------------------------------------------ 4. Farben (dunkel) */
+  .dark {
+    color-scheme: dark;
+
+    --c-green: #79b636;
+    --c-green-dark: #8ec94c;
+    --c-green-darker: #a5d873;
+    --c-green-soft: #1c2a13;
+    --c-green-line: #3a5a22;
+
+    --c-dark: #0f1214;
+    --c-dark-hover: #191d20;
+    --c-dark-soft: #2a3035;
+
+    --c-ink: #f2f4f5;
+    --c-ink-soft: #cfd4d8;
+    --c-ink-muted: #98a0a6;
+
+    /* Karten liegen im Dunkeln HELLER als der Seitenhintergrund. */
+    --c-paper: #1a1d20;
+    --c-surface: #111416;
+    --c-surface-strong: #24292d;
+    --c-line: #2a2f33;
+    --c-line-strong: #3b4147;
+
+    --c-warn: #e3b457;
+    --c-warn-soft: #2c2310;
+    --c-warn-line: #5a4622;
+    --c-danger: #f08579;
+    --c-danger-fill: #b43326;
+    --c-danger-soft: #2e1815;
+    --c-danger-line: #5e2a24;
+
+    --c-hero: #15181a;
+    --c-hero-scrim: rgb(0 0 0 / 0.7);
+
+    --c-scrim: rgb(0 0 0 / 0.65);
+    --c-scrim-strong: rgb(0 0 0 / 0.95);
+
+    --c-chart-main: #8ec94c;
+    --c-chart-error: #f08579;
+    --c-chart-neutral: #98a0a6;
+    --c-chart-warn: #e3b457;
+
+    --c-browser-bar: #111416;
+
+    --shadow-card: none;
+    --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.6);
+  }
+}

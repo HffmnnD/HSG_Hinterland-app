@@ -38,9 +38,9 @@ export default function AuthScreen() {
       </div>
 
       {mode === 'login' ? (
-        <LoginForm onSwitchToRegister={() => switchTo('register')} />
+        <LoginForm />
       ) : (
-        <RegisterForm onSwitchToLogin={() => switchTo('login')} />
+        <RegisterForm />
       )}
     </AuthLayout>
   );

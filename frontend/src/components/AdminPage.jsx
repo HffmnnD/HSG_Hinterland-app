@@ -32,14 +32,12 @@ const SECTIONS = [
     key: 'mitglieder',
     label: 'Mitglieder',
     title: 'Mitgliederverwaltung',
-    description: 'Rollen, Sperren und Mannschaftszuordnungen der Vereinsmitglieder.',
     Component: MembersSection,
   },
   {
     key: 'news',
     label: 'News',
     title: 'News & Beiträge',
-    description: 'Beiträge veröffentlichen, archivieren und aus dem Archiv zurückholen.',
     adminOnly: true,
     Component: NewsSection,
   },
@@ -47,7 +45,6 @@ const SECTIONS = [
     key: 'mannschaften',
     label: 'Mannschaften',
     title: 'Mannschaftsverwaltung',
-    description: 'Mannschaften anlegen und ihre Stammdaten samt nuLiga-Anbindung pflegen.',
     adminOnly: true,
     Component: TeamsSection,
   },
@@ -55,7 +52,6 @@ const SECTIONS = [
     key: 'system',
     label: 'System-Status',
     title: 'System-Status',
-    description: 'Auslastung, Verkehr und Zustand des Servers.',
     adminOnly: true,
     Component: SystemSection,
   },
@@ -119,7 +115,7 @@ export default function AdminPage() {
       <AppLayout width="max-w-7xl">
         <h1 className="page-title">Verwaltung</h1>
         <div role="alert" className="alert alert-info mt-4">
-          Für deine Rolle ist derzeit kein Verwaltungsbereich freigeschaltet.
+          Kein Bereich freigeschaltet.
         </div>
       </AppLayout>
     );
@@ -129,10 +125,7 @@ export default function AdminPage() {
 
   return (
     <AppLayout width="max-w-7xl">
-      <header>
-        <h1 className="page-title">Verwaltung</h1>
-        <p className="mt-1 text-sm text-ink-muted">{active.description}</p>
-      </header>
+      <h1 className="page-title">Verwaltung</h1>
 
       <div className="tabs mt-6" role="tablist" aria-label="Bereiche der Verwaltung">
         {sections.map((section) => (

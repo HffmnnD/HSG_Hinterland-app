@@ -10,13 +10,6 @@ import {
   toDateInput,
 } from '../../lib/schedule';
 
-/** Kurzbeschreibung je Art – erklärt, wofür der Eintrag gedacht ist. */
-const TYPE_HINTS = {
-  VACATION: 'Du bist verreist und in diesem Zeitraum bei keinem Termin dabei.',
-  INJURY: 'Du fällst verletzungsbedingt aus – bis auf Weiteres oder bis zu einem Datum.',
-  OTHER: 'Ein anderer Grund, der über mehrere Termine hinweg gilt.',
-};
-
 /** Läuft der Eintrag gerade? */
 function isActive(absence) {
   const today = toDateInput();
@@ -90,17 +83,9 @@ export default function AbsencePanel({
     <div className="space-y-8">
       {/* ------------------------------------------------------- Formular */}
       <section className="card-accent">
-        <p className="eyebrow">Neuer Eintrag</p>
-        <h2 className="section-title mt-1.5 text-base">
-          Urlaub oder Verletzung eintragen
-        </h2>
-        <p className="mt-2 text-sm text-ink-soft">
-          Alle Termine im gewählten Zeitraum werden automatisch als „nicht da"
-          geführt – mit dem hier angegebenen Grund. Du musst dich nicht von
-          jedem Training einzeln abmelden.
-        </p>
+        <h2 className="section-title text-base">Abwesenheit eintragen</h2>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <span className="field-label">Art</span>
             <div role="group" aria-label="Art der Abwesenheit" className="flex flex-wrap gap-1.5">
@@ -117,7 +102,6 @@ export default function AbsencePanel({
                 </button>
               ))}
             </div>
-            <p className="field-hint">{TYPE_HINTS[type]}</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -137,7 +121,7 @@ export default function AbsencePanel({
             </div>
             <div>
               <label className="field-label" htmlFor="absence-to">
-                Bis (einschließlich)
+                Bis
               </label>
               <input
                 id="absence-to"
@@ -153,8 +137,7 @@ export default function AbsencePanel({
 
           <div>
             <label className="field-label" htmlFor="absence-note">
-              Notiz{' '}
-              <span className="font-normal text-ink-muted">(optional)</span>
+              Notiz
             </label>
             <input
               id="absence-note"
@@ -166,10 +149,6 @@ export default function AbsencePanel({
               placeholder="z. B. Bänderriss oder Familienurlaub"
               className="field-control"
             />
-            <p className="field-hint">
-              Steht als Grund an den betroffenen Terminen. Ohne Notiz erscheint
-              nur „{absenceTypeLabel(type)}".
-            </p>
           </div>
 
           {teams.length > 1 && (
@@ -216,10 +195,7 @@ export default function AbsencePanel({
             <span className="skeleton h-16 w-full" />
           </div>
         ) : absences.length === 0 ? (
-          <p className="card-note mt-3">
-            Kein Eintrag. Solange hier nichts steht, giltst du bei jedem Termin
-            als dabei.
-          </p>
+          <p className="card-note mt-3">Keine Einträge.</p>
         ) : (
           <ul className="list-panel mt-3">
             {absences.map((absence) => (
@@ -240,13 +216,14 @@ export default function AbsencePanel({
                     )}
                   </span>
                   <span className="text-sm text-ink-soft">
-                    {absence.note ?? 'Ohne Notiz'}
-                    {absence.teamId
-                      ? ` · nur ${
-                          teams.find((team) => team.id === absence.teamId)?.name ??
-                          'eine Mannschaft'
-                        }`
-                      : ' · alle Mannschaften'}
+                    {[
+                      absence.note,
+                      absence.teamId
+                        ? teams.find((team) => team.id === absence.teamId)?.name
+                        : 'Alle Mannschaften',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
                 </span>
 
@@ -262,11 +239,6 @@ export default function AbsencePanel({
             ))}
           </ul>
         )}
-
-        <p className="field-hint">
-          Wird ein Eintrag entfernt, giltst du an den betroffenen Terminen
-          wieder als dabei – sofern du dich dort nicht einzeln abgemeldet hast.
-        </p>
       </section>
     </div>
   );

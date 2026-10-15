@@ -185,9 +185,6 @@ export default function CalendarPage() {
   return (
     <AppLayout width="max-w-4xl">
       <h1 className="page-title">Kalender</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Trainingszeiten, Spiele und Anwesenheiten deiner Mannschaften.
-      </p>
 
       {(error || loadError) && (
         <div role="alert" className="alert alert-error mt-4">
@@ -197,11 +194,7 @@ export default function CalendarPage() {
       {notice && <div className="alert alert-success mt-4">{notice}</div>}
 
       {!loading && !hasTeams ? (
-        <p className="card-note mt-6">
-          Du bist noch keiner Mannschaft als Spieler:in oder Trainer:in
-          zugeordnet. Sobald der/die Trainer:in deine Zuordnung bestätigt hat,
-          erscheinen hier die Trainingszeiten.
-        </p>
+        <p className="card-note mt-6">Du bist noch keiner Mannschaft zugeordnet.</p>
       ) : (
         <>
           <div

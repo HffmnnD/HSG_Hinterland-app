@@ -33,9 +33,7 @@ export default function TeamAbsences({ teamId }) {
 
   if (absences.length === 0) {
     return (
-      <p className="card-note mt-3">
-        Niemand aus dem Kader ist längerfristig abgemeldet.
-      </p>
+      <p className="card-note mt-3">Keine Einträge.</p>
     );
   }
 

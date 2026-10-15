@@ -33,10 +33,6 @@ export default function MyTeams({ teams, emptyHint }) {
     );
   }
 
-  const hasPending = groups.some((group) =>
-    group.entries.some((team) => !team.isConfirmed)
-  );
-
   return (
     <div className="space-y-4">
       {groups.map(({ relation, entries }) => (
@@ -51,13 +47,6 @@ export default function MyTeams({ teams, emptyHint }) {
                     team.isConfirmed ? 'border-line' : 'border-warn-line'
                   }`}
                 >
-                  <span
-                    className={`badge shrink-0 ${
-                      team.isConfirmed ? 'badge-trainer' : 'badge-pending'
-                    }`}
-                  >
-                    {team.code}
-                  </span>
                   <span className="min-w-0 flex-1 truncate font-display text-sm font-bold uppercase tracking-[0.02em] text-ink">
                     {team.name}
                   </span>
@@ -77,13 +66,6 @@ export default function MyTeams({ teams, emptyHint }) {
           </ul>
         </div>
       ))}
-
-      {hasPending && (
-        <p className="text-xs text-warn">
-          „Ausstehend" bedeutet: der/die Trainer:in muss deine Mitgliedschaft
-          noch bestätigen.
-        </p>
-      )}
     </div>
   );
 }
