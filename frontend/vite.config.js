@@ -32,12 +32,19 @@ export default defineConfig(({ mode }) => {
               type: 'image/svg+xml',
               purpose: 'any maskable',
             },
+            // PNG-Fassungen: Android und iOS brauchen sie für das Symbol auf
+            // dem Home-Bildschirm und in Benachrichtigungen.
+            { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
+            { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
           ],
         },
         workbox: {
           // API-Antworten niemals cachen – sonst liefert der Service Worker
           // veraltete Auth-/Rollendaten aus.
           navigateFallbackDenylist: [/^\/api\//],
+          // Push-Benachrichtigungen (public/push-sw.js). Zum Entfernen des
+          // Push-Moduls diese Zeile und die Datei löschen.
+          importScripts: ['push-sw.js'],
         },
       }),
     ],
@@ -46,6 +53,19 @@ export default defineConfig(({ mode }) => {
       host: true,
       // Frontend und API laufen dadurch über dieselbe Origin: kein CORS und
       // keine Cross-Site-Cookie-Probleme (auch beim Testen über die LAN-IP).
+      proxy: {
+        '/api': {
+          target: apiTarget,
+          changeOrigin: false,
+        },
+      },
+    },
+    // `npm run preview` (gebaute App, mit Service Worker und Push). Gleicher
+    // API-Proxy wie oben; Test-Tunnel (Cloudflare) dürfen als Host durch,
+    // damit sich Push auch auf dem Handy über https testen lässt.
+    preview: {
+      host: true,
+      allowedHosts: ['.trycloudflare.com'],
       proxy: {
         '/api': {
           target: apiTarget,

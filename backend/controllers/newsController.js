@@ -14,6 +14,7 @@
 // existiert weiterhin, ist aber eine getrennte Aktion aus dem Archiv heraus
 // (nur so wird auch das hochgeladene Bild wieder frei).
 const newsRepository = require('../repositories/newsRepository');
+const appEvents = require('../services/appEvents');
 const {
   parseId,
   validateNewsPost,
@@ -94,6 +95,7 @@ async function createNews(req, res, next) {
     persisted = true;
 
     const created = await newsRepository.findById(id);
+    appEvents.publish('news.published', { news: created, actorId: req.userId });
     return res.status(201).json({
       message: 'Beitrag veröffentlicht.',
       news: created,

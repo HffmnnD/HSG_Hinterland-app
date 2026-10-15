@@ -18,6 +18,7 @@ const teamRepository = require('../repositories/teamRepository');
 const teamAccess = require('../services/teamAccess');
 const nuligaSyncService = require('../services/nuligaSyncService');
 const scheduleService = require('../services/scheduleService');
+const appEvents = require('../services/appEvents');
 const { parseId } = require('../utils/validation');
 const {
   validateEventCreate,
@@ -183,6 +184,11 @@ async function deleteSeries(req, res, next) {
     }
 
     const removed = await eventRepository.deleteSeries(id, nowSqlDateTime());
+    appEvents.publish('series.ended', {
+      series,
+      removed,
+      actorId: req.userId,
+    });
     return res.json({
       message: `Serie beendet – ${removed} künftige Termine entfernt.`,
       removed,
@@ -325,6 +331,12 @@ async function createEvent(req, res, next) {
           createdBy: req.userId,
         }
       );
+      appEvents.publish('event.created', {
+        teamId: input.teamId,
+        seriesId,
+        eventId: null,
+        actorId: req.userId,
+      });
       return res.status(201).json({
         message: `Serie angelegt – ${created} Termine erzeugt.`,
         seriesId,
@@ -339,6 +351,12 @@ async function createEvent(req, res, next) {
       startTime: occurrence.startTime,
       endTime: occurrence.endTime,
       createdBy: req.userId,
+    });
+    appEvents.publish('event.created', {
+      teamId: input.teamId,
+      seriesId: null,
+      eventId,
+      actorId: req.userId,
     });
 
     return res
@@ -399,6 +417,12 @@ async function updateEvent(req, res, next) {
         input.fields,
         nowSqlDateTime()
       );
+      appEvents.publish('series.updated', {
+        event,
+        fields: input.fields,
+        changed,
+        actorId: req.userId,
+      });
       return res.json({
         message: `Serie geändert – ${changed} künftige Termine aktualisiert.`,
         changed,
@@ -409,6 +433,11 @@ async function updateEvent(req, res, next) {
       ...input.fields,
       start_time: input.times.startTime,
       end_time: input.times.endTime,
+    });
+    appEvents.publish('event.updated', {
+      before: event,
+      after: await eventRepository.findById(id),
+      actorId: req.userId,
     });
     return res.json({ message: 'Termin gespeichert.', changed: 1 });
   } catch (err) {
@@ -453,6 +482,11 @@ async function cancelEvent(req, res, next) {
     await eventRepository.updateEvent(id, {
       cancelled_at: input.cancelled ? nowSqlDateTime() : null,
       cancel_reason: input.reason,
+    });
+    appEvents.publish(input.cancelled ? 'event.cancelled' : 'event.reinstated', {
+      event,
+      reason: input.reason,
+      actorId: req.userId,
     });
 
     return res.json({
@@ -502,6 +536,11 @@ async function deleteEvent(req, res, next) {
         event.seriesId,
         nowSqlDateTime()
       );
+      appEvents.publish('series.ended', {
+        series: { id: event.seriesId, teamId: event.teamId, title: event.title },
+        removed,
+        actorId: req.userId,
+      });
       return res.json({
         message: `Serie beendet – ${removed} künftige Termine entfernt.`,
         removed,
@@ -509,6 +548,7 @@ async function deleteEvent(req, res, next) {
     }
 
     await eventRepository.deleteEvent(id);
+    appEvents.publish('event.deleted', { event, actorId: req.userId });
     return res.json({ message: 'Termin entfernt.', removed: 1 });
   } catch (err) {
     return next(err);

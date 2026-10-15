@@ -8,6 +8,7 @@ import {
 } from 'react';
 
 import { apiFetch, setSessionExpiredHandler } from '../lib/api';
+import { forgetThisDevice } from '../push';
 
 const AuthContext = createContext(null);
 
@@ -94,6 +95,8 @@ export function AuthProvider({ children }) {
   );
 
   const logout = useCallback(async () => {
+    // Vor dem Abmelden, solange die Sitzung noch gilt.
+    await forgetThisDevice();
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' });
     } catch {
