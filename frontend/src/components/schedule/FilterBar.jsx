@@ -24,7 +24,7 @@ import { EVENT_CATEGORIES } from '../../lib/schedule';
  *                Zeitraum klappt zwei Datumsfelder auf – für „was war
  *                eigentlich im September?" oder die Planung der Hinrunde.
  *
- * Alle Werte hält die Seite (CalendarPage) – die Leiste ist bewusst ohne
+ * Alle Werte hält die Seite (TrainingSection) – die Leiste ist bewusst ohne
  * eigenen Zustand, damit es nur eine Wahrheit gibt.
  *
  * @param {{ teams: {id:number, name:string, code:string}[],
@@ -116,7 +116,7 @@ export default function FilterBar({
                   type="button"
                   onClick={() => onCategoryChange(entry.key)}
                   aria-pressed={active}
-                  className={`min-h-9 flex-1 rounded px-2 font-display text-xs font-semibold uppercase tracking-[0.05em] transition-colors ${
+                  className={`min-h-9 flex-1 rounded px-2 text-xs font-semibold transition-colors ${
                     active
                       ? 'bg-hsg-green text-white'
                       : 'text-ink-muted hover:text-ink'

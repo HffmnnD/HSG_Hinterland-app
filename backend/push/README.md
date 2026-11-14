@@ -20,7 +20,7 @@ Push-Dienst des jeweiligen Browsers (Google, Apple, Mozilla, Microsoft).
 Wer eine Änderung selbst macht, bekommt dazu keine Nachricht. Fans bekommen
 keine Termin-Nachrichten (sie sehen Termine auch in der App nicht).
 
-Angelehnt an SpielerPlus, Spond und Heja. Der Unterschied: Bei euch gilt
+Angelehnt an gängige Vereins-Apps wie Spond und Heja. Der Unterschied: Bei euch gilt
 „keine Rückmeldung = dabei", deshalb erinnert die App nicht ans Zusagen,
 sondern daran, rechtzeitig abzusagen.
 

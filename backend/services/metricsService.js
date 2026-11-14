@@ -50,7 +50,10 @@ const totals = {
   durationSum: 0,
   maxDuration: 0,
   slowRequests: 0,
-  // Zähler je HTTP-Statusklasse (2xx/3xx/4xx/5xx).
+  // Echte Fehler: 4xx/5xx OHNE die erwarteten Antworten (siehe isExpected).
+  errors: 0,
+  // Zähler je HTTP-Statusklasse (2xx/3xx/4xx/5xx). Zählt ALLE Antworten,
+  // auch die erwarteten – für die ehrliche Aufschlüsselung.
   status: { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, other: 0 },
 };
 
@@ -107,12 +110,20 @@ function statusClass(statusCode) {
  * @param {number} entry.durationMs
  * @param {string} entry.country   Ländercode aus utils/geo
  * @param {string} [entry.route]   Grobe Route ohne Parameter, z. B. '/api/admin'
+ * @param {boolean} [entry.expected] Erwartete Nicht-2xx-Antwort (z. B. der
+ *   „bin ich angemeldet?"-Check vor dem Login) – zählt nicht als Fehler.
  */
-function record({ statusCode, durationMs, country, route }) {
+function record({ statusCode, durationMs, country, route, expected = false }) {
   rollBuckets();
 
   const bucket = buckets[buckets.length - 1];
-  const isError = statusCode >= 400;
+  // Fehler = Serverfehler (5xx) und abgewiesene Zugriffe (401, 403, 429).
+  // Fachliche Ablehnungen wie „Dienst ist schon voll" (409), ungültige
+  // Eingaben (400) oder ein gelöschter Eintrag (404) sind normales Verhalten
+  // der App und keine Störung – sie trieben vorher die Fehlerzahl hoch
+  // (z. B. bei /api/duties, wenn zwei Personen denselben Platz wollten).
+  const isError =
+    !expected && (statusCode >= 500 || statusCode === 401 || statusCode === 403 || statusCode === 429);
 
   bucket.requests += 1;
   bucket.durationSum += durationMs;
@@ -120,6 +131,7 @@ function record({ statusCode, durationMs, country, route }) {
 
   totals.requests += 1;
   totals.durationSum += durationMs;
+  if (isError) totals.errors += 1;
   if (durationMs > totals.maxDuration) totals.maxDuration = durationMs;
   if (durationMs >= SLOW_REQUEST_MS) totals.slowRequests += 1;
 
@@ -182,7 +194,9 @@ function snapshot() {
   rollBuckets();
 
   const requests = totals.requests;
-  const errors = (totals.status['4xx'] ?? 0) + (totals.status['5xx'] ?? 0);
+  // Erwartete Antworten (z. B. der Login-Check ohne Sitzung) sind in dieser
+  // Fehlerzahl bewusst NICHT enthalten; in der Statusklassen-Tabelle schon.
+  const errors = totals.errors;
 
   const perMinute = buckets.map((bucket) => ({
     // ISO-Zeitstempel des Minutenbeginns – das Frontend formatiert selbst.
@@ -249,6 +263,7 @@ function reset() {
   totals.durationSum = 0;
   totals.maxDuration = 0;
   totals.slowRequests = 0;
+  totals.errors = 0;
   for (const key of Object.keys(totals.status)) totals.status[key] = 0;
   countries.clear();
   routes.clear();

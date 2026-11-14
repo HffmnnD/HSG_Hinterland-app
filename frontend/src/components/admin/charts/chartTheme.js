@@ -53,9 +53,9 @@ export const STATUS_LABELS = {
 
 // Flächen, Linien und Schrift aus dem Farbsystem der App – als Variablen,
 // damit sie dem Thema folgen.
-export const SURFACE = 'var(--c-paper)';
+const SURFACE = 'var(--c-paper)';
 export const GRID = 'var(--c-line)';
-export const INK_MUTED = 'var(--c-ink-muted)';
+const INK_MUTED = 'var(--c-ink-muted)';
 export const INK_SOFT = 'var(--c-ink-soft)';
 export const CURSOR_LINE = 'var(--c-line-strong)';
 export const CURSOR_FILL = 'var(--c-surface-strong)';

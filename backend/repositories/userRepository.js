@@ -35,13 +35,17 @@ const PUBLIC_COLUMNS =
 // (toProfile lässt das Feld weg) – der Client hat damit nichts zu tun.
 const SESSION_COLUMN = 'sessions_valid_from';
 
+const isManagedEmail = (email) => typeof email === 'string' && email.endsWith('@familie.invalid');
+
 /** Formt eine users-Zeile + Relationen in die oben dokumentierte Struktur. */
 function toProfile(row, teams, services) {
   return {
     id: row.id,
     firstName: row.first_name,
     lastName: row.last_name,
-    email: row.email,
+    // Kinderprofile ohne Login haben nur eine Platzhalter-Adresse (family/).
+    email: isManagedEmail(row.email) ? null : row.email,
+    isManaged: isManagedEmail(row.email),
     // Der interne Dateipfad verlässt den Server nie – nur die abrufbare URL.
     photoUrl: publicUrlFor(row.photo_path),
     phone: row.phone ?? null,
@@ -75,14 +79,6 @@ async function findById(id, runner = pool) {
   return rows[0] ?? null;
 }
 
-/** Anzahl der aktiven (nicht gesperrten) Admin-Konten. */
-async function countActiveAdmins(runner = pool) {
-  const [[row]] = await runner.query(
-    "SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND is_approved = 1"
-  );
-  return row.count;
-}
-
 /**
  * Hebt die globale Rolle auf 'trainer' an, WENN sie aktuell nur 'spieler'
  * oder 'zuschauer' ist. `admin`/`sub_admin`/`trainer` bleiben unangetastet.
@@ -101,11 +97,23 @@ async function promoteToTrainerIfBasic(userId, runner = pool) {
  * geladenen users-Zeile.
  */
 async function buildProfile(userRow, runner = pool) {
-  const [teams, services] = await Promise.all([
+  const [teams, services, access, personal] = await Promise.all([
     teamRepository.getTeamsForUser(userRow.id, runner),
     serviceRepository.getForUser(userRow.id, runner),
+    require('../access/service').getAccess(userRow.id),
+    require('../personal').loadPersonal(userRow.id),
   ]);
-  return toProfile(userRow, teams, services);
+  return {
+    ...toProfile(userRow, teams, services),
+    ...personal,
+    // Hat die Person verknüpfte Kinder? (Familie, Migration 020)
+    hasChildren: Boolean(access?.childIds?.length),
+    // Wirksame Rechte – das Frontend blendet damit Funktionen ein und aus.
+    // Verbindlich prüft trotzdem jeder Endpunkt selbst.
+    roles: access?.roles ?? [userRow.role],
+    permissions: access ? [...access.permissions] : [],
+    isSuperuser: Boolean(access?.isSuperuser),
+  };
 }
 
 /** Vollständiges Profil per id. null wenn das Konto nicht existiert. */
@@ -138,7 +146,7 @@ async function getFullProfile(id, runner = pool) {
  *                     pageSize: number, pageCount: number }>}
  */
 async function listPageWithProfiles(
-  { search, role, status, page = 1, pageSize = 20 } = {},
+  { search, role, status, teamId, teamless = false, page = 1, pageSize = 20 } = {},
   runner = pool
 ) {
   const where = [];
@@ -156,8 +164,23 @@ async function listPageWithProfiles(
     params.push(like, like, like, like, like);
   }
   if (role) {
-    where.push('u.role = ?');
-    params.push(role);
+    // Grundrolle ODER Zusatzrolle (Migration 019).
+    where.push(
+      `(u.role = ? OR u.id IN (SELECT ur.user_id FROM user_roles ur
+                                 JOIN roles r ON r.id = ur.role_id
+                                WHERE r.role_key = ?))`
+    );
+    params.push(role, role);
+  }
+  if (teamId) {
+    where.push('u.id IN (SELECT user_id FROM user_teams WHERE team_id = ?)');
+    params.push(teamId);
+  }
+  if (teamless) {
+    // Ohne Kader: keine Spieler-/Trainerzuordnung (Fans zählen nicht).
+    where.push(
+      "u.id NOT IN (SELECT user_id FROM user_teams WHERE relation_type IN ('player', 'coach'))"
+    );
   }
   if (status === 'active') where.push('u.is_approved = 1');
   else if (status === 'inactive') where.push('u.is_approved = 0');
@@ -303,7 +326,7 @@ async function createAccount(account, runner = pool) {
  * getFullProfile dafür stellen würde.
  */
 function toNewProfile(accountRow) {
-  return toProfile(accountRow, [], []);
+  return { ...toProfile(accountRow, [], []), roles: [accountRow.role], permissions: [], isSuperuser: false };
 }
 
 /** Nur der Passwort-Hash eines Kontos – ausschliesslich für Login/Wechsel. */
@@ -424,10 +447,17 @@ async function completeOnboarding(userId, { theme, phone, relations }) {
  * (Bereich „Mein Konto"). Wie completeOnboarding, nur ohne den
  * Onboarding-Zeitstempel.
  */
-async function updateOwnPreferences(userId, { theme, phone, relations }) {
+async function updateOwnPreferences(userId, { theme, phone, relations, firstName, lastName }) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    if (firstName !== undefined) {
+      await conn.query('UPDATE users SET first_name = ? WHERE id = ?', [firstName, userId]);
+    }
+    if (lastName !== undefined) {
+      await conn.query('UPDATE users SET last_name = ? WHERE id = ?', [lastName, userId]);
+    }
 
     if (theme !== undefined) {
       await conn.query('UPDATE users SET theme = ? WHERE id = ?', [theme, userId]);
@@ -512,7 +542,6 @@ function groupBy(rows, keyField, mapFn) {
 module.exports = {
   findByEmail,
   findById,
-  countActiveAdmins,
   promoteToTrainerIfBasic,
   buildProfile,
   getFullProfile,
@@ -527,3 +556,25 @@ module.exports = {
   updateOwnPreferences,
   applyAdminChange,
 };
+
+// Rolle, Sperre und Sitzungsgrenze stecken im Rechte-Cache (access/service.js).
+// Jede Funktion, die eines davon ändert, verwirft danach den Cache dieser
+// Person – so greift die Änderung bei der nächsten Anfrage.
+const accessService = require('../access/service');
+
+for (const name of [
+  'promoteToTrainerIfBasic',
+  'updatePassword',
+  'completeOnboarding',
+  'updateOwnPreferences',
+  'applyAdminChange',
+]) {
+  const original = module.exports[name];
+  module.exports[name] = async (userId, ...rest) => {
+    try {
+      return await original(userId, ...rest);
+    } finally {
+      accessService.invalidate(userId);
+    }
+  };
+}

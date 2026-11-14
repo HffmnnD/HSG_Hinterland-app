@@ -36,7 +36,7 @@ export function eventTypeLabel(type) {
 
 export const ABSENCE_TYPES = ['VACATION', 'INJURY', 'OTHER'];
 
-export const ABSENCE_TYPE_LABELS = {
+const ABSENCE_TYPE_LABELS = {
   VACATION: 'Urlaub',
   INJURY: 'Verletzung',
   OTHER: 'Sonstiges',

@@ -16,6 +16,7 @@
 // Hinweis anzeigen können. Das gilt ausdrücklich auch dann, wenn nuLiga seine
 // Seitenstruktur ändert und ein Selektor ins Leere greift.
 const handballService = require('../services/handballService');
+const tickerLoad = require('../services/tickerLoad');
 const { isValidTeamId, isValidGameId, TTL } = require('../config/handball');
 
 // Mannschafts-ID = nuLigas `teamtable` (rein numerisch).
@@ -79,15 +80,27 @@ async function getTicker(req, res, next) {
       return res.status(400).json({ message: INVALID_GAME_ID });
     }
 
-    const ticker = await handballService.getTicker(gameId);
+    tickerLoad.requestStarted();
+    let ticker;
+    try {
+      ticker = await handballService.getTicker(gameId);
+    } finally {
+      tickerLoad.requestFinished();
+    }
 
-    // Ein laufendes Spiel darf der Browser nur ganz kurz cachen, sonst
-    // „klebt" der Spielstand. Alles andere darf länger liegen bleiben.
-    setCacheHeaders(
-      res,
-      ticker.state === 'live' ? TTL.tickerLive : TTL.tickerIdle
-    );
-    return res.json(ticker);
+    // Wann soll das Handy wieder fragen? 2 s bei einem laufenden Spiel,
+    // gestreckt, wenn Server oder nuScoreLive unter Last stehen (siehe
+    // services/tickerLoad.js). Im DTO UND als Kopfzeile – das Frontend liest
+    // das DTO, Kopfzeile für andere Clients und zur Fehlersuche.
+    const poll = tickerLoad.pollAdvice(ticker);
+    if (poll.afterMs) res.set('X-Poll-Interval', String(poll.afterMs));
+
+    // Ein laufendes Spiel darf der Browser nicht cachen, sonst „klebt" der
+    // Spielstand trotz 2-Sekunden-Takt. Alles andere darf länger liegen.
+    if (ticker.state === 'live') res.set('Cache-Control', 'private, no-cache');
+    else setCacheHeaders(res, TTL.tickerIdle);
+
+    return res.json({ ...ticker, poll });
   } catch (err) {
     return next(err);
   }

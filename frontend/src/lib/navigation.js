@@ -4,7 +4,7 @@
 //
 // `icon` ist bewusst nur ein Name: die SVG-Komponenten liegen in
 // components/NavIcons.jsx, damit diese Datei reine Daten bleibt.
-import { MANAGEMENT_ROLES } from './roles';
+import { ADMIN_PERMISSIONS } from './roles';
 
 /**
  * @typedef {Object} NavItem
@@ -12,27 +12,31 @@ import { MANAGEMENT_ROLES } from './roles';
  * @property {string}   label  Beschriftung (kurz – steht unter dem Icon)
  * @property {string}   icon   Icon-Name für <NavIcon>
  * @property {boolean}  [end]  Nur bei exakter Übereinstimmung aktiv (Startseite)
- * @property {string[]} [roles] Sichtbar nur für diese Rollen (ohne = alle)
+ * @property {boolean}  [settings] Einstellungen: mobil letzter Reiter, am Desktop Zahnrad rechts in der Kopfzeile
+ * @property {string[]} [permissions] Sichtbar nur mit einem dieser Rechte (ohne = alle)
  */
 
 /** @type {NavItem[]} */
 const NAV_ITEMS = [
   { to: '/', label: 'Start', icon: 'home', end: true },
   { to: '/teams', label: 'Teams', icon: 'teams' },
-  { to: '/kalender', label: 'Kalender', icon: 'calendar' },
+  { to: '/dienste', label: 'Dienste', icon: 'duty' },
+  { to: '/verein', label: 'Verein', icon: 'board' },
   {
     to: '/admin',
     label: 'Verwaltung',
     icon: 'shield',
-    roles: MANAGEMENT_ROLES,
+    permissions: ADMIN_PERMISSIONS,
   },
+  // Immer ganz rechts: führt zu „Mein Konto“ (Einstellungen, Profil, Einführung).
+  { to: '/konto', label: 'Einstellungen', icon: 'settings', settings: true },
 ];
 
 /**
- * Für die Rolle sichtbare Navigationspunkte.
- * @param {string|null} role
+ * Sichtbare Navigationspunkte.
+ * @param {(...keys:string[]) => boolean} can  aus useAuth()
  * @returns {NavItem[]}
  */
-export function buildNavItems(role) {
-  return NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(role));
+export function buildNavItems(can) {
+  return NAV_ITEMS.filter((item) => !item.permissions || can(...item.permissions));
 }

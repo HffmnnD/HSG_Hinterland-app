@@ -26,7 +26,25 @@
 // einen ganzen Tag im Speicher blieben.
 const NodeCache = require('node-cache');
 
-const { TTL, STALE_TTL, decodeGameId } = require('../config/handball');
+const {
+  TTL,
+  STALE_TTL,
+  NUSCORE_ENABLED,
+  decodeGameId,
+  encodeGameId,
+} = require('../config/handball');
+const nuScore = require('./nuScoreLiveClient');
+const nuScoreSocket = require('./nuScoreLiveSocket');
+const tickerLoad = require('./tickerLoad');
+const { buildSummary } = require('./tickerSummary');
+const tickerEventTimes = require('./tickerEventTimes');
+const {
+  mapMeetingSummary,
+  mapNuScoreTicker,
+  mapLineup,
+  normalizeTeamName,
+  formatClock,
+} = require('./nuScoreLiveMapper');
 const {
   loadTeamPortrait,
   loadGroupPage,
@@ -40,7 +58,91 @@ const {
   mapTable,
   mapSchedule,
   mapTicker,
+  deriveState,
 } = require('./handballMapper');
+
+// ---------------------------------------------------- Zustand zur Abrufzeit --
+//
+// Der Spielzustand (upcoming/live/finished) hängt an der UHRZEIT, nicht nur an
+// den Daten von nuLiga. Er wird deshalb bei JEDER Auslieferung neu berechnet –
+// sonst bliebe ein Spiel, das kurz vor Anwurf in den Cache kam, bis zu 15
+// Minuten (bei einem nuLiga-Ausfall sogar 24 Stunden) „upcoming“, obwohl längst
+// gespielt wird. Ein veröffentlichtes Ergebnis bleibt „finished“.
+const refreshGame = (game) =>
+  game && game.state !== 'finished' && game.state !== 'cancelled'
+    ? { ...game, state: deriveState(game.startsAt, false) }
+    : game;
+
+function withLiveSchedule(data) {
+  if (!Array.isArray(data.games)) return data;
+  return { ...data, games: data.games.map(refreshGame) };
+}
+
+// --------------------------------------------- mitlaufende Uhr (nuScoreLive) --
+//
+// nuScoreLive meldet nur die Spielsekunde jeder Aktion, keine Uhrzeit. Läuft
+// die Uhr (letztes Steuerereignis = „Zeit läuft"), wird ab dem Moment, in dem
+// wir die jüngste Aktion zum ersten Mal gesehen haben, hochgezählt – genau so
+// macht es auch der offizielle Web-Ticker. Mit Push ist der Zeitpunkt der
+// Aktion sekundengenau; ohne Push hinkt die Uhr höchstens um den Abfragetakt
+// hinterher. An der Halbzeitgrenze bleibt sie stehen.
+const clockAnchors = new Map(); // meetingId -> { idx, seenAt }
+
+function anchorClock(data) {
+  const live = data?.live;
+  if (!live?.meetingId) return data;
+  const known = clockAnchors.get(live.meetingId);
+  if (!known || known.idx !== live.latestIdx) {
+    // Kam die jüngste Aktion per Push, kennen wir ihren Zeitpunkt genau.
+    const pushed = nuScoreSocket.latestPush(live.meetingId);
+    const seenAt = pushed && pushed.idx === live.latestIdx ? pushed.at : Date.now();
+    clockAnchors.set(live.meetingId, { idx: live.latestIdx, seenAt });
+    // Speicher begrenzen – ein Spieltag hat nur eine Handvoll Spiele.
+    if (clockAnchors.size > 200) clockAnchors.delete(clockAnchors.keys().next().value);
+  }
+  return data;
+}
+
+function withRunningClock(data, now = Date.now()) {
+  const live = data?.live;
+  if (!live?.clockRunning || data.clockSeconds === null) return data;
+  const anchor = clockAnchors.get(live.meetingId);
+  if (!anchor) return data;
+
+  const half = (live.halftimeMinutes || 30) * 60;
+  const base = data.clockSeconds;
+  const limit = base < half ? half : 2 * half;
+  const seconds = Math.min(base + Math.max(0, Math.floor((now - anchor.seenAt) / 1000)), limit);
+  return {
+    ...data,
+    clockSeconds: seconds,
+    clock: formatClock(seconds),
+    period: seconds > half ? 2 : 1,
+  };
+}
+
+function withLiveTicker(data) {
+  if (!data.game || data.state === 'finished') return withRunningClock(data);
+  // nuScoreLive weiß selbst, ob gespielt wird – dann nicht nach Uhrzeit raten.
+  if (data.live?.provider === 'nuScoreLive' && data.state === 'live') {
+    return withRunningClock(data);
+  }
+  const game = refreshGame(data.game);
+  return { ...data, game, state: game.state };
+}
+
+// Rund um einen Anwurf (30 min davor bis 3 h danach) schneller nachladen.
+const MATCH_WINDOW_BEFORE_MS = 30 * 60_000;
+const MATCH_WINDOW_AFTER_MS = 3 * 3600_000;
+function nearKickoff(startsAt, now = Date.now()) {
+  if (!startsAt) return false;
+  const start = new Date(startsAt).getTime();
+  return (
+    !Number.isNaN(start) &&
+    now >= start - MATCH_WINDOW_BEFORE_MS &&
+    now <= start + MATCH_WINDOW_AFTER_MS
+  );
+}
 
 // Obergrenze je Cache. Der Verein hat rund ein Dutzend Mannschaften und
 // dazu die Spiele einer Saison – 500 Einträge sind dafür reichlich und
@@ -234,10 +336,15 @@ function getTable(teamId) {
  *
  * @param {string} teamId
  */
-function getSchedule(teamId) {
-  return loadCached(
+async function getSchedule(teamId) {
+  const result = await loadCached(
     `schedule:${teamId}`,
-    TTL.schedule,
+    // Am Spieltag öfter fragen – Ergebnis und Spielbericht erscheinen sonst
+    // erst nach einer Viertelstunde in der App.
+    (data) =>
+      (data.games ?? []).some((game) => game.state !== 'finished' && nearKickoff(game.startsAt))
+        ? Math.min(TTL.schedule, 120)
+        : TTL.schedule,
     async () => {
       const { $ } = await loadTeamPortrait(teamId);
       const context = {
@@ -245,24 +352,183 @@ function getSchedule(teamId) {
         // Nötig für „Heim oder Auswärts?": der Spielplan nennt nur Namen.
         teamName: mapTeamName($),
       };
-      return mapSchedule($, teamId, context);
+      const schedule = mapSchedule($, teamId, context);
+      await attachLiveTickerIds(schedule.games, context);
+      return schedule;
     },
     { teamId, games: [] }
   );
+  return withLiveSchedule(result);
+}
+
+// ------------------------------------------- Ticker-IDs vor dem Spielbericht --
+
+/**
+ * Spiele einer Staffel bei nuScoreLive (Fenster rund um heute), kurz gecacht.
+ * @param {string} group nuLiga-`group` (= nuScoreLive-Gruppen-ID)
+ */
+async function getNuScoreGroupMeetings(group) {
+  const result = await loadCached(
+    `nuscore-group:${group}`,
+    60,
+    async () => {
+      const data = await nuScore.loadGroupMeetings(group);
+      return { meetings: (data.meetings ?? []).map(mapMeetingSummary) };
+    },
+    { meetings: [] }
+  );
+  return result.meetings ?? [];
+}
+
+/**
+ * nuLiga verlinkt ein Spiel erst, wenn es einen Spielbericht gibt – also erst
+ * NACH dem Anwurf (oder gar erst nach dem Spiel). nuScoreLive kennt die Spiele
+ * dagegen vorher, mit derselben Spielnummer wie nuLiga. Für Spiele rund um
+ * den Anwurf ohne ID wird die Nummer deshalb über Anwurfzeit + Mannschafts-
+ * namen bei nuScoreLive nachgeschlagen. Damit bekommt JEDE Mannschaft ihren
+ * Live-Ticker – allein über die hinterlegte nuLiga-Nummer (teamtable).
+ *
+ * Fehler hier sind nie fatal: dann bleibt es beim bisherigen Verhalten.
+ */
+async function attachLiveTickerIds(games, context) {
+  if (!NUSCORE_ENABLED || !context.group || !context.championship) return;
+  // Alle Spiele rund um den Anwurf – auch solche, die nuLiga schon als
+  // „beendet" führt: Bei live erfassten Spielen zeigt nuLiga im Spielplan
+  // vorab 0:0 und während des Spiels den Zwischenstand. Ohne Korrektur hielte
+  // die App ein laufendes Spiel für abgepfiffen und zeigte keinen Live-Ticker.
+  // nuScoreLive liefert ohnehin nur ein Fenster um heute (rund eine Woche);
+  // so bekommen auch Spiele später am Tag schon ihre ID und ihren Zustand.
+  const WINDOW_MS = 7 * 24 * 3600_000;
+  const candidates = games.filter(
+    (g) => g.startsAt && Math.abs(new Date(g.startsAt).getTime() - Date.now()) <= WINDOW_MS
+  );
+  if (candidates.length === 0) return;
+
+  let meetings;
+  try {
+    meetings = await getNuScoreGroupMeetings(context.group);
+  } catch {
+    return;
+  }
+
+  for (const game of candidates) {
+    const kickoff = new Date(game.startsAt).getTime();
+    const home = normalizeTeamName(game.home?.name);
+    const away = normalizeTeamName(game.away?.name);
+
+    const knownMeeting = game.id ? decodeGameId(game.id)?.meeting : null;
+
+    const match = meetings.find((m) => {
+      if (!m.meetingId || !m.enabled) return false;
+      if (knownMeeting) return m.meetingId === knownMeeting;
+      if (!m.startsAt) return false;
+      // Gleiche Begegnung am selben Tag (Anwurf ± 3 h – falls kurzfristig verlegt).
+      const sameTime = Math.abs(new Date(m.startsAt).getTime() - kickoff) <= 3 * 3600_000;
+      return (
+        sameTime &&
+        normalizeTeamName(m.home) === home &&
+        normalizeTeamName(m.away) === away
+      );
+    });
+
+    if (!match) continue;
+
+    game.id =
+      game.id ??
+      encodeGameId({
+        meeting: match.meetingId,
+        group: context.group,
+        championship: context.championship,
+      });
+    game.liveTicker = true;
+
+    if (match.live) {
+      game.state = 'live';
+      game.homeGoals = match.homeGoals;
+      game.awayGoals = match.awayGoals;
+    } else if (
+      game.state === 'finished' &&
+      game.homeGoals === 0 &&
+      game.awayGoals === 0 &&
+      !match.homeGoals &&
+      !match.awayGoals
+    ) {
+      // 0:0 ist hier kein Ergebnis, sondern der Platzhalter vor dem Anwurf.
+      game.state = deriveState(game.startsAt, false);
+      game.homeGoals = null;
+      game.awayGoals = null;
+    }
+  }
 }
 
 // ------------------------------------------------------------- Live-Ticker --
 
+// Welche App-Spiel-IDs gehören zu einer Spielnummer? (Für das Verwerfen des
+// Caches, wenn per Push eine neue Aktion gemeldet wird.)
+const gameIdsByMeeting = new Map(); // meetingId -> Set<gameId>
+
+function rememberGameId(meetingId, gameId) {
+  if (!gameIdsByMeeting.has(meetingId)) {
+    gameIdsByMeeting.set(meetingId, new Set());
+    if (gameIdsByMeeting.size > 300) gameIdsByMeeting.delete(gameIdsByMeeting.keys().next().value);
+  }
+  gameIdsByMeeting.get(meetingId).add(gameId);
+}
+
+// Neue Aktion per Push -> Ticker-Cache des Spiels sofort verwerfen. Der
+// nächste Abruf (spätestens 2 s später vom ersten Handy) holt den frischen
+// Stand; alle weiteren Handys bekommen ihn aus dem Cache.
+//
+// Zugleich wird die Empfangszeit jeder gemeldeten Aktion dauerhaft notiert –
+// daraus entstehen die echten Uhrzeiten („Anpfiff 18:02 Uhr"). Nachträglich
+// dokumentierte Aktionen (Typ 1) bekommen KEINE Uhrzeit: ihr Empfang ist
+// nicht der Zeitpunkt der Aktion.
+nuScoreSocket.onUpdate((meetingId, info) => {
+  for (const gameId of gameIdsByMeeting.get(meetingId) ?? []) {
+    freshCache.del(`ticker:${gameId}`);
+  }
+  if (info && !info.documented) {
+    for (const event of info.events) {
+      tickerEventTimes.recordPush(meetingId, event.idx, event.code, info.at).catch(() => {});
+    }
+  }
+});
+
+// Personen (Kader, Offizielle, Schiedsgericht) ändern sich während eines
+// Spiels so gut wie nie – eine Minute Cache spart drei Abrufe je Takt.
+const personsCache = new NodeCache({ stdTTL: 60, useClones: false, maxKeys: 200 });
+
+async function loadPersons(meetingId) {
+  const cached = personsCache.get(meetingId);
+  if (cached) return cached;
+  const safe = (promise) => promise.then((d) => d.meetingPersons ?? []).catch(() => []);
+  const [players, officials, fedOfficials] = await Promise.all([
+    safe(nuScore.loadPlayers(meetingId)),
+    safe(nuScore.loadOfficials(meetingId)),
+    safe(nuScore.loadFedOfficials(meetingId)),
+  ]);
+  const persons = { players, officials, fedOfficials };
+  safeSet(personsCache, meetingId, persons);
+  return persons;
+}
+
 /**
- * Ticker eines Spiels: Spielinfo + Ereignisliste aus dem nuLiga-Spielbericht.
+ * Ticker eines Spiels: Kopf, Spielverlauf, Zusammenfassung und Spielkader.
  *
- * Die TTL hängt am Spielzustand: nur ein LAUFENDES Spiel wird im
- * 10-Sekunden-Takt neu geholt. Ein abgepfiffenes oder noch nicht angeworfenes
- * Spiel würde sonst dauerhaft Requests erzeugen, obwohl sich nichts ändert.
+ * Quellen, in dieser Reihenfolge:
+ *   1. nuScoreLive (JSON, live) – sobald es dort Ereignisse gibt
+ *   2. nuLiga-Spielbericht (HTML) – Spiele ohne Live-Erfassung, ältere Spiele
+ *   3. nuScoreLive ohne Ereignisse – Vorschau vor dem Anwurf
+ *
+ * Frische eines LAUFENDEN Spiels: Ist der Push-Kanal zu nuScoreLive aktiv,
+ * darf der Eintrag 15 s liegen – er wird bei jeder neuen Aktion ohnehin sofort
+ * verworfen. Ohne Push gilt TTL.tickerLive (2 s). Gleichzeitige Anfragen
+ * bündelt loadCached, so dass nuScoreLive je Spiel höchstens einen Abruf pro
+ * Takt sieht – egal wie viele Handys zuschauen.
  *
  * @param {string} gameId zusammengesetzte ID `meeting.group.championship`
  */
-function getTicker(gameId) {
+async function getTicker(gameId) {
   const leer = {
     gameId,
     game: null,
@@ -273,20 +539,114 @@ function getTicker(gameId) {
     clockSeconds: null,
     period: null,
     events: [],
+    summary: null,
+    crew: null,
   };
 
-  return loadCached(
-    `ticker:${gameId}`,
-    (data) => (data.state === 'live' ? TTL.tickerLive : TTL.tickerIdle),
-    async () => {
-      const parts = decodeGameId(gameId);
-      if (!parts) throw new Error('Spiel-ID ist nicht lesbar.');
+  const parts = decodeGameId(gameId);
 
-      const { $ } = await loadMeetingReport(parts);
-      return mapTicker($, gameId);
+  const result = await loadCached(
+    `ticker:${gameId}`,
+    (data) => {
+      if (data.state === 'live') {
+        return parts && nuScoreSocket.isWatching(parts.meeting) ? 15 : TTL.tickerLive;
+      }
+      return data.state === 'upcoming' && nearKickoff(data.game?.startsAt)
+        ? 10
+        : TTL.tickerIdle;
+    },
+    async () => {
+      if (!parts) throw new Error('Spiel-ID ist nicht lesbar.');
+      rememberGameId(parts.meeting, gameId);
+
+      // Spielübersicht (Kader + Statistik je Person + Summen) aus Ereignissen
+      // und – wenn vorhanden – dem nuScoreLive-Kader. Das Schiedsgericht
+      // steht separat in `crew`.
+      const withExtras = (dto, lineup = null) => ({
+        ...dto,
+        summary: buildSummary(dto, lineup),
+        crew: lineup
+          ? {
+              referees: lineup.referees ?? [],
+              timekeeper: lineup.timekeeper ?? null,
+              secretary: lineup.secretary ?? null,
+            }
+          : null,
+      });
+
+      // 1. Wahl: nuScoreLive (echter Live-Ticker, JSON, sekundengenau).
+      const live = await loadNuScoreTicker(parts.meeting, gameId);
+      if (live && live.ticker.events.length > 0) return withExtras(live.ticker, live.lineup);
+
+      // 2. Wahl: nuLiga-Spielbericht – für Spiele ohne Live-Erfassung oder
+      // wenn nuScoreLive gerade nicht antwortet.
+      try {
+        const { $ } = await loadMeetingReport(parts);
+        return withExtras(mapTicker($, gameId), live?.lineup ?? null);
+      } catch (err) {
+        // Noch kein Spielbericht, aber nuScoreLive kennt das Spiel (typisch
+        // kurz vor Anwurf): dessen Stand ist besser als gar nichts.
+        if (live) return withExtras(live.ticker, live.lineup);
+        throw err;
+      }
     },
     leer
   );
+  return withLiveTicker(anchorClock(result));
+}
+
+/**
+ * Ticker aus nuScoreLive -> { ticker, lineup } oder null, wenn das Spiel dort
+ * nicht geführt wird. Wirft nie – ein Ausfall von nuScoreLive fällt auf den
+ * nuLiga-Bericht zurück.
+ */
+async function loadNuScoreTicker(meetingId, gameId) {
+  if (!NUSCORE_ENABLED) return null;
+  try {
+    const meeting = await nuScore.loadMeeting(meetingId);
+    if (meeting.nuScoreLiveEnabled === false || !meeting.meetingID) return null;
+
+    // Version für den Spielverlauf: die zuletzt per Push gemeldete ist am
+    // frischesten; sonst die aus dem Spielkopf (bis zu 15 s alt).
+    const pushed = nuScoreSocket.latestPush(meetingId);
+    const version = pushed?.version ?? meeting.versionUid;
+
+    const [events, persons] = await Promise.all([
+      nuScore.loadEvents(meetingId, version),
+      loadPersons(meetingId),
+    ]);
+    const rawEvents = Array.isArray(events.events) ? events.events : [];
+
+    const ticker = mapNuScoreTicker(meeting, rawEvents, persons.players, gameId);
+    // Laufende Spiele – und Spiele kurz vor dem Anwurf, damit schon der
+    // Anpfiff seine Uhrzeit bekommt – beim Push-Kanal anmelden.
+    const aroundKickoff = ticker.state === 'upcoming' && nearKickoff(ticker.game?.startsAt);
+    if (ticker.state === 'live' || aroundKickoff) {
+      nuScoreSocket.watch(meetingId, meeting.meetingUuid);
+    }
+
+    // Echte Uhrzeiten: neu aufgetauchte Aktionen notieren (nur während des
+    // Spiels) und alle bekannten an die Ereignisse hängen.
+    await tickerEventTimes.observeRest(meetingId, rawEvents, ticker.state === 'live');
+    const times = await tickerEventTimes.timesFor(meetingId);
+    for (const event of ticker.events) {
+      const idx = Number.parseInt(String(event.id).replace(/^ns-/, ''), 10);
+      const seen = times.get(idx);
+      if (seen) {
+        event.observedAt = seen.at.toISOString();
+        event.observedVia = seen.source;
+      }
+    }
+
+    return {
+      ticker,
+      lineup: mapLineup(persons.players, persons.officials, persons.fedOfficials, rawEvents),
+    };
+  } catch (err) {
+    if (err instanceof HandballUpstreamError) tickerLoad.recordUpstreamError();
+    console.warn(`[handball] nuScoreLive ${meetingId}: ${describeError(err)}`);
+    return null;
+  }
 }
 
 // ------------------------------------------------------------------ Betrieb --
@@ -306,7 +666,13 @@ function clearCache() {
   staleCache.flushAll();
 }
 
+/** Zustand von Push-Kanal und Last – für das System-Monitoring. */
+function getLiveStatus() {
+  return { socket: nuScoreSocket.status(), load: tickerLoad.status() };
+}
+
 module.exports = {
+  getLiveStatus,
   getTable,
   getSchedule,
   getTicker,

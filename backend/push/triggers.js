@@ -9,6 +9,9 @@ const messages = require('./messages');
 const { sendToUsers } = require('./sender');
 const { SHORT_NOTICE_HOURS } = require('./config');
 const { nowLocalIso } = require('../utils/schedule');
+const dutyRepository = require('../duties/repository');
+const newsExtras = require('../services/newsExtras');
+const dutyCategories = require('../duties/categories');
 
 /** Liegt der Termin noch in der Zukunft? Vergangenes interessiert niemanden. */
 const isUpcoming = (event) => event.startTime > nowLocalIso();
@@ -146,9 +149,75 @@ function register() {
     await sendToUsers([userId], 'roster', messages.membershipConfirmed(team, relationType));
   });
 
+  // --- Dienstplan ---------------------------------------------------------
+
+  appEvents.subscribe('duties.published', async ({ plan, notify, actorId, added = null }) => {
+    // Nur wenn beim Veröffentlichen der Haken gesetzt war. `added`: nur diese
+    // Dienste kamen zu einem schon veröffentlichten Plan dazu.
+    if (!notify) return;
+    const now = nowLocalIso();
+    const duties = (added ?? (await dutyRepository.listPlanDuties(plan.id))).filter(
+      (duty) => duty.startTime > now
+    );
+    if (duties.length === 0) return;
+    const kinds = [...new Set(duties.map((duty) => duty.category))];
+    const volunteers = (await dutyRepository.listVolunteers()).filter((person) =>
+      kinds.some((kind) => dutyCategories.canTake(kind, person))
+    );
+    await sendToUsers(
+      volunteers.map((person) => person.id),
+      'duties',
+      messages.dutyPlanPublished(plan, duties, { added: Boolean(added) }),
+      { exclude: actorId }
+    );
+  });
+
+  appEvents.subscribe('duty.changed', async ({ before, after, userIds, actorId }) => {
+    if (after.startTime <= nowLocalIso()) return;
+    await sendToUsers(userIds, 'changes', messages.dutyChanged(before, after), {
+      exclude: actorId,
+    });
+  });
+
+  appEvents.subscribe('duty.removed', async ({ duty, userIds, actorId }) => {
+    await sendToUsers(userIds, 'changes', messages.dutyRemoved(duty), { exclude: actorId });
+  });
+
+  appEvents.subscribe('duty.unassigned', async ({ duty, userId, actorId }) => {
+    if (duty.startTime <= nowLocalIso()) return;
+    await sendToUsers([userId], 'changes', messages.dutyUnassigned(duty), { exclude: actorId });
+  });
+
+  // Neuer Vereinstermin: alle, die ihn sehen dürfen (Verein oder Mannschaften).
+  appEvents.subscribe('clubEvent.created', async ({ event, teamIds, actorId }) => {
+    if (!event || event.startTime <= nowLocalIso()) return;
+    let recipients = await repository.listSubscribedUserIds();
+    if (event.audience === 'teams') {
+      const allowed = new Set(await newsExtras.audienceUserIds(teamIds ?? []));
+      recipients = recipients.filter((id) => allowed.has(id));
+    }
+    await sendToUsers(recipients, 'newEvents', messages.clubEvent(event), { exclude: actorId });
+  });
+
+  appEvents.subscribe('clubEvent.cancelled', async ({ event, actorId }) => {
+    if (!event || event.startTime <= nowLocalIso()) return;
+    let recipients = await repository.listSubscribedUserIds();
+    if (event.audience === 'teams') {
+      const allowed = new Set(await newsExtras.audienceUserIds(event.teams.map((team) => team.id)));
+      recipients = recipients.filter((id) => allowed.has(id));
+    }
+    await sendToUsers(recipients, 'changes', messages.clubEventCancelled(event), { exclude: actorId });
+  });
+
   appEvents.subscribe('news.published', async ({ news, actorId }) => {
     if (!news) return;
-    await sendToUsers(await repository.listSubscribedUserIds(), 'news', messages.news(news), {
+    let recipients = await repository.listSubscribedUserIds();
+    // Beitrag nur für bestimmte Mannschaften: auch nur deren Mitglieder benachrichtigen.
+    if (news.audience === 'teams') {
+      const allowed = new Set(await newsExtras.audienceUserIds((news.teams ?? []).map((team) => team.id)));
+      recipients = recipients.filter((id) => allowed.has(id));
+    }
+    await sendToUsers(recipients, 'news', messages.news(news), {
       exclude: actorId,
     });
   });

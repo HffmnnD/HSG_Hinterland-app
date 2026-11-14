@@ -30,6 +30,18 @@ const SINGLE_TYPES = ['SINGLE_TRAINING', 'EVENT_CAMP'];
  *           onCancel?: () => void }} props
  *   `event` gesetzt = einen bestehenden Termin bearbeiten.
  */
+// Übliche Anmeldefristen in Stunden vor Beginn. Jede andere Zahl geht über
+// „Eigene Frist".
+const DEADLINE_PRESETS = [
+  [2, '2 Stunden'],
+  [6, '6 Stunden'],
+  [12, '12 Stunden'],
+  [24, '1 Tag'],
+  [48, '2 Tage'],
+  [72, '3 Tage'],
+  [168, '1 Woche'],
+];
+
 export default function EventForm({
   mode,
   event = null,
@@ -50,6 +62,14 @@ export default function EventForm({
   const [reasonsVisible, setReasonsVisible] = useState(
     event?.reasonsVisibleToAll ?? false
   );
+
+  // Anmeldefrist in Stunden vor Beginn ('' = keine). Beim Bearbeiten aus dem
+  // gespeicherten Zeitpunkt zurückgerechnet.
+  const [deadline, setDeadline] = useState(() => {
+    if (!event?.responseDeadline) return '';
+    const hours = Math.round((new Date(event.startTime) - new Date(event.responseDeadline)) / 3600000);
+    return hours > 0 ? String(hours) : '';
+  });
 
   // Einzeltermin
   const [startTime, setStartTime] = useState(
@@ -89,6 +109,7 @@ export default function EventForm({
       type,
       location: location.trim() || null,
       reasonsVisibleToAll: reasonsVisible,
+      deadlineHours: deadline ? Number(deadline) : null,
     };
 
     if (editing) {
@@ -308,6 +329,45 @@ export default function EventForm({
           Abmeldegründe für alle sichtbar
         </span>
       </label>
+
+      <div>
+        <label className="field-label" htmlFor="event-deadline">
+          Anmeldefrist
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            id="event-deadline"
+            className="field-control w-auto"
+            disabled={busy}
+            value={DEADLINE_PRESETS.some(([hours]) => String(hours) === deadline) || deadline === '' ? deadline : 'custom'}
+            onChange={(changed) => setDeadline(changed.target.value === 'custom' ? '36' : changed.target.value)}
+          >
+            <option value="">Keine Frist</option>
+            {DEADLINE_PRESETS.map(([hours, label]) => (
+              <option key={hours} value={hours}>
+                {label} vorher
+              </option>
+            ))}
+            <option value="custom">Eigene Frist …</option>
+          </select>
+          {deadline !== '' && !DEADLINE_PRESETS.some(([hours]) => String(hours) === deadline) && (
+            <label className="flex items-center gap-2 text-sm text-ink-soft">
+              <input
+                type="number"
+                min="1"
+                max="1440"
+                className="field-control w-24"
+                value={deadline}
+                disabled={busy}
+                onChange={(changed) => setDeadline(changed.target.value)}
+                aria-label="Anmeldefrist in Stunden vor Beginn"
+              />
+              Stunden vorher
+            </label>
+          )}
+        </div>
+        <p className="field-hint">Danach ändert nur noch das Trainerteam Zu- und Absagen.</p>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={busy} className="btn btn-primary">

@@ -121,24 +121,31 @@ export function remainingTime(
 // ------------------------------------------------------------- Ereignisse --
 
 /**
- * Ticker-Ereignisse: Symbol, Beschriftung und Farbrolle.
+ * Ticker-Ereignisse: Kurzlabel (versal, wie auf der Anzeigetafel), Langtext
+ * für Vorlesehilfen, Farbrolle und – bei Karten – die Kartenfarbe.
  *
- * `tone` steuert die Einfärbung im Widget:
- *   'goal' grün · 'warn' bernstein · 'danger' rot · 'neutral' grau
+ * Bewusst KEINE Emojis: die sehen auf jedem Gerät anders aus und wirken
+ * neben der Vereinstypografie wie Fremdkörper. Karten zeichnet das Frontend
+ * als kleines farbiges Rechteck (<CardMark>).
+ *
+ * `tone`: 'goal' grün · 'warn' bernstein · 'danger' rot · 'neutral' grau
+ * `marker`: Ereignisse auf der Zeitleiste, die keiner Mannschaft gehören
+ *           (Anwurf, Halbzeit, Ende) – werden als Trenner dargestellt.
  */
 export const EVENT_META = {
-  goal: { icon: '🤾', label: 'Tor', tone: 'goal' },
-  penaltyGoal: { icon: '🎯', label: '7-Meter-Tor', tone: 'goal' },
-  penaltyMissed: { icon: '✖', label: '7-Meter verworfen', tone: 'neutral' },
-  suspension: { icon: '⏱', label: '2 Minuten', tone: 'warn' },
-  yellowCard: { icon: '🟨', label: 'Verwarnung', tone: 'warn' },
-  redCard: { icon: '🟥', label: 'Rote Karte', tone: 'danger' },
-  blueCard: { icon: '🟦', label: 'Blaue Karte', tone: 'danger' },
-  timeout: { icon: '⏸', label: 'Auszeit', tone: 'neutral' },
-  periodStart: { icon: '▶', label: 'Anwurf', tone: 'neutral' },
-  periodEnd: { icon: '⏹', label: 'Halbzeit', tone: 'neutral' },
-  final: { icon: '🏁', label: 'Schlusssirene', tone: 'neutral' },
-  other: { icon: '•', label: 'Ereignis', tone: 'neutral' },
+  goal: { short: 'Tor', label: 'Tor', tone: 'goal' },
+  penaltyGoal: { short: '7m', label: '7-Meter-Tor', tone: 'goal' },
+  penaltyMissed: { short: '7m verworfen', label: '7-Meter verworfen', tone: 'neutral' },
+  ownGoal: { short: 'Eigentor', label: 'Eigentor', tone: 'neutral' },
+  suspension: { short: '2 Min', label: '2 Minuten', tone: 'warn' },
+  yellowCard: { short: 'Gelb', label: 'Gelbe Karte', tone: 'warn', card: 'yellow' },
+  redCard: { short: 'Rot', label: 'Rote Karte', tone: 'danger', card: 'red' },
+  blueCard: { short: 'Blau', label: 'Blaue Karte (Disqualifikation mit Bericht)', tone: 'danger', card: 'blue' },
+  timeout: { short: 'Auszeit', label: 'Team-Auszeit', tone: 'neutral' },
+  periodStart: { short: 'Anwurf', label: 'Anwurf', tone: 'neutral', marker: true },
+  periodEnd: { short: 'Halbzeit', label: 'Halbzeit', tone: 'neutral', marker: true },
+  final: { short: 'Ende', label: 'Spielende', tone: 'neutral', marker: true },
+  other: { short: 'Info', label: 'Ereignis', tone: 'neutral' },
 };
 
 export function eventMeta(type) {
@@ -153,6 +160,57 @@ export const EVENT_TONE_CLASS = {
   neutral: 'border-line bg-surface',
 };
 
+/** Textfarbe des Kurzlabels je Farbrolle. */
+export const EVENT_LABEL_CLASS = {
+  goal: 'text-hsg-green-darker',
+  warn: 'text-warn',
+  danger: 'text-danger',
+  neutral: 'text-ink-muted',
+};
+
+/**
+ * Vereinsnamen von Spielgemeinschaften („HSG Weiters./Braunsh.Worf. II")
+ * haben lange Wörter ohne Leerzeichen. Unsichtbare Umbruchpunkte nach „/"
+ * und nach Abkürzungspunkten lassen sie auf dem Handy dort umbrechen statt
+ * mitten im Wort.
+ */
+export function breakable(name) {
+  return name ? String(name).replace(/\//g, '/​').replace(/\.(?=\S)/g, '.​') : name;
+}
+
+/** „#7 Hanst, Lena" – Trikotnummer vorn, wie auf dem Spielberichtsbogen. */
+export function formatPlayer(name, number) {
+  if (!name) return null;
+  return number ? `#${number} ${name}` : name;
+}
+
+/**
+ * Mannschaftsfarben im Ticker (Legende in der Anzeigetafel): Heim im
+ * Vereinsgrün, Gast in Anthrazit – beide aus den Design-Tokens, damit sie im
+ * hellen und dunklen Modus funktionieren.
+ */
+export const TEAM_COLOR_CLASS = {
+  home: 'bg-hsg-green text-white',
+  away: 'bg-ink text-paper',
+};
+
+/** ISO-Zeitpunkt -> „18:02" (Ortszeit). */
+export function formatWallClock(iso) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * 7-Meter eindeutig: „5 von 7 verwandelt". Ohne Versuche: null.
+ * (Nie „5/7m" – das liest sich wie „5 von 7 Metern".)
+ */
+export function formatPenalties(goals, attempts) {
+  if (!attempts) return null;
+  return `${goals} von ${attempts}`;
+}
+
 /**
  * Zeile eines Ereignisses als Text – für Vorlesehilfen (aria-label) und als
  * Rückfallebene, wenn kein Spielername geliefert wurde.
@@ -166,9 +224,12 @@ export function describeEvent(event, homeName, awayName) {
   return [
     event.clock ? `Minute ${event.clock}` : null,
     meta.label,
-    event.player,
+    formatPlayer(event.player, event.playerNumber),
     team ? `(${team})` : null,
-    event.type === 'other' ? event.text : null,
+    event.scoreHome !== null && event.scoreHome !== undefined && event.scoreAway !== null
+      ? `Stand ${event.scoreHome}:${event.scoreAway}`
+      : null,
+    event.text,
   ]
     .filter(Boolean)
     .join(' · ');

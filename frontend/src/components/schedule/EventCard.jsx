@@ -3,6 +3,8 @@ import { useState } from 'react';
 import {
   dateParts,
   eventTypeLabel,
+  formatClock,
+  formatEventDay,
   formatTimeRange,
   isMultiDay,
   isPast,
@@ -118,7 +120,7 @@ export default function EventCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <h3
-              className={`min-w-0 font-display text-base font-bold uppercase tracking-[0.03em] text-ink ${
+              className={`min-w-0 font-display text-base font-bold tracking-[-0.01em] text-ink ${
                 cancelled ? 'line-through decoration-danger' : ''
               }`}
             >
@@ -141,6 +143,11 @@ export default function EventCard({
             {showType && ` · ${eventTypeLabel(event.type)}`}
             {isMultiDay(event.startTime, event.endTime) && ' · mehrtägig'}
           </p>
+          {event.responseDeadline && !event.cancelledAt && !isPast(event.endTime) && (
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Anmeldung bis {formatEventDay(event.responseDeadline)}, {formatClock(event.responseDeadline)} Uhr
+            </p>
+          )}
         </div>
       </div>
 

@@ -96,7 +96,7 @@ function TrafficTooltip({ active, payload, label }) {
 
   return (
     <div className="chart-tooltip">
-      <p className="font-display font-semibold uppercase tracking-[0.05em] text-ink">
+      <p className="font-display font-semibold tracking-[-0.01em] text-ink">
         {formatTime(label)} Uhr
       </p>
       <ul className="mt-1.5 space-y-1">

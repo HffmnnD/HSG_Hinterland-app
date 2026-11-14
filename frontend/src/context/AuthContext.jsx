@@ -7,10 +7,12 @@ import {
   useState,
 } from 'react';
 
-import { apiFetch, setSessionExpiredHandler } from '../lib/api';
+import { apiFetch, getActAs, setActAs, setSessionExpiredHandler } from '../lib/api';
 import { forgetThisDevice } from '../push';
 
 const AuthContext = createContext(null);
+
+const NO_CHILDREN = [];
 
 export function AuthProvider({ children }) {
   // Globaler Auth-Status.
@@ -21,6 +23,38 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
 
   const clearError = useCallback(() => setError(null), []);
+
+  // Kinder des angemeldeten Elternteils (für Kind-Wechsler und Hinweisband).
+  // Bleibt beim Wechsel ins Kinderkonto gleich – /api/family liefert immer
+  // die Kinder der Person, die wirklich angemeldet ist.
+  const [familyState, setFamilyState] = useState({ key: '', children: [] });
+  const familyKey =
+    user && (user.hasChildren || user.actingAs) ? String(user.actingAs?.actorId ?? user.id) : '';
+  // Feste leere Liste statt `[]`: sonst wäre `family` bei jedem Rendern neu
+  // und der Kontext (und damit jede Seite) würde ständig neu gerendert.
+  const family = familyKey && familyState.key === familyKey ? familyState.children : NO_CHILDREN;
+
+  const reloadFamily = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/family');
+      const children = data?.children ?? [];
+      setFamilyState({ key: familyKey, children });
+      return children;
+    } catch {
+      return [];
+    }
+  }, [familyKey]);
+
+  useEffect(() => {
+    if (!familyKey) return undefined;
+    let cancelled = false;
+    apiFetch('/api/family')
+      .then((data) => !cancelled && setFamilyState({ key: familyKey, children: data?.children ?? [] }))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [familyKey]);
 
   // Wird von apiFetch aufgerufen, wenn eine Sitzung abgelaufen oder das Konto
   // gesperrt wurde: Nutzer lokal ausloggen, ProtectedRoute leitet dann um.
@@ -37,7 +71,16 @@ export function AuthProvider({ children }) {
 
     (async () => {
       try {
-        const data = await apiFetch('/api/auth/me');
+        let data;
+        try {
+          data = await apiFetch('/api/auth/me');
+        } catch (err) {
+          // Gespeicherter Kinder-Modus, aber die Verknüpfung gibt es nicht
+          // mehr: still ins eigene Konto zurück statt abzumelden.
+          if (!getActAs() || err.status !== 403) throw err;
+          setActAs(null);
+          data = await apiFetch('/api/auth/me');
+        }
         if (!cancelled) setUser(data?.user ?? null);
       } catch {
         // 401/403 -> nicht (mehr) eingeloggt, das ist ein normaler Zustand.
@@ -77,12 +120,13 @@ export function AuthProvider({ children }) {
    * ersten gibt es nicht.
    */
   const register = useCallback(
-    async ({ firstName, lastName, email, password }) => {
+    async ({ firstName, lastName, email, password, familyCode }) => {
       setError(null);
       try {
         const data = await apiFetch('/api/auth/register', {
           method: 'POST',
-          body: JSON.stringify({ firstName, lastName, email, password }),
+          // familyCode: Kind übernimmt das Profil, das die Eltern angelegt haben.
+          body: JSON.stringify({ firstName, lastName, email, password, ...(familyCode ? { familyCode } : {}) }),
         });
         setUser(data.user);
         return { success: true, message: data.message, user: data.user };
@@ -94,7 +138,36 @@ export function AuthProvider({ children }) {
     []
   );
 
+  /**
+   * Eltern: als Kind handeln (id) oder zurück ins eigene Konto (null).
+   * Lädt danach das passende Profil – die ganze App zeigt dann die Sicht des
+   * Kindes, bis zurückgewechselt wird.
+   */
+  const switchAccount = useCallback(async (childId) => {
+    const previous = getActAs();
+    setActAs(childId);
+    try {
+      const data = await apiFetch('/api/auth/me');
+      setUser(data?.user ?? null);
+      return { success: true };
+    } catch (err) {
+      setActAs(previous);
+      return { success: false, message: err.message };
+    }
+  }, []);
+
+  /** Profil neu laden (nach Änderungen ausserhalb der Konto-Endpunkte). */
+  const refreshProfile = useCallback(async () => {
+    try {
+      const data = await apiFetch('/api/auth/me');
+      if (data?.user) setUser(data.user);
+    } catch {
+      // Abgelaufene Sitzung behandelt apiFetch selbst.
+    }
+  }, []);
+
   const logout = useCallback(async () => {
+    setActAs(null);
     // Vor dem Abmelden, solange die Sitzung noch gilt.
     await forgetThisDevice();
     try {
@@ -196,12 +269,29 @@ export function AuthProvider({ children }) {
   // Providers ein neues Objekt, und da der Kontext an der Wurzel der App hängt,
   // würde damit jede Seite, jede Navigation und jede Tabelle neu gezeichnet –
   // auch wenn sich am Anmeldestatus nichts geändert hat.
+  const permissions = useMemo(() => new Set(user?.permissions ?? []), [user]);
+  const can = useCallback(
+    (...keys) => keys.some((key) => permissions.has(key)),
+    [permissions]
+  );
+
   const value = useMemo(
     () => ({
       user,
       // Rolle des angemeldeten Nutzers (RBAC): 'admin' | 'sub_admin' |
       // 'trainer' | 'spieler' | 'zuschauer' – oder null, wenn nicht eingeloggt.
       role: user?.role ?? null,
+      // Wirksame Rechte (Set) und Prüf-Funktion: can('news.manage') oder
+      // can('members.view', 'access.manage') = mindestens eines davon.
+      permissions,
+      can,
+      // Gesetzt, solange Eltern als Kind handeln: { actorId, actorName }.
+      actingAs: user?.actingAs ?? null,
+      switchAccount,
+      refreshProfile,
+      // Kinder des Elternteils: [{ id, firstName, lastName, photoUrl, isManaged, teams }].
+      family,
+      reloadFamily,
       // Mannschaften des angemeldeten Nutzers
       // ([{ id, code, name, relationType, isConfirmed }]).
       teams: user?.teams ?? [],
@@ -223,6 +313,12 @@ export function AuthProvider({ children }) {
     }),
     [
       user,
+      permissions,
+      can,
+      switchAccount,
+      refreshProfile,
+      family,
+      reloadFamily,
       loading,
       error,
       clearError,

@@ -58,7 +58,7 @@ export default function ThemeChoice({ value, onChange, disabled = false }) {
                 active ? 'text-hsg-green-dark' : 'text-ink-muted'
               }`}
             />
-            <span className="font-display text-sm font-bold uppercase tracking-[0.04em] text-ink">
+            <span className="font-display text-sm font-bold tracking-[-0.01em] text-ink">
               {label}
             </span>
           </button>

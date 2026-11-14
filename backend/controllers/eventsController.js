@@ -16,6 +16,7 @@
 const eventRepository = require('../repositories/eventRepository');
 const teamRepository = require('../repositories/teamRepository');
 const teamAccess = require('../services/teamAccess');
+const { viewerOf } = require('../access/service');
 const nuligaSyncService = require('../services/nuligaSyncService');
 const scheduleService = require('../services/scheduleService');
 const appEvents = require('../services/appEvents');
@@ -29,6 +30,7 @@ const {
 } = require('../utils/scheduleValidation');
 const {
   nowSqlDateTime,
+  addMinutesToSql,
   todaySqlDate,
   wallClockMs,
   toSqlDate,
@@ -55,11 +57,13 @@ function shiftDate(date, days) {
  * @returns {{ ok:true, teams:object[], selected:object[] }
  *          | { ok:false, status, message }}
  */
-async function resolveTeams(viewer, teamIdParam) {
+async function resolveTeams(viewer, teamIdParam, { mine = false } = {}) {
   const teams = await teamAccess.listAccessibleTeams(viewer);
 
   if (teamIdParam === undefined) {
-    return { ok: true, teams, selected: teams };
+    // ?mine=1: nur Mannschaften, in denen man selbst spielt oder trainiert
+    // (eigener Kalender). Sonst alle sichtbaren.
+    return { ok: true, teams, selected: mine ? teams.filter((team) => team.isMember) : teams };
   }
 
   const teamId = parseId(teamIdParam);
@@ -74,17 +78,17 @@ async function resolveTeams(viewer, teamIdParam) {
   return { ok: true, teams, selected: [team] };
 }
 
-// GET /api/events?teamId=X&from=YYYY-MM-DD&to=YYYY-MM-DD
+// GET /api/events?teamId=X&from=YYYY-MM-DD&to=YYYY-MM-DD&mine=1
 async function listEvents(req, res, next) {
   try {
-    const viewer = { userId: req.userId, userRole: req.userRole };
+    const viewer = viewerOf(req);
 
     const range = validateRange(req.query);
     if (!range.ok) {
       return res.status(range.status).json({ message: range.message });
     }
 
-    const resolved = await resolveTeams(viewer, req.query.teamId);
+    const resolved = await resolveTeams(viewer, req.query.teamId, { mine: req.query.mine === '1' });
     if (!resolved.ok) {
       return res.status(resolved.status).json({ message: resolved.message });
     }
@@ -142,7 +146,7 @@ async function listSeries(req, res, next) {
     }
 
     const access = await teamAccess.requireManager(
-      { userId: req.userId, userRole: req.userRole },
+      viewerOf(req),
       teamId
     );
     if (!access.ok) {
@@ -176,7 +180,7 @@ async function deleteSeries(req, res, next) {
     }
 
     const access = await teamAccess.requireManager(
-      { userId: req.userId, userRole: req.userRole },
+      viewerOf(req),
       series.teamId
     );
     if (!access.ok) {
@@ -219,7 +223,7 @@ async function setNuligaSync(req, res, next) {
     }
 
     const access = await teamAccess.requireManager(
-      { userId: req.userId, userRole: req.userRole },
+      viewerOf(req),
       teamId
     );
     if (!access.ok) {
@@ -282,7 +286,7 @@ async function getEvent(req, res, next) {
       return res.status(404).json({ message: 'Termin nicht gefunden.' });
     }
 
-    const viewer = { userId: req.userId, userRole: req.userRole };
+    const viewer = viewerOf(req);
     const access = await teamAccess.requireMember(viewer, event.teamId);
     if (!access.ok) {
       return res.status(access.status).json({ message: access.message });
@@ -306,6 +310,11 @@ async function getEvent(req, res, next) {
 // Body entweder mit `startTime`/`endTime` (Einzeltermin, auch mehrtägig) oder
 // mit `recurrence` (Serie). Beides zusammen ist nicht vorgesehen – `recurrence`
 // hätte sonst Vorrang, ohne dass es jemand merkt.
+/** Anmeldefrist als Zeitpunkt: Beginn minus `hours` (null = keine Frist). */
+function deadlineFor(startSql, hours) {
+  return hours ? addMinutesToSql(String(startSql).replace('T', ' '), -hours * 60) : null;
+}
+
 async function createEvent(req, res, next) {
   try {
     const input = validateEventCreate(req.body);
@@ -314,7 +323,7 @@ async function createEvent(req, res, next) {
     }
 
     const access = await teamAccess.requireManager(
-      { userId: req.userId, userRole: req.userRole },
+      viewerOf(req),
       input.teamId
     );
     if (!access.ok) {
@@ -326,8 +335,11 @@ async function createEvent(req, res, next) {
         {
           teamId: input.teamId,
           fields: input.fields,
-          rule: input.series,
-          occurrences: input.occurrences,
+          rule: { ...input.series, deadlineHours: input.deadlineHours },
+          occurrences: input.occurrences.map((occurrence) => ({
+            ...occurrence,
+            responseDeadline: deadlineFor(occurrence.startTime, input.deadlineHours),
+          })),
           createdBy: req.userId,
         }
       );
@@ -350,6 +362,7 @@ async function createEvent(req, res, next) {
       fields: input.fields,
       startTime: occurrence.startTime,
       endTime: occurrence.endTime,
+      responseDeadline: deadlineFor(occurrence.startTime, input.deadlineHours),
       createdBy: req.userId,
     });
     appEvents.publish('event.created', {
@@ -391,7 +404,7 @@ async function updateEvent(req, res, next) {
     }
 
     const access = await teamAccess.requireManager(
-      { userId: req.userId, userRole: req.userRole },
+      viewerOf(req),
       event.teamId
     );
     if (!access.ok) {
@@ -417,6 +430,7 @@ async function updateEvent(req, res, next) {
         input.fields,
         nowSqlDateTime()
       );
+      await eventRepository.setSeriesDeadline(event.seriesId, input.deadlineHours, nowSqlDateTime());
       appEvents.publish('series.updated', {
         event,
         fields: input.fields,
@@ -433,6 +447,7 @@ async function updateEvent(req, res, next) {
       ...input.fields,
       start_time: input.times.startTime,
       end_time: input.times.endTime,
+      response_deadline: deadlineFor(input.times.startTime, input.deadlineHours),
     });
     appEvents.publish('event.updated', {
       before: event,
@@ -467,7 +482,7 @@ async function cancelEvent(req, res, next) {
     }
 
     const access = await teamAccess.requireManager(
-      { userId: req.userId, userRole: req.userRole },
+      viewerOf(req),
       event.teamId
     );
     if (!access.ok) {
@@ -519,7 +534,7 @@ async function deleteEvent(req, res, next) {
     }
 
     const access = await teamAccess.requireManager(
-      { userId: req.userId, userRole: req.userRole },
+      viewerOf(req),
       event.teamId
     );
     if (!access.ok) {

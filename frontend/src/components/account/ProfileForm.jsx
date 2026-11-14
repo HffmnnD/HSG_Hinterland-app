@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { Camera, Check, Phone, Trash2 } from 'lucide-react';
+import { Camera, Check, Crop, Phone, Trash2 } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../ui/Avatar';
+import AvatarCropper from './AvatarCropper';
 
 // Muss zu MAX_IMAGE_BYTES in backend/config/uploads.js passen.
 const MAX_PHOTO_MB = 5;
@@ -30,12 +31,16 @@ export default function ProfileForm({ phone, onPhoneChange }) {
   const controlled = typeof onPhoneChange === 'function';
 
   const [ownPhone, setOwnPhone] = useState(user?.phone ?? '');
+  // Eigener Name – nur in den Kontoeinstellungen (nicht im Assistenten).
+  const [firstName, setFirstName] = useState(user?.firstName ?? '');
+  const [lastName, setLastName] = useState(user?.lastName ?? '');
   const value = controlled ? (phone ?? '') : ownPhone;
 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
+  const [cropSrc, setCropSrc] = useState(null);
 
   const handlePhone = (event) => {
     const next = event.target.value;
@@ -56,13 +61,24 @@ export default function ProfileForm({ phone, onPhoneChange }) {
       return;
     }
 
-    setBusy(true);
+    // Erst ausrichten lassen (verschieben, zoomen), dann hochladen.
     setError(null);
     setNotice(null);
+    setCropSrc(URL.createObjectURL(file));
+  };
+
+  const closeCropper = () => {
+    if (cropSrc?.startsWith('blob:')) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+  };
+
+  const uploadCropped = async (file) => {
+    setBusy(true);
     const result = await uploadPhoto(file);
     if (result.success) setNotice(result.message ?? 'Profilbild gespeichert.');
     else setError(result.message);
     setBusy(false);
+    closeCropper();
   };
 
   const handleRemove = async () => {
@@ -86,6 +102,23 @@ export default function ProfileForm({ phone, onPhoneChange }) {
   };
 
   const phoneChanged = !controlled && ownPhone.trim() !== (user?.phone ?? '');
+  const nameChanged =
+    firstName.trim() !== (user?.firstName ?? '') || lastName.trim() !== (user?.lastName ?? '');
+
+  const saveName = async (event) => {
+    event.preventDefault();
+    if (!firstName.trim() || !lastName.trim()) {
+      setError('Bitte Vor- und Nachnamen angeben.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await updatePreferences({ firstName: firstName.trim(), lastName: lastName.trim() });
+    if (result.success) setNotice('Name gespeichert.');
+    else setError(result.message);
+    setBusy(false);
+  };
 
   return (
     <div className="space-y-5">
@@ -99,6 +132,38 @@ export default function ProfileForm({ phone, onPhoneChange }) {
           <Check size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
           <span>{notice}</span>
         </div>
+      )}
+
+      {/* ------------------------------------------------------------ Name */}
+      {!controlled && (
+        <form onSubmit={saveName}>
+          <p className="field-label">Name</p>
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <input
+              aria-label="Vorname"
+              autoComplete="given-name"
+              maxLength={100}
+              value={firstName}
+              onChange={(event) => setFirstName(event.target.value)}
+              disabled={busy}
+              placeholder="Vorname"
+              className="field-control"
+            />
+            <input
+              aria-label="Nachname"
+              autoComplete="family-name"
+              maxLength={100}
+              value={lastName}
+              onChange={(event) => setLastName(event.target.value)}
+              disabled={busy}
+              placeholder="Nachname"
+              className="field-control"
+            />
+            <button type="submit" disabled={busy || !nameChanged} className="btn btn-primary btn-sm">
+              Speichern
+            </button>
+          </div>
+        </form>
       )}
 
       {/* ------------------------------------------------------ Profilbild */}
@@ -132,6 +197,17 @@ export default function ProfileForm({ phone, onPhoneChange }) {
               <button
                 type="button"
                 disabled={busy}
+                onClick={() => setCropSrc(user.photoUrl)}
+                className="btn btn-outline btn-sm"
+              >
+                <Crop size={14} aria-hidden="true" />
+                Ausschnitt
+              </button>
+            )}
+            {user?.photoUrl && (
+              <button
+                type="button"
+                disabled={busy}
                 onClick={handleRemove}
                 className="btn btn-danger btn-sm"
               >
@@ -142,7 +218,7 @@ export default function ProfileForm({ phone, onPhoneChange }) {
           </div>
         </div>
         <p className="field-hint">
-          JPG, PNG, WEBP oder GIF, max. {MAX_PHOTO_MB} MB
+          JPG, PNG, WEBP oder GIF, max. {MAX_PHOTO_MB} MB. Nach der Auswahl kannst du den Ausschnitt verschieben und zoomen.
         </p>
       </div>
 
@@ -183,6 +259,10 @@ export default function ProfileForm({ phone, onPhoneChange }) {
           )}
         </div>
       </div>
+
+      {cropSrc && (
+        <AvatarCropper src={cropSrc} busy={busy} onCancel={closeCropper} onConfirm={uploadCropped} />
+      )}
     </div>
   );
 }

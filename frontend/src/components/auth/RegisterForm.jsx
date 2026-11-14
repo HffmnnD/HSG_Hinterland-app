@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { KeyRound } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../lib/api';
 import Alert from './Alert';
 import TextField from './TextField';
 
@@ -30,10 +32,34 @@ const MAX_PASSWORD_LENGTH = 72;
  * sofort an, deshalb gibt es hier keine Erfolgsansicht und kein zweites
  * Anmeldeformular – nach dem Klick geht es in die App.
  */
-export default function RegisterForm() {
+export default function RegisterForm({ initialFamilyCode = '' }) {
   const { register, error, clearError } = useAuth();
 
   const [form, setForm] = useState(EMPTY_FORM);
+  // Familiencode: Kind übernimmt das Profil, das seine Eltern angelegt haben.
+  const [withCode, setWithCode] = useState(Boolean(initialFamilyCode));
+  const [familyCode, setFamilyCode] = useState(initialFamilyCode);
+  const [checked, setChecked] = useState(null); // { code, firstName } | { code, error }
+
+  const cleanCode = familyCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const codeInfo = withCode && checked?.code === cleanCode ? checked : null;
+
+  // Code prüfen, sobald er vollständig ist – zeigt, wessen Profil übernommen
+  // wird, und trägt den Vornamen schon ein.
+  useEffect(() => {
+    if (!withCode || cleanCode.length !== 8) return undefined;
+    let cancelled = false;
+    apiFetch('/api/family/invite/check', { method: 'POST', body: JSON.stringify({ code: cleanCode }) })
+      .then((data) => {
+        if (cancelled) return;
+        setChecked({ code: cleanCode, firstName: data.firstName });
+        setForm((prev) => ({ ...prev, firstName: prev.firstName || data.firstName, lastName: prev.lastName || data.lastName || '' }));
+      })
+      .catch((err) => !cancelled && setChecked({ code: cleanCode, error: err.message }));
+    return () => {
+      cancelled = true;
+    };
+  }, [withCode, cleanCode]);
   const [submitting, setSubmitting] = useState(false);
   // Client-seitige Validierung, getrennt vom Server-Fehler aus dem Context.
   const [validationError, setValidationError] = useState(null);
@@ -62,9 +88,14 @@ export default function RegisterForm() {
       return;
     }
 
+    if (withCode && cleanCode.length !== 8) {
+      setValidationError('Bitte den 8-stelligen Code deiner Eltern eingeben.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await register(form);
+      await register({ ...form, familyCode: withCode ? cleanCode : undefined });
       // Bei Erfolg setzt der Context `user` – die App wechselt von selbst in
       // den Onboarding-Assistenten, diese Komponente verschwindet dabei.
       // Fehlerfall: Meldung steht in `error` aus dem AuthContext.
@@ -78,6 +109,47 @@ export default function RegisterForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
       {shownError && <Alert variant="error">{shownError}</Alert>}
+
+      {withCode ? (
+        <div className="space-y-2 rounded-md border border-line p-3">
+          <TextField
+            label="Code von deinen Eltern"
+            id="register-familyCode"
+            name="familyCode"
+            autoComplete="off"
+            maxLength={12}
+            value={familyCode}
+            onChange={(event) => {
+              setFamilyCode(event.target.value);
+              setValidationError(null);
+              clearError();
+            }}
+            placeholder="ABCD-EFGH"
+            disabled={submitting}
+          />
+          {codeInfo?.firstName && (
+            <p className="field-hint">
+              Du übernimmst das Profil von <strong>{codeInfo.firstName}</strong> – mit Mannschaften und Zusagen. Deine
+              Eltern bleiben verknüpft.
+            </p>
+          )}
+          {codeInfo?.error && <p className="field-hint text-danger">{codeInfo.error}</p>}
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setWithCode(false);
+              setFamilyCode('');
+            }}
+          >
+            Ohne Code registrieren
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setWithCode(true)}>
+          <KeyRound size={14} aria-hidden="true" /> Ich habe einen Code von meinen Eltern
+        </button>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextField

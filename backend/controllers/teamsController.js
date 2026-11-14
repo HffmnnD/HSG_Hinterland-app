@@ -26,7 +26,8 @@ const {
   validateRosterPatch,
   validatePhotoFrame,
 } = require('../utils/validation');
-const { ADMIN_ROLES, RELATION_TYPES } = require('../utils/roles');
+const { RELATION_TYPES } = require('../utils/roles');
+const { can } = require('../access/service');
 const {
   publicUrlFor,
   teamPhotoPathFor,
@@ -58,7 +59,7 @@ async function loadManageableTeam(req, code, deniedMessage) {
     return { ok: false, status: 404, message: 'Mannschaft nicht gefunden.' };
   }
   const canManage =
-    ADMIN_ROLES.includes(req.userRole) ||
+    can(req, 'teams.manage_all') ||
     (await teamRepository.hasConfirmedRelation(req.userId, team.id, 'coach'));
   if (!canManage) {
     return { ok: false, status: 403, message: deniedMessage };
@@ -86,7 +87,7 @@ async function getTeam(req, res, next) {
 
     // „Darf verwalten" und „gehört zum Kader" kommen aus EINER Abfrage; für
     // die Verwaltung erübrigt sie sich, weil dort beides ohnehin gilt.
-    const isAdmin = ADMIN_ROLES.includes(req.userRole);
+    const isAdmin = can(req, 'teams.manage_all');
     const { isMember, isCoach } = isAdmin
       ? { isMember: true, isCoach: true }
       : await teamRepository.getSquadMembership(req.userId, team.id);
@@ -115,6 +116,8 @@ async function getTeam(req, res, next) {
         coach: members.coach.length,
       },
       canManage,
+      // Gehört die Person selbst zum Kader? Dann gibt es den Reiter Teamplaner.
+      isMember,
     };
 
     // Verwaltung sieht zusätzlich die offenen Beitrittsanfragen.
@@ -317,7 +320,7 @@ async function removeMember(req, res, next) {
     if (
       relationType === 'coach' &&
       targetId === req.userId &&
-      !ADMIN_ROLES.includes(req.userRole)
+      !can(req, 'teams.manage_all')
     ) {
       return res.status(400).json({
         message:
@@ -352,7 +355,7 @@ async function removeMember(req, res, next) {
 // stillschweigend kaputtzumachen.
 async function updateTeam(req, res, next) {
   try {
-    if (!ADMIN_ROLES.includes(req.userRole)) {
+    if (!can(req, 'teams.edit')) {
       return res.status(403).json({ message: TEAM_DATA_DENIED });
     }
 
@@ -390,6 +393,46 @@ async function updateTeam(req, res, next) {
   }
 }
 
+// PATCH /api/teams/:code/settings  { finesEnabled?, plannerEnabled?, joinMode? }
+// Trainer:innen der Mannschaft und die Vereinsverwaltung.
+async function updateTeamSettings(req, res, next) {
+  try {
+    const loaded = await loadManageableTeam(
+      req,
+      req.params.code,
+      'Nur Trainer:innen dieser Mannschaft dürfen die Einstellungen ändern.'
+    );
+    if (!loaded.ok) return res.status(loaded.status).json({ message: loaded.message });
+
+    const body = req.body || {};
+    const settings = {};
+    for (const key of ['finesEnabled', 'plannerEnabled']) {
+      if (body[key] === undefined) continue;
+      if (typeof body[key] !== 'boolean') {
+        return res.status(400).json({ message: `${key} muss true oder false sein.` });
+      }
+      settings[key] = body[key];
+    }
+    if (body.joinMode !== undefined) {
+      if (!['open', 'approval'].includes(body.joinMode)) {
+        return res.status(400).json({ message: 'joinMode muss open oder approval sein.' });
+      }
+      settings.joinMode = body.joinMode;
+    }
+    if (Object.keys(settings).length === 0) {
+      return res.status(400).json({ message: 'Keine Änderungen übergeben.' });
+    }
+
+    await teamRepository.updateSettings(loaded.team.id, settings);
+    return res.json({
+      message: 'Einstellungen gespeichert.',
+      team: presentTeam(await teamRepository.findById(loaded.team.id)),
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 // POST /api/teams/:code/photo   multipart/form-data, Feld `photo`
 async function setTeamPhoto(req, res, next) {
   // Ab hier liegt die Datei bereits auf der Platte (multer). Jeder Fehlerpfad
@@ -399,7 +442,7 @@ async function setTeamPhoto(req, res, next) {
   };
 
   try {
-    if (!ADMIN_ROLES.includes(req.userRole)) {
+    if (!can(req, 'teams.edit')) {
       await cleanup();
       return res.status(403).json({ message: TEAM_DATA_DENIED });
     }
@@ -454,7 +497,7 @@ async function setTeamPhoto(req, res, next) {
 // Original bleibt in voller Auflösung erhalten.
 async function setTeamPhotoFrame(req, res, next) {
   try {
-    if (!ADMIN_ROLES.includes(req.userRole)) {
+    if (!can(req, 'teams.edit')) {
       return res.status(403).json({ message: TEAM_DATA_DENIED });
     }
 
@@ -487,7 +530,7 @@ async function setTeamPhotoFrame(req, res, next) {
 // DELETE /api/teams/:code/photo
 async function deleteTeamPhoto(req, res, next) {
   try {
-    if (!ADMIN_ROLES.includes(req.userRole)) {
+    if (!can(req, 'teams.edit')) {
       return res.status(403).json({ message: TEAM_DATA_DENIED });
     }
 
@@ -579,6 +622,7 @@ module.exports = {
   listTeams,
   getTeam,
   updateTeam,
+  updateTeamSettings,
   setTeamPhoto,
   setTeamPhotoFrame,
   deleteTeamPhoto,

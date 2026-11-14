@@ -113,7 +113,7 @@ function CountryTooltip({ active, payload }) {
 
   return (
     <div className="chart-tooltip">
-      <p className="font-display font-semibold uppercase tracking-[0.05em] text-ink">
+      <p className="font-display font-semibold tracking-[-0.01em] text-ink">
         {row.label}
       </p>
       <p className="mt-1 text-ink-muted">

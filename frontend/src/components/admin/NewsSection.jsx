@@ -6,12 +6,15 @@ import {
   ChevronRight,
   ImagePlus,
   Newspaper,
+  Pencil,
   Plus,
   Trash2,
   X,
 } from 'lucide-react';
 
 import { apiFetch } from '../../lib/api';
+import { NewsExtrasFields } from '../news/NewsExtras';
+import { EMPTY_NEWS_EXTRAS, appendNewsExtras, newsFilesBody } from '../../lib/newsExtras';
 import { useAdminNews } from '../../hooks/useAdminNews';
 import { formatDateTime } from '../../lib/format';
 import Modal from '../ui/Modal';
@@ -19,7 +22,7 @@ import { EmptyState, ErrorNote, Loading, SuccessNote } from './ui/Feedback';
 
 // Müssen zu utils/validation.js und config/uploads.js im Backend passen.
 const MAX_TITLE_LENGTH = 150;
-const MAX_CONTENT_LENGTH = 5000;
+const MAX_SUBTITLE_LENGTH = 200;
 const MAX_IMAGE_MB = 5;
 // Feldname des Uploads – alle Bilder kommen unter demselben Namen, ihre
 // Reihenfolge ist die Anzeigereihenfolge. Muss zu config/uploads.js passen.
@@ -48,6 +51,8 @@ export default function NewsSection() {
   const { news, counts, loading, error, setError, reload } = useAdminNews(view);
 
   const [composerOpen, setComposerOpen] = useState(false);
+  // Beitrag, der gerade bearbeitet wird (null = keiner).
+  const [editing, setEditing] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busyId, setBusyId] = useState(null);
   // Beitrag, für den die Löschabfrage offen ist (null = keine).
@@ -177,6 +182,10 @@ export default function NewsSection() {
                 key={item.id}
                 item={item}
                 busy={busyId === item.id}
+                onEdit={() => {
+                  setNotice(null);
+                  setEditing(item);
+                }}
                 onArchive={() => setArchived(item.id, true)}
                 onRestore={() => setArchived(item.id, false)}
                 onAskDelete={() => {
@@ -204,6 +213,20 @@ export default function NewsSection() {
         }}
       />
 
+      {editing && (
+        <NewsComposer
+          key={editing.id}
+          open
+          item={editing}
+          onClose={() => setEditing(null)}
+          onPublished={async (message) => {
+            setEditing(null);
+            await reload();
+            setNotice(message);
+          }}
+        />
+      )}
+
       <ConfirmDelete
         item={pendingDelete}
         busy={pendingDelete ? busyId === pendingDelete.id : false}
@@ -222,7 +245,7 @@ export default function NewsSection() {
  * unterschiedlich breit werden und auf dem Handy umbrechen – die Liste wirkte
  * dadurch unruhig. Der Zweck steht in `title` und `aria-label`.
  */
-function NewsRow({ item, busy, onArchive, onRestore, onAskDelete }) {
+function NewsRow({ item, busy, onEdit, onArchive, onRestore, onAskDelete }) {
   const images = item.imageUrls ?? (item.imageUrl ? [item.imageUrl] : []);
 
   return (
@@ -238,6 +261,13 @@ function NewsRow({ item, busy, onArchive, onRestore, onAskDelete }) {
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        <IconButton
+          onClick={onEdit}
+          disabled={busy}
+          label="Beitrag bearbeiten"
+          title="Text, Bilder und Zielgruppe ändern"
+          icon={Pencil}
+        />
         {item.isArchived ? (
           <>
             <IconButton
@@ -385,15 +415,34 @@ function ConfirmDelete({ item, busy, onCancel, onConfirm }) {
  * Eingabefeld nach jedem Buchstaben den Fokus verliert. Die zweite Ursache
  * desselben Fehlers lag im Dialog selbst (siehe Kommentar in ui/Modal.jsx).
  */
-function NewsComposer({ open, onClose, onPublished }) {
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
+function NewsComposer({ open, onClose, onPublished, item = null }) {
+  const editing = Boolean(item);
+  const [title, setTitle] = useState(item?.title ?? '');
+  const [subtitle, setSubtitle] = useState(item?.subtitle ?? '');
+  const [content, setContent] = useState(item?.content ?? '');
+  // Beim Bearbeiten: vorhandene Bilder (URLs). Entfernte gehen als
+  // removeImages an das Backend, neue Bilder hängen hinten an.
+  const [keptImages, setKeptImages] = useState(
+    () => item?.imageUrls ?? (item?.imageUrl ? [item.imageUrl] : [])
+  );
   // Beliebig viele Einträge: { id, file, previewUrl }. `id` ist der
   // React-Key – Dateiname und URL taugen dafür nicht, weil dieselbe Datei
   // zweimal ausgewählt werden darf.
   const [images, setImages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
+  // Zielgruppe, Link und Anhänge (Dokumente, Videos).
+  const [extras, setExtras] = useState(() =>
+    item
+      ? {
+          ...EMPTY_NEWS_EXTRAS,
+          audience: item.audience === 'teams' ? 'teams' : 'club',
+          teamIds: (item.teams ?? []).map((team) => team.id),
+          linkUrl: item.link?.url ?? '',
+          linkKind: item.link?.kind ?? 'link',
+        }
+      : EMPTY_NEWS_EXTRAS
+  );
 
   const fileInput = useRef(null);
   const naechsteId = useRef(0);
@@ -457,7 +506,7 @@ function NewsComposer({ open, onClose, onPublished }) {
       (file) => file.size <= MAX_IMAGE_MB * 1024 * 1024
     );
 
-    const frei = MAX_IMAGES_PER_UPLOAD - imagesRef.current.length;
+    const frei = MAX_IMAGES_PER_UPLOAD - imagesRef.current.length - keptImages.length;
     const angenommen = passend.slice(0, Math.max(0, frei));
 
     // Ehrlich melden, was NICHT übernommen wurde – stillschweigend Dateien zu
@@ -510,8 +559,10 @@ function NewsComposer({ open, onClose, onPublished }) {
 
   const resetForm = () => {
     setTitle('');
+    setSubtitle('');
     setContent('');
     clearImages();
+    setExtras(EMPTY_NEWS_EXTRAS);
     setFormError(null);
     if (fileInput.current) fileInput.current.value = '';
   };
@@ -530,15 +581,38 @@ function NewsComposer({ open, onClose, onPublished }) {
     // Content-Type, damit der Browser die Boundary ergänzt.
     const body = new FormData();
     body.append('title', title.trim());
+    body.append('subtitle', subtitle.trim());
     body.append('content', content.trim());
+    if (editing) {
+      const original = item.imageUrls ?? (item.imageUrl ? [item.imageUrl] : []);
+      body.append('removeImages', JSON.stringify(original.filter((url) => !keptImages.includes(url))));
+    }
     // Reihenfolge im FormData = Reihenfolge im Beitrag.
     images.forEach((entry) => body.append(IMAGE_FIELD, entry.file));
+    if (extras.audience === 'teams' && extras.teamIds.length === 0) {
+      setFormError('Bitte mindestens eine Mannschaft auswählen.');
+      return;
+    }
+    appendNewsExtras(body, extras);
 
     setSubmitting(true);
     try {
-      const result = await apiFetch('/api/admin/news', { method: 'POST', body });
+      const result = await apiFetch(editing ? `/api/admin/news/${item.id}` : '/api/admin/news', {
+        method: editing ? 'PUT' : 'POST',
+        body,
+      });
+      // Dokumente und Videos kommen in einem zweiten Schritt an den Beitrag.
+      const filesBody = newsFilesBody(extras);
+      let message = result?.message || (editing ? 'Beitrag gespeichert.' : 'Beitrag veröffentlicht.');
+      if (filesBody && result?.news?.id) {
+        try {
+          await apiFetch(`/api/admin/news/${result.news.id}/files`, { method: 'POST', body: filesBody });
+        } catch (err) {
+          message = `Beitrag veröffentlicht, aber die Anhänge fehlen: ${err.message}`;
+        }
+      }
       resetForm();
-      await onPublished(result?.message || 'Beitrag veröffentlicht.');
+      await onPublished(message);
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -556,7 +630,7 @@ function NewsComposer({ open, onClose, onPublished }) {
     <Modal
       open={open}
       onClose={close}
-      title="Neuer Beitrag"
+      title={editing ? 'Beitrag bearbeiten' : 'Neuer Beitrag'}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {formError && <ErrorNote>{formError}</ErrorNote>}
@@ -578,34 +652,69 @@ function NewsComposer({ open, onClose, onPublished }) {
         </div>
 
         <div>
+          <label htmlFor="news-subtitle" className="field-label">
+            Untertitel <span className="font-normal text-ink-muted">(optional)</span>
+          </label>
+          <input
+            id="news-subtitle"
+            className="field-control"
+            value={subtitle}
+            onChange={(event) => setSubtitle(event.target.value)}
+            maxLength={MAX_SUBTITLE_LENGTH}
+            placeholder="Kurze Zeile unter der Überschrift"
+            disabled={submitting}
+          />
+        </div>
+
+        <div>
           <label htmlFor="news-content" className="field-label">
             Nachrichtentext
           </label>
           <textarea
             id="news-content"
             className="field-control resize-y"
-            rows={6}
+            rows={8}
             value={content}
             onChange={(event) => setContent(event.target.value)}
-            maxLength={MAX_CONTENT_LENGTH}
             placeholder="Was gibt es zu berichten?"
             disabled={submitting}
             required
           />
           <p className="field-hint">
-            {content.length} / {MAX_CONTENT_LENGTH}
+            Lange Texte sind kein Problem: In der App steht zuerst der Anfang mit „Mehr lesen“.
           </p>
         </div>
+
+        <NewsExtrasFields value={extras} onChange={setExtras} disabled={submitting} />
 
         <div>
           <div className="flex items-baseline justify-between gap-2">
             <span className="field-label mb-0">Bilder</span>
-            {images.length > 0 && (
+            {images.length + keptImages.length > 0 && (
               <span className="text-xs text-ink-muted">
-                {images.length} von {MAX_IMAGES_PER_UPLOAD}
+                {images.length + keptImages.length} von {MAX_IMAGES_PER_UPLOAD}
               </span>
             )}
           </div>
+
+          {keptImages.length > 0 && (
+            <ul className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {keptImages.map((url) => (
+                <li key={url} className="relative overflow-hidden rounded-sm border border-line">
+                  <img src={url} alt="" className="aspect-[4/3] w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setKeptImages((list) => list.filter((entry) => entry !== url))}
+                    disabled={submitting}
+                    className="absolute right-1.5 top-1.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                    aria-label="Bild entfernen"
+                  >
+                    <X size={15} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           {images.length > 0 && (
             <ul className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -623,7 +732,7 @@ function NewsComposer({ open, onClose, onPublished }) {
             </ul>
           )}
 
-          {images.length < MAX_IMAGES_PER_UPLOAD && (
+          {images.length + keptImages.length < MAX_IMAGES_PER_UPLOAD && (
             <label
               className={`mt-2 flex min-h-11 cursor-pointer items-center justify-center gap-2
                 rounded-sm border border-dashed border-line-strong bg-surface px-3 py-3
@@ -661,7 +770,13 @@ function NewsComposer({ open, onClose, onPublished }) {
             Abbrechen
           </button>
           <button type="submit" disabled={submitting} className="btn btn-primary">
-            {submitting ? 'Wird veröffentlicht …' : 'Veröffentlichen'}
+            {submitting
+              ? editing
+                ? 'Wird gespeichert …'
+                : 'Wird veröffentlicht …'
+              : editing
+                ? 'Speichern'
+                : 'Veröffentlichen'}
           </button>
         </div>
       </form>

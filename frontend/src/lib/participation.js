@@ -45,19 +45,15 @@ export const SERVICE_LABELS = {
   verkaufsdienst: 'Verkaufsdienst',
 };
 
-export function serviceLabel(service) {
-  return SERVICE_LABELS[service] ?? service;
-}
-
 // Beziehung Nutzer <-> Mannschaft
-export const RELATION_LABELS = {
+const RELATION_LABELS = {
   player: 'Spieler:in',
   coach: 'Trainer:in',
   fan: 'Fan',
 };
 
 // Plural für Überschriften
-export const RELATION_LABELS_PLURAL = {
+const RELATION_LABELS_PLURAL = {
   player: 'Spieler:innen',
   coach: 'Trainer:innen',
   fan: 'Fans',
@@ -68,7 +64,7 @@ export const RELATION_LABELS_PLURAL = {
  * Mannschaften"). Dort steht die eigene Rolle über der Liste – „Fans" als
  * Überschrift über den eigenen Mannschaften wäre schlicht falsch.
  */
-export const MY_RELATION_LABELS = {
+const MY_RELATION_LABELS = {
   coach: 'Als Trainer:in',
   player: 'Als Spieler:in',
   fan: 'Verfolge ich',
@@ -97,7 +93,7 @@ export function relationLabelPlural(relationType) {
 export const POSITIONS = ['tor', 'rueckraum', 'aussen', 'kreis'];
 
 /** Kurzform für Filter-Chips und Kaderkarten. */
-export const POSITION_LABELS = {
+const POSITION_LABELS = {
   tor: 'Tor',
   rueckraum: 'Rückraum',
   aussen: 'Außen',
@@ -105,7 +101,7 @@ export const POSITION_LABELS = {
 };
 
 /** Ausgeschrieben für Auswahlfelder in der Verwaltung. */
-export const POSITION_LABELS_LONG = {
+const POSITION_LABELS_LONG = {
   tor: 'Torwart:in',
   rueckraum: 'Rückraum',
   aussen: 'Außen',

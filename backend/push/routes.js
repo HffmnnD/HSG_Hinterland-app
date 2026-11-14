@@ -9,8 +9,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 
-const { authenticate, checkRole } = require('../middleware/authMiddleware');
-const { ROLES } = require('../utils/roles');
+const { authenticate } = require('../middleware/authMiddleware');
 const teamRepository = require('../repositories/teamRepository');
 const config = require('./config');
 const repository = require('./repository');
@@ -19,7 +18,14 @@ const messages = require('./messages');
 const { sendToUsers } = require('./sender');
 
 const router = express.Router();
-const requireAuth = [authenticate, checkRole(ROLES)];
+const requireAuth = [authenticate];
+
+// Push gehört zum GERÄT und damit zur Person, die es in der Hand hält. Handeln
+// Eltern gerade im Kinderkonto (X-Act-As), zählt trotzdem ihr eigenes Konto:
+// Sonst landete das Abo des Eltern-Handys beim Kind und liefe auch nach dem
+// Lösen der Verknüpfung weiter. Mitteilungen fürs Kind gehen ohnehin
+// automatisch an die verknüpften Eltern.
+const ownerOf = (req) => (req.actingAs ? req.actorId : req.userId);
 
 const testLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -64,13 +70,14 @@ router.get('/config', authenticate, (req, res) => {
 router.get('/settings', requireAuth, async (req, res, next) => {
   try {
     const [stored, devices, teams] = await Promise.all([
-      repository.getSettings(req.userId),
-      repository.countSubscriptions(req.userId),
-      teamRepository.getTeamsForUser(req.userId),
+      repository.getSettings(ownerOf(req)),
+      repository.countSubscriptions(ownerOf(req)),
+      teamRepository.getTeamsForUser(ownerOf(req)),
     ]);
     res.json({
       settings: preferences.resolve(stored),
       reminderHours: preferences.REMINDER_HOURS,
+      dutyReminderHours: preferences.DUTY_REMINDER_HOURS,
       devices,
       isCoach: teams.some((team) => team.relationType === 'coach' && team.isConfirmed),
     });
@@ -84,9 +91,9 @@ router.patch('/settings', requireAuth, async (req, res, next) => {
     const check = preferences.validatePatch(req.body);
     if (!check.ok) return res.status(check.status).json({ message: check.message });
 
-    const current = preferences.resolve(await repository.getSettings(req.userId));
+    const current = preferences.resolve(await repository.getSettings(ownerOf(req)));
     const settings = { ...current, ...check.patch };
-    await repository.saveSettings(req.userId, settings);
+    await repository.saveSettings(ownerOf(req), settings);
     return res.json({ message: 'Gespeichert.', settings });
   } catch (err) {
     return next(err);
@@ -100,7 +107,7 @@ router.post('/subscriptions', requireAuth, async (req, res, next) => {
     if (!subscription) {
       return res.status(400).json({ message: 'Ungültiges Push-Abo.' });
     }
-    await repository.saveSubscription(req.userId, subscription);
+    await repository.saveSubscription(ownerOf(req), subscription);
     return res.status(201).json({ message: 'Benachrichtigungen sind an.' });
   } catch (err) {
     return next(err);
@@ -115,7 +122,7 @@ router.delete('/subscriptions', authenticate, async (req, res, next) => {
     if (typeof endpoint !== 'string' || endpoint.length > 1000) {
       return res.status(400).json({ message: 'Ungültiges Gerät.' });
     }
-    await repository.deleteSubscription(req.userId, endpoint);
+    await repository.deleteSubscription(ownerOf(req), endpoint);
     return res.json({ message: 'Benachrichtigungen auf diesem Gerät aus.' });
   } catch (err) {
     return next(err);
@@ -125,7 +132,7 @@ router.delete('/subscriptions', authenticate, async (req, res, next) => {
 router.post('/test', testLimiter, requireAuth, async (req, res, next) => {
   try {
     if (!config.enabled) return res.status(503).json({ message: NOT_CONFIGURED });
-    const delivered = await sendToUsers([req.userId], null, messages.test());
+    const delivered = await sendToUsers([ownerOf(req)], null, messages.test());
     if (delivered === 0) {
       return res.status(409).json({
         message: 'Kein Gerät erreicht. Schalte Push auf diesem Gerät einmal aus und wieder an.',

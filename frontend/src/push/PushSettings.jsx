@@ -29,6 +29,13 @@ const GROUPS = [
     ],
   },
   {
+    title: 'Dienste',
+    items: [
+      { key: 'duties', label: 'Neue Dienstpläne', hint: 'Wenn neue Dienste zu vergeben sind.' },
+      { key: 'dutyReminders', label: 'Erinnerung an meinen Dienst' },
+    ],
+  },
+  {
     title: 'Verein',
     items: [
       { key: 'roster', label: 'Aufnahme in eine Mannschaft' },
@@ -39,6 +46,7 @@ const GROUPS = [
 ];
 
 const REMINDER_LABELS = { 1: '1 Std. vorher', 3: '3 Std. vorher', 24: 'Am Vortag' };
+const DUTY_REMINDER_LABELS = { 3: '3 Std. vorher', 24: 'Am Vortag', 48: '2 Tage vorher', 168: '1 Woche vorher' };
 
 const SUPPORT_HINTS = {
   'ios-install':
@@ -62,6 +70,7 @@ export default function PushSettings() {
   const [error, setError] = useState(null);
   const support = pushSupport();
   const reminderId = useId();
+  const dutyReminderId = useId();
 
   useEffect(() => {
     let alive = true;
@@ -221,6 +230,26 @@ export default function PushSettings() {
                     {data.reminderHours.map((hours) => (
                       <option key={hours} value={hours}>
                         {REMINDER_LABELS[hours] ?? `${hours} Std. vorher`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {item.key === 'dutyReminders' && settings.dutyReminders && (
+                <div className="mt-2 pl-8">
+                  <label htmlFor={dutyReminderId} className="sr-only">
+                    Wann erinnern?
+                  </label>
+                  <select
+                    id={dutyReminderId}
+                    className="field-control field-control-sm w-auto"
+                    value={settings.dutyReminderHours}
+                    onChange={(event) => update({ dutyReminderHours: Number(event.target.value) })}
+                  >
+                    {(data.dutyReminderHours ?? [3, 24, 48, 168]).map((hours) => (
+                      <option key={hours} value={hours}>
+                        {DUTY_REMINDER_LABELS[hours] ?? `${hours} Std. vorher`}
                       </option>
                     ))}
                   </select>

@@ -24,7 +24,7 @@ export default function DeclineForm({
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!trimmed) return;
+    // Der Grund ist freiwillig – ohne Angabe wird einfach abgesagt.
     onSubmit(trimmed);
   };
 
@@ -55,16 +55,15 @@ export default function DeclineForm({
         value={reason}
         onChange={(event) => setReason(event.target.value)}
         maxLength={200}
-        required
         autoFocus
-        placeholder="z. B. Krank, Beruflich, Auswärtstermin …"
+        placeholder="Grund (freiwillig), z. B. Krank, Beruflich …"
         className="field-control"
       />
 
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="submit"
-          disabled={busy || !trimmed}
+          disabled={busy}
           className="btn btn-primary btn-sm"
         >
           {busy ? 'Speichern …' : 'Abmeldung speichern'}

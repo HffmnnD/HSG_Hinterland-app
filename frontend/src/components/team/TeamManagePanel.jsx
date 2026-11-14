@@ -161,8 +161,62 @@ export default function TeamManagePanel({
       'Mannschaftsfoto entfernt.'
     );
 
+  const saveSetting = (patch, message) =>
+    onRun(
+      () =>
+        apiFetch(`/api/teams/${encodeURIComponent(code)}/settings`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        }),
+      message
+    );
+
   return (
     <div className="space-y-6">
+      {/* ------------------------------------------------- Einstellungen */}
+      <section className="card">
+        <h2 className="section-title text-base">Einstellungen der Mannschaft</h2>
+        <ul className="mt-3 divide-y divide-line">
+          <SettingRow
+            label="Beitritt"
+            hint={
+              team.joinMode === 'open'
+                ? 'Jede:r kann als Spieler:in beitreten und ist sofort im Kader.'
+                : 'Beitritte musst du erst bestätigen.'
+            }
+            options={[
+              ['approval', 'Bestätigen'],
+              ['open', 'Frei']
+            ]}
+            value={team.joinMode ?? 'approval'}
+            disabled={busy}
+            onChange={(joinMode) => saveSetting({ joinMode }, 'Beitritt gespeichert.')}
+          />
+          <SettingRow
+            label="Teamplaner"
+            hint="Zu- und Absagen für Training und Spiele in dieser Mannschaft."
+            options={[
+              [true, 'An'],
+              [false, 'Aus']
+            ]}
+            value={team.plannerEnabled !== false}
+            disabled={busy}
+            onChange={(plannerEnabled) => saveSetting({ plannerEnabled }, 'Teamplaner gespeichert.')}
+          />
+          <SettingRow
+            label="Strafen & Kasse"
+            hint="Reiter „Kasse“ mit offenen Strafen für diese Mannschaft."
+            options={[
+              [true, 'An'],
+              [false, 'Aus']
+            ]}
+            value={team.finesEnabled !== false}
+            disabled={busy}
+            onChange={(finesEnabled) => saveSetting({ finesEnabled }, 'Strafen gespeichert.')}
+          />
+        </ul>
+      </section>
+
       {/* ------------------------------------------- Offene Beitrittsanfragen */}
       {pendingMembers.length > 0 && (
         <section className="card-warn">
@@ -430,5 +484,32 @@ export default function TeamManagePanel({
         </Suspense>
       )}
     </div>
+  );
+}
+
+/** Eine Einstellung mit Umschalter (zwei feste Stellungen). */
+function SettingRow({ label, hint, options, value, disabled, onChange }) {
+  return (
+    <li className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-ink">{label}</span>
+        <span className="block text-xs text-ink-muted">{hint}</span>
+      </span>
+      <div className="switcher shrink-0 self-start sm:self-auto" role="radiogroup" aria-label={label}>
+        {options.map(([key, text]) => (
+          <button
+            key={String(key)}
+            type="button"
+            role="radio"
+            aria-checked={value === key}
+            disabled={disabled}
+            onClick={() => value !== key && onChange(key)}
+            className={`switcher__btn ${value === key ? 'switcher__btn--active' : ''}`}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </li>
   );
 }

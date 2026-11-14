@@ -17,10 +17,16 @@ const DEFAULTS = {
   requests: true, // nur Trainer:innen: Beitrittsanfragen
   roster: true, // Aufnahme in den Kader bestätigt
   news: true, // Vereins-News
+  duties: true, // neue Dienstpläne
+  dutyReminders: true, // Erinnerung vor dem eigenen Dienst
+  dutyReminderHours: 24, // wie lange vorher
   quietHours: true, // 22–7 Uhr ohne Ton
 };
 
 const REMINDER_HOURS = [1, 3, 24];
+const DUTY_REMINDER_HOURS = [3, 24, 48, 168];
+// Zahl-Einstellungen und ihre erlaubten Werte.
+const CHOICE_KEYS = { reminderHours: REMINDER_HOURS, dutyReminderHours: DUTY_REMINDER_HOURS };
 const BOOLEAN_KEYS = Object.keys(DEFAULTS).filter(
   (key) => typeof DEFAULTS[key] === 'boolean'
 );
@@ -44,8 +50,8 @@ function resolve(raw) {
   for (const key of BOOLEAN_KEYS) {
     if (typeof stored[key] === 'boolean') result[key] = stored[key];
   }
-  if (REMINDER_HOURS.includes(stored.reminderHours)) {
-    result.reminderHours = stored.reminderHours;
+  for (const [key, allowed] of Object.entries(CHOICE_KEYS)) {
+    if (allowed.includes(stored[key])) result[key] = stored[key];
   }
   return result;
 }
@@ -65,12 +71,12 @@ function validatePatch(body) {
         return { ok: false, status: 400, message: `${key} muss true oder false sein.` };
       }
       patch[key] = value;
-    } else if (key === 'reminderHours') {
-      if (!REMINDER_HOURS.includes(value)) {
+    } else if (key in CHOICE_KEYS) {
+      if (!CHOICE_KEYS[key].includes(value)) {
         return {
           ok: false,
           status: 400,
-          message: `reminderHours erlaubt: ${REMINDER_HOURS.join(', ')}.`,
+          message: `${key} erlaubt: ${CHOICE_KEYS[key].join(', ')}.`,
         };
       }
       patch[key] = value;
@@ -87,4 +93,11 @@ function isQuietTime(now = new Date()) {
   return hour >= QUIET_FROM_HOUR || hour < QUIET_UNTIL_HOUR;
 }
 
-module.exports = { DEFAULTS, REMINDER_HOURS, resolve, validatePatch, isQuietTime };
+module.exports = {
+  DEFAULTS,
+  REMINDER_HOURS,
+  DUTY_REMINDER_HOURS,
+  resolve,
+  validatePatch,
+  isQuietTime,
+};

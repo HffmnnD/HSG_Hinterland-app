@@ -163,7 +163,7 @@ const uploadNewsImage = multer({
     parts: MAX_NEWS_IMAGES_PER_REQUEST + 12,
     fieldNameSize: 100,
     // 64 KB decken 5000 Zeichen auch in UTF-8 mit 4-Byte-Zeichen ab.
-    fieldSize: 64 * 1024,
+    fieldSize: 256 * 1024, // lange News-Texte
   },
 }).array(NEWS_IMAGE_FIELD, MAX_NEWS_IMAGES_PER_REQUEST);
 

@@ -16,28 +16,10 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        manifest: {
-          name: 'HSG Hinterland App',
-          short_name: 'HSG Hinterland',
-          description: 'Vereins-App der HSG Hinterland',
-          lang: 'de',
-          theme_color: '#2e2e2e',
-          background_color: '#ffffff',
-          display: 'standalone',
-          start_url: '/',
-          icons: [
-            {
-              src: 'favicon.svg',
-              sizes: 'any',
-              type: 'image/svg+xml',
-              purpose: 'any maskable',
-            },
-            // PNG-Fassungen: Android und iOS brauchen sie für das Symbol auf
-            // dem Home-Bildschirm und in Benachrichtigungen.
-            { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
-            { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
-          ],
-        },
+        // Das Manifest liefert das Backend (/api/branding/manifest.webmanifest),
+        // damit das in der Verwaltung hochgeladene Logo zum App-Symbol wird.
+        // Verlinkt in index.html.
+        manifest: false,
         workbox: {
           // API-Antworten niemals cachen – sonst liefert der Service Worker
           // veraltete Auth-/Rollendaten aus.

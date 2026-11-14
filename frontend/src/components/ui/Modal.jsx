@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+
+// Offene Dialoge, der oberste zuletzt. Liegt eine Rückfrage über einem
+// Dialog (z. B. „Wirklich löschen?" im Mitglieder-Dialog), schließt Escape
+// nur die Rückfrage – nicht beide auf einmal.
+const openStack = [];
 
 /**
  * Der Dialog der App – für Formulare („Neue Mannschaft anlegen"), Rückfragen
@@ -60,8 +66,10 @@ export default function Modal({
   useEffect(() => {
     if (!open) return undefined;
 
+    const token = {};
+    openStack.push(token);
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') onCloseRef.current();
+      if (event.key === 'Escape' && openStack[openStack.length - 1] === token) onCloseRef.current();
     };
     document.addEventListener('keydown', onKeyDown);
 
@@ -77,6 +85,7 @@ export default function Modal({
 
     return () => {
       document.removeEventListener('keydown', onKeyDown);
+      openStack.splice(openStack.indexOf(token), 1);
       document.body.style.overflow = previousOverflow;
     };
   }, [open]);
@@ -89,7 +98,9 @@ export default function Modal({
     lg: 'sm:max-w-2xl',
   }[size];
 
-  return (
+  // Per Portal direkt in <body>: So liegt eine Rückfrage, die aus einem
+  // offenen Dialog heraus kommt, sauber darüber und nicht in dessen Kasten.
+  return createPortal(
     <div
       className="modal-backdrop"
       // Nur ein Klick auf den Hintergrund selbst schließt; ein Klick im
@@ -119,6 +130,7 @@ export default function Modal({
 
         <div className="px-5 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

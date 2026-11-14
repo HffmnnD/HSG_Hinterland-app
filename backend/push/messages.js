@@ -90,7 +90,7 @@ function detailLine(event, iso = event.startTime) {
   return `${team}${timeOf(iso)} Uhr${place}`;
 }
 
-const eventUrl = () => '/kalender';
+const eventUrl = () => '/training';
 const eventTag = (event) => `event-${event.id}`;
 
 // --- Absagen und Änderungen ----------------------------------------------
@@ -362,6 +362,101 @@ function news(post) {
   };
 }
 
+// --- Vereinstermine und Freigaben -----------------------------------------------
+
+function clubEvent(event) {
+  return {
+    title: `Neuer Vereinstermin: ${event.title}`,
+    body: event.rsvpEnabled ? 'Bist du dabei? Sag kurz Bescheid.' : (event.location ?? 'Jetzt im Kalender.'),
+    url: '/verein',
+    tag: `club-event-${event.id}`,
+  };
+}
+
+function clubEventCancelled(event) {
+  return {
+    title: `Abgesagt: ${event.title}`,
+    body: event.cancelReason ?? 'Der Vereinstermin findet nicht statt.',
+    url: '/verein',
+    tag: `club-event-${event.id}`,
+  };
+}
+
+// --- Dienste --------------------------------------------------------------------
+
+const dutyUrl = () => '/dienste';
+
+/** „Sa 18.10." bzw. „Sa 18.10. – So 19.10." über alle Dienste eines Plans. */
+function dutyDays(duties) {
+  const days = [...new Set(duties.map((duty) => duty.startTime.slice(0, 10)))].sort();
+  if (days.length === 0) return '';
+  const first = shortDate(days[0]);
+  return days.length === 1 ? first : `${first} – ${shortDate(days[days.length - 1])}`;
+}
+
+function dutyPlanPublished(plan, duties, { added = false } = {}) {
+  const open = duties.reduce((sum, duty) => sum + duty.capacity, 0);
+  const when = dutyDays(duties);
+  return {
+    title: added
+      ? `Weitere Dienste: ${plan.title}`
+      : pick([`Neuer Dienstplan: ${plan.title}`, `Helfer gesucht: ${plan.title}`], plan.id),
+    body: `${when}${plan.location ? `, ${plan.location}` : ''}. ${
+      open === 1 ? 'Ein Platz' : `${open} Plätze`
+    } frei.`,
+    url: dutyUrl(),
+    tag: `duty-plan-${plan.id}`,
+  };
+}
+
+/** „Kuchenverkauf, Sa 18.10. 10:00" */
+const dutyLine = (duty, now) =>
+  `${duty.title} ${dayPhrase(duty.startTime, now)} um ${timeOf(duty.startTime)} Uhr`;
+
+function dutyChanged(before, after, now) {
+  return {
+    title: `Dein Dienst ist verschoben: ${after.title}`,
+    body: `Neu: ${capitalize(dayPhrase(after.startTime, now))}, ${timeOf(after.startTime)}–${timeOf(
+      after.endTime
+    )} Uhr (vorher ${shortDate(before.startTime)} ${timeOf(before.startTime)}).`,
+    url: dutyUrl(),
+    tag: `duty-${after.id}`,
+    urgent: true,
+  };
+}
+
+function dutyRemoved(duty, now) {
+  return {
+    title: `Dienst entfällt: ${duty.title}`,
+    body: `${capitalize(dutyLine(duty, now))} findet nicht statt.`,
+    url: dutyUrl(),
+    tag: `duty-${duty.id}`,
+    urgent: true,
+  };
+}
+
+function dutyUnassigned(duty, now) {
+  return {
+    title: 'Du bist ausgetragen',
+    body: `${capitalize(dutyLine(duty, now))}: Die Vereinsleitung hat dich ausgetragen.`,
+    url: dutyUrl(),
+    tag: `duty-${duty.id}`,
+  };
+}
+
+function dutyReminder(duty, now = new Date()) {
+  const minutes = Math.round((new Date(duty.startTime).getTime() - now.getTime()) / 60000);
+  return {
+    title: `${capitalize(dayPhrase(duty.startTime, now))} ${timeOf(duty.startTime)}: ${duty.title}`,
+    body: `Dein Dienst bei „${duty.planTitle}“${duty.location ? `, ${duty.location}` : ''}, bis ${timeOf(
+      duty.endTime
+    )} Uhr.`,
+    url: dutyUrl(),
+    tag: `duty-reminder-${duty.id}`,
+    ttl: Math.max(60, minutes * 60),
+  };
+}
+
 function test() {
   return {
     title: 'Push ist an',
@@ -372,6 +467,13 @@ function test() {
 }
 
 module.exports = {
+  clubEvent,
+  clubEventCancelled,
+  dutyPlanPublished,
+  dutyChanged,
+  dutyRemoved,
+  dutyUnassigned,
+  dutyReminder,
   dayPhrase,
   what,
   weekdayList,

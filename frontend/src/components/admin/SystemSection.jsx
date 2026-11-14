@@ -265,7 +265,7 @@ export default function SystemSection() {
                       <th>Bereich</th>
                       <th className="text-right">Anfragen</th>
                       <th className="text-right">Ø Zeit</th>
-                      <th className="text-right">Fehler</th>
+                      <th className="text-right" title="Serverfehler und abgewiesene Zugriffe (401, 403, 429). Fachliche Ablehnungen wie „Dienst schon voll“ zählen nicht.">Fehler</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -43,7 +43,7 @@ export default function TeamHero({ team, competition, season }) {
       )}
 
       <div className={`team-hero__body ${hasPhoto ? '' : 'sm:pt-10'}`}>
-        <h1 className="font-display text-2xl font-bold uppercase leading-tight tracking-[0.02em] text-white sm:text-3xl">
+        <h1 className="font-display text-2xl font-bold leading-tight tracking-[-0.01em] text-white sm:text-3xl">
           {team.name}
         </h1>
 

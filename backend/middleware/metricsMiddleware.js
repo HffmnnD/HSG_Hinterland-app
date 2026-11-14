@@ -11,6 +11,17 @@ const { countryOf } = require('../utils/geo');
 const ROUTE_DEPTH = 2;
 
 /**
+ * Erwartete Nicht-2xx-Antwort, die KEIN Betriebsfehler ist: Die App fragt beim
+ * Laden `GET /api/auth/me`, um zu sehen, ob eine Sitzung besteht. Ohne
+ * Anmeldung ist die Antwort 401 – gewollt, kein Fehler. Sonst würde jeder
+ * Seitenaufruf vor dem Login die Fehlerquote im Dashboard hochtreiben.
+ */
+function isExpectedResponse(method, path, statusCode) {
+  const clean = String(path || '').split('?')[0].replace(/\/+$/, '');
+  return method === 'GET' && clean === '/api/auth/me' && (statusCode === 401 || statusCode === 403);
+}
+
+/**
  * Grobe Routengruppe eines Pfades.
  *   '/api/teams/MJC/members/42' -> '/api/teams'
  *   '/api/uploads/news/a1b2.jpg' -> '/api/uploads'
@@ -39,11 +50,13 @@ function metricsMiddleware(req, res, next) {
     recorded = true;
 
     const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const url = req.originalUrl ?? req.url;
     metricsService.record({
       statusCode: res.statusCode,
       durationMs,
       country: countryOf(req),
-      route: routeGroup(req.originalUrl ?? req.url),
+      route: routeGroup(url),
+      expected: isExpectedResponse(req.method, url, res.statusCode),
     });
   };
 
@@ -53,4 +66,4 @@ function metricsMiddleware(req, res, next) {
   return next();
 }
 
-module.exports = { metricsMiddleware, routeGroup };
+module.exports = { metricsMiddleware, routeGroup, isExpectedResponse };

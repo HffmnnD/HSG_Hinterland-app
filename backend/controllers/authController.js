@@ -14,11 +14,10 @@ const {
   cookieOptions,
 } = require('../config/auth');
 const userRepository = require('../repositories/userRepository');
+const familyRepository = require('../family/repository');
+const family = require('../family/routes');
+const accessService = require('../access/service');
 const appEvents = require('../services/appEvents');
-const {
-  isTokenCurrent,
-  SESSION_ENDED_MESSAGE,
-} = require('../middleware/authMiddleware');
 const {
   validateRegistration,
   validateTheme,
@@ -31,6 +30,7 @@ const {
   userPhotoPathFor,
   hasValidImageSignature,
   removeUpload,
+  publicUrlFor,
 } = require('../config/uploads');
 
 // Nach der Registrierung ist das Konto sofort aktiv UND angemeldet: Der
@@ -89,6 +89,29 @@ async function register(req, res, next) {
     }
 
     const passwordHash = await bcrypt.hash(input.account.password, SALT_ROUNDS);
+
+    // Mit Familiencode: Das Kind übernimmt das Profil, das seine Eltern
+    // angelegt haben – samt Mannschaften, Zusagen und Eltern-Verknüpfung.
+    if (req.body?.familyCode !== undefined && req.body.familyCode !== '') {
+      const code = family.normalizeCode(req.body.familyCode);
+      if (code.length !== family.CODE_LENGTH) {
+        return res.status(400).json({ message: 'Bitte den 8-stelligen Code deiner Eltern eingeben.' });
+      }
+      const childId = await familyRepository.claimInvite(code, {
+        ...input.account,
+        passwordHash,
+      });
+      if (!childId) {
+        return res.status(404).json({ message: 'Der Code ist ungültig oder abgelaufen. Bitte deine Eltern um einen neuen.' });
+      }
+      accessService.invalidate(childId);
+      const claimed = await userRepository.findById(childId);
+      setSessionCookie(res, claimed);
+      return res.status(201).json({
+        message: `Willkommen, ${claimed.first_name}! Dein Profil gehört jetzt dir.`,
+        user: await userRepository.buildProfile(claimed),
+      });
+    }
 
     const account = await userRepository.createAccount({
       firstName: input.account.firstName,
@@ -167,26 +190,28 @@ function logout(req, res) {
 }
 
 // GET /api/auth/me  (hinter authenticate)
+//
+// Sperre, Sitzungsgrenze und gelöschte Konten fängt bereits authenticate ab
+// (und entwertet dabei das Cookie). Handeln Eltern gerade als Kind, kommt das
+// Profil des Kindes zurück – mit dem Hinweis, wer eigentlich angemeldet ist.
 async function me(req, res, next) {
   try {
-    const user = await userRepository.findById(req.userId);
-
-    if (!user) {
-      clearSessionCookie(res); // Konto gelöscht -> Cookie entwerten
+    const profile = await userRepository.getFullProfile(req.userId);
+    if (!profile) {
+      clearSessionCookie(res);
       return res.status(401).json({ message: 'Benutzer nicht gefunden.' });
     }
-    // Seit dem Passwortwechsel ausgestellte Tokens sind die einzigen, die noch
-    // gelten – diese Sitzung stammt von vorher.
-    if (!isTokenCurrent(user, req.tokenIssuedAt)) {
-      clearSessionCookie(res);
-      return res.status(401).json({ message: SESSION_ENDED_MESSAGE });
+    if (req.actingAs) {
+      // Wer wirklich angemeldet ist – fürs Hinweisband und den Kind-Wechsler.
+      const actor = await userRepository.findById(req.actorId);
+      profile.actingAs = {
+        actorId: req.actorId,
+        actorName: req.actorAccess.name,
+        actorFirstName: actor?.first_name ?? null,
+        actorLastName: actor?.last_name ?? null,
+        actorPhotoUrl: publicUrlFor(actor?.photo_path),
+      };
     }
-    if (!user.is_approved) {
-      clearSessionCookie(res); // nachträglich gesperrt -> Sitzung beenden
-      return res.status(403).json({ message: ACCOUNT_LOCKED_MESSAGE });
-    }
-
-    const profile = await userRepository.buildProfile(user);
     return res.json({ user: profile });
   } catch (err) {
     return next(err);
@@ -208,7 +233,7 @@ async function respondWithProfile(res, userId, message, status = 200) {
 }
 
 // POST /api/auth/me/onboarding
-//   Body: { theme?, teams?: [{ teamId, relationType }] }
+//   Body: { theme?, phone?, teams?: [{ teamId, relationType }] }
 //
 // Abschluss des Assistenten beim ersten Login. Idempotent: ein zweiter Aufruf
 // überschreibt die Angaben, statt einen Fehler zu werfen – ein doppelt
@@ -241,7 +266,7 @@ async function completeOnboarding(req, res, next) {
 }
 
 // PATCH /api/auth/me/preferences
-//   Body: { theme?, phone?, teams?: [{ teamId, relationType }] }
+//   Body: { theme?, phone?, firstName?, lastName?, teams?: [{ teamId, relationType }] }
 //
 // Dieselben Angaben wie im Onboarding, später unter „Mein Konto" änderbar.
 // `teams` ist die VOLLSTÄNDIGE neue Wahl – nicht mitgeschickt heißt
@@ -249,14 +274,32 @@ async function completeOnboarding(req, res, next) {
 // `phone: ''` oder `null` löscht die Telefonnummer.
 async function updatePreferences(req, res, next) {
   try {
-    const { theme, phone, teams } = req.body || {};
-    if (theme === undefined && phone === undefined && teams === undefined) {
+    const { theme, phone, teams, firstName, lastName } = req.body || {};
+    if (
+      theme === undefined &&
+      phone === undefined &&
+      teams === undefined &&
+      firstName === undefined &&
+      lastName === undefined
+    ) {
       return res.status(400).json({
-        message: 'Keine Änderungen übergeben (theme, phone oder teams).',
+        message: 'Keine Änderungen übergeben (theme, phone, teams, firstName oder lastName).',
       });
     }
 
     const patch = {};
+
+    // Eigener Vor- und Nachname (Mein Konto → Profil).
+    for (const [key, value] of [['firstName', firstName], ['lastName', lastName]]) {
+      if (value === undefined) continue;
+      const clean = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+      if (clean.length === 0 || clean.length > 100) {
+        return res.status(400).json({
+          message: key === 'firstName' ? 'Bitte einen Vornamen angeben (höchstens 100 Zeichen).' : 'Bitte einen Nachnamen angeben (höchstens 100 Zeichen).',
+        });
+      }
+      patch[key] = clean;
+    }
 
     if (theme !== undefined) {
       const themeCheck = validateTheme(theme);
@@ -285,6 +328,9 @@ async function updatePreferences(req, res, next) {
     }
 
     await userRepository.updateOwnPreferences(req.userId, patch);
+    if (patch.firstName || patch.lastName) {
+      require('../access/service').invalidate(req.userId);
+    }
     if (patch.relations) {
       appEvents.publish('membership.changed', { userId: req.userId });
     }

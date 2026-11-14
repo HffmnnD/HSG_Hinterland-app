@@ -43,7 +43,10 @@ const PAGES = {
 const TTL = {
   table: toInt(process.env.HANDBALL_TTL_TABLE, 900), // 15 Minuten
   schedule: toInt(process.env.HANDBALL_TTL_SCHEDULE, 900), // 15 Minuten
-  tickerLive: toInt(process.env.HANDBALL_TTL_TICKER_LIVE, 10), // 10 Sekunden
+  // Laufendes Spiel: 2 s. Das ist die Obergrenze, wie alt ein Ticker sein
+  // darf, wenn der nuScoreLive-Push NICHT läuft. Mit Push wird der Eintrag
+  // bei jeder neuen Aktion sofort verworfen (siehe handballService).
+  tickerLive: toInt(process.env.HANDBALL_TTL_TICKER_LIVE, 2), // 2 Sekunden
   tickerIdle: toInt(process.env.HANDBALL_TTL_TICKER_IDLE, 600), // 10 Minuten
 };
 
@@ -157,7 +160,73 @@ function meetingReportUrl({ meeting, championship, group }) {
   return buildUrl('meetingReport', { meeting, championship, group });
 }
 
+// ------------------------------------------------------------ nuScoreLive ---
+//
+// Der Live-Ticker des Verbands (https://hbde-live.liga.nu/nuScoreLive/) hat –
+// anders als das nuLiga-Portal – eine JSON-Schnittstelle. Wichtig: Gruppen-
+// und Spiel-IDs sind DIESELBEN Nummern wie nuLigas `group` und `meeting`.
+// Damit funktioniert der Live-Ticker automatisch für jede Mannschaft, deren
+// nuLiga-Nummer (teamtable) in der App hinterlegt ist – ohne weitere Angaben.
+//
+// Endpunkte (Basis + Pfad):
+//   meetings/<group>/time/<t>   Spiele der Staffel rund um heute
+//   meeting/<meeting>/time/<t>  ein Spiel (Stand, live, Halbzeit)
+//   events/<meeting>            Spielverlauf (Tore, Strafen, Auszeiten …)
+//   players/<meeting>/time/<t>  Spieler mit Trikotnummern
+// <t> = Unix-Sekunden, auf 15 abgerundet (Cache-Schlüssel des Verbands).
+const NUSCORE_ENABLED = process.env.NUSCORE_ENABLED !== 'false';
+const NUSCORE_BASE_URL = (
+  process.env.NUSCORE_BASE_URL || 'https://hbde-live.liga.nu/nuScoreLiveRestBackend/api/1'
+).replace(/\/+$/, '');
+
+/** Zeitstempel-Abschnitt der nuScoreLive-URLs (alle 15 s ein neuer Wert). */
+function nuScoreTimeSlot(now = Date.now()) {
+  const seconds = Math.floor(now / 1000);
+  return seconds - (seconds % 15);
+}
+
+/** Absolute nuScoreLive-URL. Alle Teile werden vorher als Zahl geprüft. */
+function nuScoreUrl(kind, id, { timed = true } = {}) {
+  if (!/^\d{1,12}$/.test(String(id))) throw new Error(`Ungültige nuScoreLive-ID: ${id}`);
+  const suffix = timed ? `/time/${nuScoreTimeSlot()}` : '';
+  return `${NUSCORE_BASE_URL}/${kind}/${id}${suffix}`;
+}
+
+const nuScoreGroupMeetingsUrl = (group) => nuScoreUrl('meetings', group);
+const nuScoreMeetingUrl = (meeting) => nuScoreUrl('meeting', meeting);
+// Spielverlauf: IMMER mit Versionskennung abrufen, wenn sie bekannt ist. Beide
+// events-URLs cacht das CDN des Verbands bis zu einer Stunde (max-age=3600) –
+// die versionierte URL ändert sich aber mit jeder neuen Aktion und ist damit
+// stets aktuell (so macht es auch der offizielle Web-Ticker). Die Version
+// kommt aus meeting/<id>/time/<t>, das nur 15 s gecacht wird.
+const VERSION_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const nuScoreEventsUrl = (meeting, versionUid = null) => {
+  const base = nuScoreUrl('events', meeting, { timed: false });
+  return versionUid && VERSION_PATTERN.test(versionUid) ? `${base}/versions/${versionUid}` : base;
+};
+const nuScorePlayersUrl = (meeting) => nuScoreUrl('players', meeting);
+const nuScoreOfficialsUrl = (meeting) => nuScoreUrl('officials', meeting);
+const nuScoreFedOfficialsUrl = (meeting) => nuScoreUrl('fedOfficials', meeting);
+
+// Push-Kanal von nuScoreLive: einfache JSON-Nachrichten (kein STOMP). Man
+// meldet `{"meetingUuids":[…]}` an und bekommt jede neue Aktion sofort.
+// Abschalten mit NUSCORE_SOCKET_ENABLED=false -> reines REST-Polling.
+const NUSCORE_SOCKET_ENABLED = process.env.NUSCORE_SOCKET_ENABLED !== 'false';
+const NUSCORE_SOCKET_URL =
+  process.env.NUSCORE_SOCKET_URL || 'wss://hbde-live-websocket.liga.nu/nuScoreLive/socket/1';
+
 module.exports = {
+  NUSCORE_ENABLED,
+  NUSCORE_BASE_URL,
+  NUSCORE_SOCKET_ENABLED,
+  NUSCORE_SOCKET_URL,
+  nuScoreOfficialsUrl,
+  nuScoreFedOfficialsUrl,
+  nuScoreTimeSlot,
+  nuScoreGroupMeetingsUrl,
+  nuScoreMeetingUrl,
+  nuScoreEventsUrl,
+  nuScorePlayersUrl,
   BASE_URL,
   APP_PATH,
   PAGES,

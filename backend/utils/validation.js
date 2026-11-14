@@ -23,7 +23,9 @@ const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 72;
 // News: müssen zu den Spaltenbreiten in `news` passen (VARCHAR(150) / TEXT).
 const MAX_NEWS_TITLE_LENGTH = 150;
-const MAX_NEWS_CONTENT_LENGTH = 5000;
+// Praktisch unbegrenzt (MEDIUMTEXT seit Migration 035) – nur ein Schutz vor Missbrauch.
+const MAX_NEWS_CONTENT_LENGTH = 100000;
+const MAX_NEWS_SUBTITLE_LENGTH = 200;
 
 const fail = (message, status = 400) => ({ ok: false, status, message });
 
@@ -649,7 +651,7 @@ function validatePhotoFrame(body) {
  * @returns {{ ok:true, title:string, content:string } | { ok:false, ... }}
  */
 function validateNewsPost(body) {
-  const { title, content } = body || {};
+  const { title, content, subtitle } = body || {};
 
   if (typeof title !== 'string' || typeof content !== 'string') {
     return fail('title und content sind erforderlich.');
@@ -675,7 +677,12 @@ function validateNewsPost(body) {
     );
   }
 
-  return { ok: true, title: cleanTitle, content: cleanContent };
+  const cleanSubtitle = typeof subtitle === 'string' ? subtitle.trim() : '';
+  if (cleanSubtitle.length > MAX_NEWS_SUBTITLE_LENGTH) {
+    return fail(`Der Untertitel darf höchstens ${MAX_NEWS_SUBTITLE_LENGTH} Zeichen lang sein.`);
+  }
+
+  return { ok: true, title: cleanTitle, subtitle: cleanSubtitle || null, content: cleanContent };
 }
 
 /**
@@ -691,6 +698,7 @@ function validateNewsArchivePatch(body) {
 }
 
 module.exports = {
+  checkPassword,
   MAX_NEWS_TITLE_LENGTH,
   MAX_NEWS_CONTENT_LENGTH,
   MIN_JERSEY,

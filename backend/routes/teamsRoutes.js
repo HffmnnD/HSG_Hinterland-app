@@ -5,6 +5,7 @@ const {
   listTeams,
   getTeam,
   updateTeam,
+  updateTeamSettings,
   setTeamPhoto,
   setTeamPhotoFrame,
   deleteTeamPhoto,
@@ -14,8 +15,8 @@ const {
   updateMemberDetails,
   removeMember,
 } = require('../controllers/teamsController');
-const { authenticate, checkRole } = require('../middleware/authMiddleware');
-const { ROLES } = require('../utils/roles');
+const { getPlayerProfile } = require('../controllers/playerController');
+const { authenticate } = require('../middleware/authMiddleware');
 const { uploadTeamPhoto } = require('../config/uploads');
 
 const router = express.Router();
@@ -34,8 +35,8 @@ const photoLimiter = rateLimit({
   },
 });
 
-// Angemeldet, mit gültiger Rolle (checkRole liest sie frisch aus der DB).
-const requireAuth = [authenticate, checkRole(ROLES)];
+// Angemeldet; authenticate liest Sperre und Rechte bei jeder Anfrage frisch.
+const requireAuth = [authenticate];
 
 // Die Mannschaftsliste war früher öffentlich, weil das Registrierungsformular
 // sie ohne Anmeldung gebraucht hat. Das Formular fragt nur noch Name, E-Mail
@@ -50,6 +51,8 @@ router.get('/:code', requireAuth, getTeam);
 // Rollenprüfung auf admin/sub_admin macht der Controller – hier steht nur die
 // allgemeine Anmeldepflicht.
 router.patch('/:code', requireAuth, updateTeam);
+// Einstellungen der Mannschaft (Strafen, Teamplaner, Beitritt) – Trainer:innen
+router.patch('/:code/settings', requireAuth, updateTeamSettings);
 // Reihenfolge beachtet: erst bremsen, dann anmelden, DANN erst die Datei
 // entgegennehmen – so landet eine abgelehnte Anfrage gar nicht erst auf der
 // Platte.
@@ -64,6 +67,8 @@ router.post('/:code/members', requireAuth, addMember);
 router.post('/:code/members/:userId/confirm', requireAuth, confirmMember);
 // Kaderangaben: Rückennummer, Position, Bezeichnung im Betreuerstab.
 router.patch('/:code/members/:userId', requireAuth, updateMemberDetails);
+// Spieler-Ansicht: Trainingszeiten, nächste Termine, Beteiligung.
+router.get('/:code/members/:userId/profile', requireAuth, getPlayerProfile);
 router.delete('/:code/members/:userId', requireAuth, removeMember);
 
 module.exports = router;

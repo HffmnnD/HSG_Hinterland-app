@@ -7,8 +7,11 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "migrate": "node db/migrate.js",
+    "schema:dump": "node scripts/dump-schema.js",
     "uploads:sweep": "node scripts/sweep-uploads.js",
     "push:keys": "node push/generate-keys.js",
+    "stresstest": "node scripts/stresstest.js",
+    "loadtest": "node scripts/loadtest.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
