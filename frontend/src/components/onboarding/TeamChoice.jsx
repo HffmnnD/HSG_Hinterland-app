@@ -71,7 +71,7 @@ export default function TeamChoice({
                     {active && <Check size={13} strokeWidth={3} />}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate font-display text-sm font-bold uppercase tracking-[0.02em] text-ink">
+                    <span className="block truncate font-display text-sm font-bold tracking-[-0.01em] text-ink">
                       {team.name}
                     </span>
                     {meta && (

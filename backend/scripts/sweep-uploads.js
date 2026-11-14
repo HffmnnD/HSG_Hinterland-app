@@ -42,6 +42,28 @@ const REFERENCE_QUERIES = [
     label: 'Profilbilder',
     sql: 'SELECT photo_path AS path FROM users WHERE photo_path IS NOT NULL',
   },
+  {
+    // Seit Migration 022 (uploads/match-reports/). Fehlt diese Abfrage, hält
+    // der Lauf JEDEN hochgeladenen Spielbericht für verwaist.
+    label: 'Spielberichte',
+    sql: 'SELECT file_path AS path FROM match_report_files',
+  },
+  {
+    // Seit Migration 030 (uploads/library/): Dokumente unter Verein → Infos.
+    // Ohne diese Abfrage gälte jedes Dokument als verwaist.
+    label: 'Infothek',
+    sql: 'SELECT file_path AS path FROM library_files',
+  },
+  {
+    // Seit Migration 033 (uploads/news-files/): Dokumente und Videos an News.
+    label: 'News-Anhänge',
+    sql: 'SELECT file_path AS path FROM news_files',
+  },
+  {
+    // Seit Migration 035 (uploads/branding/): Logo, App-Symbol, Login-Bild.
+    label: 'App-Einstellungen',
+    sql: "SELECT setting_value AS path FROM app_settings WHERE setting_key IN ('branding_logo', 'branding_icon_192', 'branding_icon_512', 'branding_login_image')",
+  },
 ];
 
 async function main() {

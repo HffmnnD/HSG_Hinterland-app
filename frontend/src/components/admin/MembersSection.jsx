@@ -1,196 +1,96 @@
-import { useCallback, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { RotateCcw, SearchX, ShieldCheck, Users } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronRight, RotateCcw, SearchX, ShieldCheck, UserPlus, Users, UserX } from 'lucide-react';
 
-import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { useTeams } from '../../hooks/useTeams';
+import { useAccess } from '../../hooks/useAccess';
 import { useAdminUsers, useMemberStats } from '../../hooks/useAdminUsers';
-import { ADMIN_ROLES, ROLES, roleLabel } from '../../lib/roles';
-import { relationLabelPlural, serviceLabel } from '../../lib/participation';
+import { roleLabel } from '../../lib/roles';
 import { formatCount, formatNumber } from '../../lib/format';
-import TeamSelect from '../TeamSelect';
+import Avatar from '../ui/Avatar';
 import StatCard from '../ui/StatCard';
 import SearchField from './ui/SearchField';
 import Pagination from './ui/Pagination';
 import { EmptyState, ErrorNote, Loading } from './ui/Feedback';
+import MemberDialog from './MemberDialog';
 
-// Wie viele Zeilen eine Seite zeigt. 20 füllen einen Bildschirm, ohne dass
-// das Blättern zur Fleißarbeit wird.
-const PAGE_SIZE = 20;
+// 25 Einträge füllen am Handy gut zwei Bildschirme, am Desktop einen.
+const PAGE_SIZE = 25;
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'Status: alle' },
+  { value: '', label: 'Alle Konten' },
   { value: 'active', label: 'Nur aktive' },
   { value: 'inactive', label: 'Nur gesperrte' },
 ];
 
 /**
- * Mitgliederverwaltung: Kennzahlen, Suche, Filter, Tabelle, Seitenschaltung.
+ * Mitgliederverwaltung für große Vereine (1000+ Konten, viele davon reine
+ * Zuschauer:innen).
  *
- * Suche und Filter laufen im Backend (siehe hooks/useAdminUsers.js) – die
- * Tabelle bekommt immer nur die eine Seite, die sie anzeigt. Damit bleibt die
- * Seite auch bei mehreren tausend Konten so schnell wie bei zwanzig.
+ *   – Suche und Filter laufen im Backend, die Liste bekommt nur die eine Seite,
+ *     die sie zeigt.
+ *   – Eine Zeile je Person, am Handy wie am Desktop lesbar (keine breite
+ *     Tabelle mit Querscrollen). Bearbeitet wird im Detaildialog.
  */
 export default function MembersSection() {
   const { user: currentUser } = useAuth();
   const { teams: allTeams } = useTeams();
-
-  const actorRole = currentUser?.role;
-  // admin & sub_admin dürfen Rolle und Sperre ändern, Trainer:innen nicht.
-  const canManageAccounts = ADMIN_ROLES.includes(actorRole);
-  const isSubAdmin = actorRole === 'sub_admin';
-
-  // Trainer:innen ordnen nur in Mannschaften zu, die sie selbst trainieren –
-  // das Backend lehnt alles andere ab (siehe adminController.updateUser).
-  const editableTeams = canManageAccounts
-    ? allTeams
-    : allTeams.filter((team) =>
-        (currentUser?.teams ?? []).some(
-          (own) => own.id === team.id && own.relationType === 'coach' && own.isConfirmed
-        )
-      );
+  const { roles } = useAccess();
 
   const [search, setSearchValue] = useState('');
   const [role, setRoleValue] = useState('');
   const [status, setStatusValue] = useState('');
+  const [teamId, setTeamValue] = useState('');
+  const [teamless, setTeamlessValue] = useState(false);
   const [page, setPage] = useState(1);
-
-  // Jede Änderung an Suche oder Filter springt zurück auf Seite 1. Sonst
-  // landet man z. B. auf Seite 7 einer Ergebnisliste, die nur noch drei
-  // Seiten hat – die Tabelle wäre leer, obwohl es Treffer gibt.
-  const setSearch = (value) => {
-    setSearchValue(value);
-    setPage(1);
-  };
-  const setRole = (value) => {
-    setRoleValue(value);
-    setPage(1);
-  };
-  const setStatus = (value) => {
-    setStatusValue(value);
-    setPage(1);
-  };
-
-  // Zählt hoch, sobald eine Änderung gespeichert wurde -> die Kennzahlen im
-  // Kopf laden neu (eine Sperrung verschiebt aktiv/gesperrt).
+  const [openId, setOpenId] = useState(null);
   const [statsKey, setStatsKey] = useState(0);
 
-  const {
-    users,
-    total,
-    pageCount,
-    loading,
-    error,
-    setError,
-    setUsers,
-    reload,
-  } = useAdminUsers({ search, role, status, page, pageSize: PAGE_SIZE });
+  // Jede Änderung an Suche oder Filter springt zurück auf Seite 1.
+  const withReset = (setter) => (value) => {
+    setter(value);
+    setPage(1);
+  };
+  const setSearch = withReset(setSearchValue);
+  const setRole = withReset(setRoleValue);
+  const setStatus = withReset(setStatusValue);
+  const setTeam = withReset(setTeamValue);
+  const setTeamless = withReset(setTeamlessValue);
 
+  const { users, total, pageCount, loading, error, reload } = useAdminUsers({
+    search,
+    role,
+    status,
+    teamId,
+    teamless,
+    page,
+    pageSize: PAGE_SIZE,
+  });
   const { stats } = useMemberStats(statsKey);
 
-  // Mehrere Zeilen können gleichzeitig gespeichert werden.
-  const [savingIds, setSavingIds] = useState(() => new Set());
-
-  const setSaving = useCallback((id, isSaving) => {
-    setSavingIds((prev) => {
-      const next = new Set(prev);
-      if (isSaving) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }, []);
-
-  /**
-   * Gemeinsame PATCH-Logik mit optimistischem Update und Rollback.
-   *
-   * Der Rollback stellt gezielt die EINE betroffene Zeile wieder her, statt
-   * eine beim Aufruf gemachte Momentaufnahme der ganzen Liste zurückzuspielen.
-   * Werden zwei Zeilen kurz nacheinander bearbeitet und die zweite schlägt
-   * fehl, hätte die Momentaufnahme auch die erfolgreiche Änderung der ersten
-   * wieder verworfen – sichtbar, bis `reload()` durch ist.
-   */
-  const patchUser = async (id, body, optimistic) => {
-    const before = users.find((u) => u.id === id);
-    setSaving(id, true);
-    setError(null);
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...optimistic } : u)));
-
-    try {
-      await apiFetch(`/api/admin/users/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      });
-      setStatsKey((key) => key + 1);
-    } catch (err) {
-      if (before) {
-        setUsers((prev) => prev.map((u) => (u.id === id ? before : u)));
-      }
-      setError(err.message);
-      reload();
-    } finally {
-      setSaving(id, false);
-    }
-  };
-
-  const changeRole = (id, nextRole) => patchUser(id, { role: nextRole }, { role: nextRole });
-  const setApproved = (id, isApproved) => patchUser(id, { isApproved }, { isApproved });
-
-  // Die Chips steuern die Spieler-Zuordnung; Trainer-/Fan-Beziehungen werden
-  // auf der Mannschaftsseite gepflegt und bleiben hier unverändert.
-  const togglePlayerTeam = (userId, teamId) => {
-    const target = users.find((u) => u.id === userId);
-    const teams = target?.teams ?? [];
-    const playerIds = teams.filter((t) => t.relationType === 'player').map((t) => t.id);
-    const nextIds = playerIds.includes(teamId)
-      ? playerIds.filter((x) => x !== teamId)
-      : [...playerIds, teamId];
-
-    const nextTeams = [
-      ...teams.filter((t) => t.relationType !== 'player'),
-      ...nextIds
-        .map((tid) => allTeams.find((t) => t.id === tid))
-        .filter(Boolean)
-        .map((t) => ({ ...t, relationType: 'player' })),
-    ];
-
-    patchUser(userId, { teamIds: nextIds }, { teams: nextTeams });
-  };
-
-  // Sub-Admins dürfen Admin-Konten nicht bearbeiten (das Backend blockt es
-  // ebenfalls – hier nur, damit die UI es gar nicht erst anbietet).
-  const isLockedRow = (user) => isSubAdmin && user.role === 'admin';
-
-  // Sub-Admins dürfen die Rolle „Admin" nicht vergeben.
-  const assignableRoles = isSubAdmin ? ROLES.filter((r) => r !== 'admin') : ROLES;
-
-  const hasFilters = Boolean(search.trim() || role || status);
-
+  const hasFilters = Boolean(search.trim() || role || status || teamId || teamless);
   const resetFilters = () => {
     setSearchValue('');
     setRoleValue('');
     setStatusValue('');
+    setTeamValue('');
+    setTeamlessValue(false);
     setPage(1);
   };
 
+  const openUser = users.find((u) => u.id === openId) ?? null;
+
   return (
     <div className="space-y-5">
-      {/* Kennzahlen des gesamten Vereins – unabhängig von den Filtern.
-          Aktiv/Gesperrt stehen bewusst NICHT hier: der Status jedes Kontos ist
-          in der Tabelle abzulesen und über den Status-Filter in einem Klick zu
-          haben. Zwei Karten dafür wären doppelte Buchführung. */}
-      <div className="grid grid-cols-2 gap-3">
-        <StatCard
-          icon={Users}
-          label="Mitglieder"
-          value={formatNumber(stats?.total ?? total)}
-          hint={`+${formatNumber(stats?.recent ?? 0)} in 30 Tagen`}
-        />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard icon={Users} label="Mitglieder" value={formatNumber(stats?.total ?? total)} />
+        <StatCard icon={UserPlus} label="Neu (30 Tage)" value={formatNumber(stats?.recent ?? 0)} />
         <StatCard
           icon={ShieldCheck}
-          label="Verwaltung"
+          label="Verwaltung & Trainer"
           value={formatNumber(countRoles(stats, ['admin', 'sub_admin', 'trainer']))}
         />
+        <StatCard icon={UserX} label="Gesperrt" value={formatNumber(stats?.inactive ?? 0)} />
       </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -198,13 +98,10 @@ export default function MembersSection() {
       <section className="panel">
         <div className="panel__header">
           <h2 className="section-title text-base">Mitglieder</h2>
-          <span className="badge badge-neutral">
-            {formatCount(total, 'Treffer', 'Treffer')}
-          </span>
+          <span className="badge badge-neutral">{formatCount(total, 'Treffer', 'Treffer')}</span>
         </div>
 
-        {/* Werkzeugleiste: Suche + zwei Dropdown-Filter */}
-        <div className="panel__toolbar">
+        <div className="space-y-2 border-b border-line bg-surface/70 px-4 py-3 sm:px-5">
           <SearchField
             id="member-search"
             label="Mitglieder durchsuchen"
@@ -212,50 +109,44 @@ export default function MembersSection() {
             onChange={setSearch}
             placeholder="Name, E-Mail oder Mitgliedsnummer …"
           />
-
-          <div className="flex shrink-0 gap-2">
-            <label htmlFor="member-role" className="sr-only">
-              Nach Rolle filtern
-            </label>
-            <select
-              id="member-role"
-              className="field-control-sm"
-              value={role}
-              onChange={(event) => setRole(event.target.value)}
-            >
-              <option value="">Rolle: alle</option>
-              {ROLES.map((value) => (
-                <option key={value} value={value}>
-                  {roleLabel(value)}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <FilterSelect id="member-role" label="Nach Rolle filtern" value={role} onChange={setRole}>
+              <option value="">Alle Rollen</option>
+              {roles.map((entry) => (
+                <option key={entry.key} value={entry.key}>
+                  {entry.name}
                 </option>
               ))}
-            </select>
-
-            <label htmlFor="member-status" className="sr-only">
-              Nach Status filtern
-            </label>
-            <select
-              id="member-status"
-              className="field-control-sm"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-            >
+            </FilterSelect>
+            <FilterSelect id="member-team" label="Nach Mannschaft filtern" value={teamId} onChange={setTeam}>
+              <option value="">Alle Mannschaften</option>
+              {allTeams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </FilterSelect>
+            <FilterSelect id="member-status" label="Nach Status filtern" value={status} onChange={setStatus}>
               {STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
-
+            </FilterSelect>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={teamless}
+              onClick={() => setTeamless(!teamless)}
+              className={`chip chip-sm ${teamless ? 'chip-active' : ''}`}
+              title="Nur Personen ohne Spieler- oder Trainerzuordnung, z. B. Zuschauer:innen"
+            >
+              Ohne Mannschaft
+            </button>
             {hasFilters && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="pagination__btn"
-                title="Suche und Filter zurücksetzen"
-              >
+              <button type="button" onClick={resetFilters} className="pagination__btn col-span-2 sm:col-span-1">
                 <RotateCcw size={14} aria-hidden="true" />
-                <span className="hidden sm:inline">Zurücksetzen</span>
+                Zurücksetzen
               </button>
             )}
           </div>
@@ -264,10 +155,7 @@ export default function MembersSection() {
         {loading ? (
           <Loading>Mitglieder werden geladen …</Loading>
         ) : users.length === 0 ? (
-          <EmptyState
-            icon={hasFilters ? SearchX : Users}
-            title={hasFilters ? 'Keine Treffer' : 'Noch keine Mitglieder'}
-          >
+          <EmptyState icon={hasFilters ? SearchX : Users} title={hasFilters ? 'Keine Treffer' : 'Noch keine Mitglieder'}>
             {hasFilters && (
               <button type="button" onClick={resetFilters} className="btn btn-outline btn-sm mt-2">
                 Filter zurücksetzen
@@ -276,39 +164,18 @@ export default function MembersSection() {
           </EmptyState>
         ) : (
           <>
-            <div className="w-full overflow-x-auto">
-              <table className="data-table min-w-[1120px]">
-                <thead>
-                  <tr>
-                    <th>Nr.</th>
-                    <th>Name</th>
-                    {canManageAccounts && <th>E-Mail</th>}
-                    <th>Rolle</th>
-                    <th>Mannschaften (Spieler)</th>
-                    <th>Weitere</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => (
-                    <MemberRow
-                      key={u.id}
-                      user={u}
-                      allTeams={editableTeams}
-                      isSelf={u.id === currentUser?.id}
-                      busy={savingIds.has(u.id)}
-                      locked={isLockedRow(u)}
-                      canManageAccounts={canManageAccounts}
-                      assignableRoles={assignableRoles}
-                      onChangeRole={changeRole}
-                      onSetApproved={setApproved}
-                      onToggleTeam={togglePlayerTeam}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
+            <ul className="divide-y divide-line">
+              {users.map((member) => (
+                <li key={member.id}>
+                  <MemberRow
+                    member={member}
+                    roles={roles}
+                    isSelf={member.id === currentUser?.id}
+                    onOpen={() => setOpenId(member.id)}
+                  />
+                </li>
+              ))}
+            </ul>
             <Pagination
               page={page}
               pageCount={pageCount}
@@ -320,190 +187,82 @@ export default function MembersSection() {
           </>
         )}
       </section>
+
+      {openUser && (
+        <MemberDialog
+          key={openUser.id}
+          member={openUser}
+          roles={roles}
+          allTeams={allTeams}
+          onClose={() => setOpenId(null)}
+          onChanged={() => {
+            reload();
+            setStatsKey((key) => key + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/** Summe mehrerer Rollen aus den Kennzahlen. */
-function countRoles(stats, roles) {
-  if (!stats?.byRole) return 0;
-  return stats.byRole
-    .filter((entry) => roles.includes(entry.role))
-    .reduce((sum, entry) => sum + entry.count, 0);
+function FilterSelect({ id, label, value, onChange, children }) {
+  return (
+    <>
+      <label htmlFor={id} className="sr-only">
+        {label}
+      </label>
+      <select id={id} className="field-control-sm w-full sm:w-auto" value={value} onChange={(e) => onChange(e.target.value)}>
+        {children}
+      </select>
+    </>
+  );
 }
 
-/**
- * Eine Tabellenzeile. Eigene Komponente, damit die Tabelle lesbar bleibt –
- * und damit React beim Tippen in der Suche nur die Zeilen neu zeichnet, die
- * sich tatsächlich geändert haben.
- */
-function MemberRow({
-  user,
-  allTeams,
-  isSelf,
-  busy,
-  locked,
-  canManageAccounts,
-  assignableRoles,
-  onChangeRole,
-  onSetApproved,
-  onToggleTeam,
-}) {
-  const teams = user.teams ?? [];
-  const playerTeamIds = teams.filter((t) => t.relationType === 'player').map((t) => t.id);
-  // Nur Trainer:innen-Zuordnungen. Die fan-Zuordnung steht hier BEWUSST nicht:
-  // Sie steuert lediglich, wessen Spieltermine jemand angezeigt bekommt, und
-  // ist für die Verwaltung eines Kontos ohne Bedeutung.
-  const otherRelations = ['coach']
-    .map((relation) => ({
-      relation,
-      entries: teams.filter((t) => t.relationType === relation),
-    }))
-    .filter((group) => group.entries.length > 0);
+function countRoles(stats, roleKeys) {
+  if (!stats?.byRole) return 0;
+  return stats.byRole.filter((entry) => roleKeys.includes(entry.role)).reduce((sum, entry) => sum + entry.count, 0);
+}
+
+/** Eine Person in der Liste: Bild, Name, Rollen, Mannschaften, Status. */
+function MemberRow({ member, roles, isSelf, onOpen }) {
+  const squad = (member.teams ?? []).filter((t) => t.relationType !== 'fan');
+  const extra = member.extraRoles ?? [];
 
   return (
-    <tr>
-      {/* Die Mitgliedsnummer ist die Konto-ID – sie ist eindeutig, ändert sich
-          nie und ist genau das, wonach in der Suche gesucht werden kann. */}
-      <td className="tabular-nums text-ink-muted">{user.id}</td>
-
-      <td className="whitespace-nowrap">
-        <span className="font-bold text-ink">
-          {user.firstName} {user.lastName}
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface sm:px-5"
+    >
+      <Avatar person={member} size="sm" />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="truncate font-bold text-ink">
+            {member.firstName} {member.lastName}
+          </span>
+          {isSelf && <span className="text-xs text-ink-muted">(du)</span>}
+          {!member.isApproved && <span className="badge badge-declined">Gesperrt</span>}
         </span>
-        {isSelf && <span className="ml-2 text-xs text-ink-muted">(du)</span>}
-        {locked && (
-          <span
-            className="badge badge-neutral ml-2"
-            title="Admin-Konten sind für Sub-Admins gesperrt."
-          >
-            gesperrt
-          </span>
-        )}
-      </td>
-
-      {canManageAccounts && (
-        <td className="whitespace-nowrap text-ink-muted">{user.email}</td>
-      )}
-
-      <td>
-        {canManageAccounts ? (
-          <select
-            value={user.role}
-            disabled={busy || isSelf || locked}
-            onChange={(event) => onChangeRole(user.id, event.target.value)}
-            className="field-control-sm"
-            aria-label={`Rolle von ${user.firstName} ${user.lastName}`}
-            title={
-              locked
-                ? 'Sub-Admins dürfen Admin-Konten nicht bearbeiten.'
-                : isSelf
-                  ? 'Die eigene Rolle kann hier nicht geändert werden.'
-                  : undefined
-            }
-          >
-            {/* Aktuelle Rolle immer anzeigen, auch wenn sie nicht vergeben
-                werden darf. */}
-            {(assignableRoles.includes(user.role)
-              ? assignableRoles
-              : [user.role, ...assignableRoles]
-            ).map((r) => (
-              <option key={r} value={r}>
-                {roleLabel(r)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="text-ink-soft">{roleLabel(user.role)}</span>
-        )}
-      </td>
-
-      <td className="min-w-[18rem]">
-        <TeamSelect
-          teams={allTeams}
-          selectedIds={playerTeamIds}
-          onToggle={(teamId) => onToggleTeam(user.id, teamId)}
-          disabled={busy || locked}
-          size="sm"
-        />
-      </td>
-
-      <td>
-        {otherRelations.length === 0 && user.services.length === 0 ? (
-          <span className="text-xs text-ink-muted">—</span>
-        ) : (
-          <div className="space-y-1.5">
-            {otherRelations.map(({ relation, entries }) => (
-              <div key={relation} className="text-xs">
-                <span className="text-ink-muted">{relationLabelPlural(relation)}: </span>
-                {entries.map((t, i) => (
-                  <span key={t.id}>
-                    {i > 0 && ', '}
-                    <Link to={`/teams/${t.code}`} className="link">
-                      {t.name}
-                    </Link>
-                  </span>
-                ))}
-              </div>
-            ))}
-            {user.services.length > 0 && (
-              <div className="text-xs text-ink-muted">
-                Dienste:{' '}
-                <span className="text-ink-soft">
-                  {user.services.map(serviceLabel).join(', ')}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-      </td>
-
-      <td>
-        {user.isApproved ? (
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="status text-hsg-green-dark">
-              <span className="status-dot bg-hsg-green" />
-              Aktiv
+        <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+          <span className="tabular-nums">#{member.id}</span>
+          <span aria-hidden="true">·</span>
+          <span className="font-semibold text-ink-soft">{roleLabel(member.role, roles)}</span>
+          {extra.map((key) => (
+            <span key={key} className="tag text-[0.65rem]">
+              {roleLabel(key, roles)}
             </span>
-            {/* Sperren ist die Gegenrichtung zum Reaktivieren – ohne sie
-                führt der Weg nur in eine Richtung. Das eigene Konto und
-                Admin-Konten (für Sub-Admins) bleiben ausgenommen. */}
-            {canManageAccounts && !locked && !isSelf && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onSetApproved(user.id, false)}
-                className="btn btn-danger btn-sm"
-                title="Konto sperren – ein Login ist danach nicht mehr möglich."
-              >
-                {busy ? '…' : 'Sperren'}
-              </button>
-            )}
-          </div>
-        ) : canManageAccounts && !locked ? (
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="status text-danger">
-              <span className="status-dot bg-danger" />
-              Gesperrt
-            </span>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onSetApproved(user.id, true)}
-              className="btn btn-primary btn-sm"
-              title="Sperre aufheben – die Person kann sich danach wieder anmelden."
-            >
-              {busy ? '…' : 'Entsperren'}
-            </button>
-          </div>
-        ) : (
-          <span className="status text-danger">
-            <span className="status-dot bg-danger" />
-            Gesperrt
-          </span>
-        )}
-      </td>
-
-    </tr>
+          ))}
+          {squad.length > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">
+                {squad.map((t) => `${t.code}${t.relationType === 'coach' ? ' (T)' : ''}`).join(', ')}
+              </span>
+            </>
+          )}
+        </span>
+      </span>
+      <ChevronRight size={18} className="shrink-0 text-ink-muted" aria-hidden="true" />
+    </button>
   );
 }

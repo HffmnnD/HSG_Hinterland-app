@@ -28,6 +28,10 @@ const TEAM_FIELDS = [
   'photo_focus_y',
   'photo_zoom',
   'nuliga_sync_enabled',
+  // Einstellungen der Mannschaft (Migration 035)
+  'fines_enabled',
+  'planner_enabled',
+  'join_mode',
 ];
 
 // Reihenfolge im gesamten Frontend: interner Sortierschlüssel zuerst, bei
@@ -127,7 +131,35 @@ function mapTeam(row) {
     // Werden die Ligaspiele als Termine in den Kalender übernommen?
     nuligaSyncEnabled: Boolean(row.nuliga_sync_enabled),
     nuligaSyncedAt: row.nuliga_synced_at ?? null,
+    // Einstellungen der Trainer:innen (Migration 035)
+    finesEnabled: row.fines_enabled === undefined ? true : Boolean(row.fines_enabled),
+    plannerEnabled: row.planner_enabled === undefined ? true : Boolean(row.planner_enabled),
+    joinMode: row.join_mode === 'open' ? 'open' : 'approval',
   };
+}
+
+/**
+ * Einstellungen einer Mannschaft ändern (Trainer:in oder Verwaltung).
+ * @param {{ finesEnabled?:boolean, plannerEnabled?:boolean, joinMode?:'open'|'approval' }} settings
+ */
+async function updateSettings(teamId, settings, runner = pool) {
+  const sets = [];
+  const values = [];
+  if (settings.finesEnabled !== undefined) {
+    sets.push('fines_enabled = ?');
+    values.push(settings.finesEnabled ? 1 : 0);
+  }
+  if (settings.plannerEnabled !== undefined) {
+    sets.push('planner_enabled = ?');
+    values.push(settings.plannerEnabled ? 1 : 0);
+  }
+  if (settings.joinMode !== undefined) {
+    sets.push('join_mode = ?');
+    values.push(settings.joinMode);
+  }
+  if (sets.length === 0) return;
+  values.push(teamId);
+  await runner.query(`UPDATE teams SET ${sets.join(', ')} WHERE id = ?`, values);
 }
 
 // Beziehungstypen, die bei der Registrierung sofort als bestätigt gelten.
@@ -679,6 +711,13 @@ async function replaceSelfRelations(conn, userId, relations) {
       !existing.has(`${rel.teamId}:${rel.relationType}`)
   );
   if (additions.length > 0) {
+    // Mannschaften mit freiem Beitritt (join_mode = open) nehmen Spieler:innen
+    // sofort in den Kader auf. Trainer-Anfragen brauchen immer eine Bestätigung.
+    const [openRows] = await conn.query(
+      "SELECT id FROM teams WHERE id IN (?) AND join_mode = 'open'",
+      [additions.map((rel) => rel.teamId)]
+    );
+    const openTeams = new Set(openRows.map((row) => row.id));
     await conn.query(
       'INSERT INTO user_teams (user_id, team_id, relation_type, is_confirmed) VALUES ?',
       [
@@ -686,7 +725,9 @@ async function replaceSelfRelations(conn, userId, relations) {
           userId,
           rel.teamId,
           rel.relationType,
-          initialConfirmation(rel.relationType),
+          rel.relationType === 'player' && openTeams.has(rel.teamId)
+            ? 1
+            : initialConfirmation(rel.relationType),
         ]),
       ]
     );
@@ -734,6 +775,7 @@ module.exports = {
   POSITIONS,
   GENDERS,
   listAll,
+  updateSettings,
   listAllWithCounts,
   findByCode,
   findById,

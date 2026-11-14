@@ -30,12 +30,11 @@ const {
   createLongTerm,
   deleteLongTerm,
 } = require('../controllers/absencesController');
-const { authenticate, checkRole } = require('../middleware/authMiddleware');
-const { ROLES } = require('../utils/roles');
+const { importCsv } = require('../controllers/scheduleImportController');
+const { authenticate } = require('../middleware/authMiddleware');
 
-// checkRole(ROLES) liest Rolle und Sperrstatus frisch aus der Datenbank –
-// dieselbe Absicherung wie auf der Mannschaftsseite.
-const requireAuth = [authenticate, checkRole(ROLES)];
+// authenticate liest Rechte und Sperrstatus bei jeder Anfrage frisch.
+const requireAuth = [authenticate];
 
 // Eine Serie kann bis zu 400 Termine auf einmal anlegen. Das ist gewollt,
 // aber nichts, was jemand im Sekundentakt braucht – deshalb eine Bremse auf
@@ -64,6 +63,9 @@ eventsRouter.delete('/series/:id', writeLimiter, requireAuth, deleteSeries);
 
 // Vor '/:id', sonst wäre „nuliga" die Termin-ID.
 eventsRouter.post('/nuliga', writeLimiter, requireAuth, setNuligaSync);
+
+// Spielplan aus CSV übernehmen (Vorschau mit dryRun) – vor '/:id'.
+eventsRouter.post('/import-csv', writeLimiter, requireAuth, importCsv);
 
 eventsRouter.post('/', writeLimiter, requireAuth, createEvent);
 eventsRouter.put('/:id', writeLimiter, requireAuth, updateEvent);

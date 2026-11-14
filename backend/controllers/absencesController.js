@@ -12,6 +12,7 @@
 const attendanceRepository = require('../repositories/attendanceRepository');
 const teamRepository = require('../repositories/teamRepository');
 const teamAccess = require('../services/teamAccess');
+const { viewerOf } = require('../access/service');
 const { parseId } = require('../utils/validation');
 const { validateAbsence } = require('../utils/scheduleValidation');
 const { todaySqlDate } = require('../utils/schedule');
@@ -28,7 +29,7 @@ const TEAM_REQUIRED =
 // Übersicht „wer fehlt gerade längerfristig".
 async function listLongTerm(req, res, next) {
   try {
-    const viewer = { userId: req.userId, userRole: req.userRole };
+    const viewer = viewerOf(req);
     // Abgelaufene Einträge nur auf ausdrücklichen Wunsch – sonst wächst die
     // Liste mit jeder Saison, ohne dass sie jemand braucht.
     const fromDate = req.query.includePast === 'true' ? null : todaySqlDate();
@@ -71,7 +72,7 @@ async function createLongTerm(req, res, next) {
       return res.status(input.status).json({ message: input.message });
     }
 
-    const viewer = { userId: req.userId, userRole: req.userRole };
+    const viewer = viewerOf(req);
     const targetId =
       req.body?.userId === undefined || req.body?.userId === null
         ? req.userId
@@ -151,7 +152,7 @@ async function deleteLongTerm(req, res, next) {
         return res.status(403).json({ message: FOREIGN_ABSENCE });
       }
       const access = await teamAccess.requireManager(
-        { userId: req.userId, userRole: req.userRole },
+        viewerOf(req),
         absence.teamId,
         FOREIGN_ABSENCE
       );

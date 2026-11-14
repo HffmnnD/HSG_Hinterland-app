@@ -35,7 +35,7 @@ export default function NextGameCard({ game, hasLeague = true }) {
     <section className="card-accent">
       <p className="eyebrow">Nächstes Spiel</p>
 
-      <p className="mt-1.5 font-display text-xl font-bold uppercase leading-tight tracking-[0.02em] text-ink sm:text-2xl">
+      <p className="mt-1.5 font-display text-xl font-bold leading-tight tracking-[-0.01em] text-ink sm:text-2xl">
         {formatKickoff(game.startsAt)}
       </p>
 

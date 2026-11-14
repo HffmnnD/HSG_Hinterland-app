@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
-import { ADMIN_ROLES } from '../lib/roles';
 import AppLayout from './AppLayout';
 import { Loading } from './admin/ui/Feedback';
 
@@ -17,43 +16,67 @@ const MembersSection = lazy(() => import('./admin/MembersSection'));
 const NewsSection = lazy(() => import('./admin/NewsSection'));
 const TeamsSection = lazy(() => import('./admin/TeamsSection'));
 const SystemSection = lazy(() => import('./admin/SystemSection'));
+const RolesSection = lazy(() => import('./admin/RolesSection'));
+const BackupsSection = lazy(() => import('./admin/BackupsSection'));
+const BrandingSection = lazy(() => import('./admin/BrandingSection'));
 
 /**
  * Alle Bereiche der Verwaltung an EINER Stelle definiert – Reiterleiste und
  * Inhaltsauswahl speisen sich daraus. So kann kein Reiter auftauchen, zu dem
  * es keinen Bereich gibt (oder umgekehrt).
  *
- * `adminOnly` blendet einen Bereich für Trainer:innen aus. Das Backend lehnt
- * die zugehörigen Endpunkte ohnehin ab (siehe routes/adminRoutes.js) – hier
- * wird nur gar nicht erst etwas angeboten, das nicht geht.
+ * `permissions`: sichtbar mit mindestens einem dieser Rechte. Das Backend prüft
+ * jeden Endpunkt ohnehin selbst – hier wird nur nicht angeboten, was nicht geht.
  */
 const SECTIONS = [
   {
     key: 'mitglieder',
     label: 'Mitglieder',
     title: 'Mitgliederverwaltung',
+    permissions: ['members.view'],
     Component: MembersSection,
   },
   {
     key: 'news',
     label: 'News',
     title: 'News & Beiträge',
-    adminOnly: true,
+    permissions: ['news.manage'],
     Component: NewsSection,
   },
   {
     key: 'mannschaften',
     label: 'Mannschaften',
     title: 'Mannschaftsverwaltung',
-    adminOnly: true,
+    permissions: ['teams.create', 'teams.edit'],
     Component: TeamsSection,
   },
   {
     key: 'system',
     label: 'System-Status',
     title: 'System-Status',
-    adminOnly: true,
+    permissions: ['system.view'],
     Component: SystemSection,
+  },
+  {
+    key: 'rechte',
+    label: 'Rollen & Rechte',
+    title: 'Rollen & Rechte',
+    permissions: ['access.manage', 'members.roles'],
+    Component: RolesSection,
+  },
+  {
+    key: 'app',
+    label: 'App-Einstellungen',
+    title: 'App-Einstellungen',
+    permissions: ['settings.manage'],
+    Component: BrandingSection,
+  },
+  {
+    key: 'sicherungen',
+    label: 'Datensicherung',
+    title: 'Datensicherung',
+    permissions: ['backups.manage'],
+    Component: BackupsSection,
   },
 ];
 
@@ -77,14 +100,12 @@ const DEFAULT_SECTION = SECTIONS[0].key;
  * Erwartbare.
  */
 export default function AdminPage() {
-  const { user } = useAuth();
+  const { can } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const canManageAccounts = ADMIN_ROLES.includes(user?.role);
-
   const sections = useMemo(
-    () => SECTIONS.filter((section) => !section.adminOnly || canManageAccounts),
-    [canManageAccounts]
+    () => SECTIONS.filter((section) => can(...section.permissions)),
+    [can]
   );
 
   const requested = searchParams.get('bereich');

@@ -12,8 +12,7 @@ const {
   deleteProfilePhoto,
   changePassword,
 } = require('../controllers/authController');
-const { authenticate, checkRole } = require('../middleware/authMiddleware');
-const { ROLES } = require('../utils/roles');
+const { authenticate, forbidWhileActingAs } = require('../middleware/authMiddleware');
 const { uploadUserPhoto } = require('../config/uploads');
 
 const router = express.Router();
@@ -71,22 +70,36 @@ const passwordLimiter = rateLimit({
 });
 
 router.post('/register', registerLimiter, register);
-router.post('/login', loginLimiter, login);
+// Zusätzlich je Konto: Wer über viele IPs (Botnetz, Mobilfunk) dasselbe Konto
+// angreift, kommt am IP-Limit vorbei – an diesem nicht. Nur Fehlversuche zählen.
+const accountLoginLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) =>
+    typeof req.body?.email === 'string' ? `login:${req.body.email.trim().toLowerCase().slice(0, 255)}` : 'login:-',
+  message: {
+    message: 'Zu viele Fehlversuche für dieses Konto. Bitte in einer Stunde erneut versuchen oder einen Admin bitten, das Passwort neu zu setzen.',
+  },
+});
+
+router.post('/login', loginLimiter, accountLoginLimiter, login);
 router.post('/logout', logout);
 router.get('/me', authenticate, me);
 
 // Eigenes Konto: jede Rolle darf das eigene Design, die eigene
 // Mannschaftswahl und das eigene Passwort ändern.
 //
-// `checkRole(ROLES)` steht hier nicht wegen der Rolle, sondern weil es Rolle
-// UND Freigabe frisch aus der Datenbank liest: `authenticate` prüft nur das
-// Token, das sieben Tage gilt. Ohne diese Zeile könnte ein zwischenzeitlich
-// gesperrtes Konto mit seinem alten Cookie weiter Mannschaften beitreten.
-const requireActiveAccount = [authenticate, checkRole(ROLES)];
+// authenticate liest Sperre und Sitzungsgrenze bei jeder Anfrage frisch – ein
+// zwischenzeitlich gesperrtes Konto kommt mit seinem alten Cookie nicht weiter.
+const requireActiveAccount = [authenticate];
 
 router.post('/me/onboarding', requireActiveAccount, completeOnboarding);
 router.patch('/me/preferences', requireActiveAccount, updatePreferences);
-router.post('/me/password', passwordLimiter, requireActiveAccount, changePassword);
+// Das Passwort ändert nur, wer selbst angemeldet ist – nie Eltern im Kinderkonto.
+router.post('/me/password', passwordLimiter, requireActiveAccount, forbidWhileActingAs, changePassword);
 
 // Reihenfolge wie bei den Mannschaftsfotos: erst bremsen, dann anmelden, DANN
 // erst die Datei entgegennehmen – so landet eine abgelehnte Anfrage gar nicht

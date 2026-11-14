@@ -7,11 +7,12 @@
  * Profilbilder.
  *
  * @param {{ person: { firstName?:string, lastName?:string, photoUrl?:string|null },
- *           size?: 'sm'|'md'|'lg'|'xl',
+ *           size?: 'xs'|'sm'|'md'|'lg'|'xl',
  *           className?: string }} props
  */
 
 const SIZES = {
+  xs: 'h-6 w-6 text-[0.625rem]',
   sm: 'h-9 w-9 text-xs',
   md: 'h-11 w-11 text-sm',
   lg: 'h-12 w-12 text-base',

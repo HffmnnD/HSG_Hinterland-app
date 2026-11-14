@@ -47,6 +47,38 @@ async function sendToUsers(userIds, category, message, options = {}) {
   const ids = [...new Set(userIds)].filter((id) => id !== options.exclude);
   if (ids.length === 0) return 0;
 
+  // Eltern bekommen die Nachrichten ihrer Kinder mit – mit dem Namen des
+  // Kindes vorne, damit klar ist, um wen es geht. Wer selbst schon Empfänger
+  // ist, bekommt keine zweite Nachricht.
+  let delivered = 0;
+  if (!options.noParents) {
+    const families = await parentsOf(ids);
+    for (const { name, parents } of families.values()) {
+      const extra = parents.filter((id) => !ids.includes(id) && id !== options.exclude);
+      if (extra.length === 0) continue;
+      delivered += await sendToUsers(
+        extra,
+        category,
+        { ...message, title: `${name}: ${message.title}` },
+        { ...options, noParents: true }
+      );
+    }
+  }
+  return delivered + (await deliverAll(ids, category, message, options));
+}
+
+/** Eltern der Empfänger:innen (ohne Migration 020: niemand). */
+async function parentsOf(ids) {
+  try {
+    return await require('../family/repository').parentsOf(ids);
+  } catch (err) {
+    if (err.code === 'ER_NO_SUCH_TABLE') return new Map();
+    throw err;
+  }
+}
+
+async function deliverAll(ids, category, message, options) {
+
   const quiet = preferences.isQuietTime();
   const jobs = [];
   for (const target of await repository.listTargets(ids)) {

@@ -155,7 +155,7 @@ export default function PhotoFrameDialog({ code, team, onClose, onSaved }) {
             Wer das beim Ausrichten nicht sieht, schiebt die Köpfe genau
             dorthin. */}
         <div className="pointer-events-none absolute inset-0 flex items-end">
-          <p className="w-full truncate px-4 pb-3 font-display text-lg font-bold uppercase tracking-[0.02em] text-white">
+          <p className="w-full truncate px-4 pb-3 font-display text-lg font-bold tracking-[-0.01em] text-white">
             {team.name}
           </p>
         </div>

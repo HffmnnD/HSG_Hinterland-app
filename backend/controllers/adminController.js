@@ -1,21 +1,24 @@
 // Verwaltungs-Controller (/api/admin/*).
 //
 // Kein SQL in dieser Datei – Datenzugriff über userRepository, Eingabe-Prüfung
-// über utils/validation. Diese Datei enthält nur noch die Geschäftsregeln:
-//   - Rolle & Freigabe ändern:            admin, sub_admin
-//   - Dienste:                            admin, sub_admin
-//   - Spieler-Mannschaften:               zusätzlich trainer, aber nur in
-//                                         selbst trainierten Mannschaften
-//   - sub_admin darf admin-Konten NICHT bearbeiten und NICHT zum admin machen
-//   - niemand sperrt sich selbst aus; der letzte aktive admin bleibt erhalten
+// über utils/validation. Wer was darf, entscheiden Rechte (access/permissions.js)
+// und die Regeln gegen Rechte-Ausweitung (access/rules.js).
+const bcrypt = require('bcrypt');
+
+const { SALT_ROUNDS } = require('../config/auth');
 const userRepository = require('../repositories/userRepository');
 const teamRepository = require('../repositories/teamRepository');
 const {
   validateUserPatch,
   validateTeamCreate,
   parseId,
+  checkPassword,
 } = require('../utils/validation');
-const { ADMIN_ROLES, ROLES } = require('../utils/roles');
+const accessService = require('../access/service');
+const accessRepository = require('../access/repository');
+const rules = require('../access/rules');
+
+const { can } = accessService;
 const { publicUrlFor } = require('../config/uploads');
 
 // Seitengröße der Mitgliedertabelle. Der Client darf sie wählen, aber nur
@@ -35,7 +38,7 @@ function readNumber(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } 
   return Math.min(Math.max(number, min), max);
 }
 
-// GET /api/admin/users?search=&role=&status=&page=&pageSize=
+// GET /api/admin/users?search=&role=&status=&teamId=&teamless=&page=&pageSize=
 //
 // Seitenweise statt am Stück: die Verwaltung soll auch bei über tausend
 // Konten flüssig bleiben. Gefiltert wird in SQL (siehe
@@ -44,7 +47,7 @@ async function listUsers(req, res, next) {
   try {
     const { search, role, status } = req.query;
 
-    if (role !== undefined && role !== '' && !ROLES.includes(role)) {
+    if (role !== undefined && role !== '' && !/^[a-z][a-z0-9_]{1,39}$/.test(role)) {
       return res.status(400).json({ message: 'Ungültige Rolle im Filter.' });
     }
     if (status !== undefined && status !== '' && !['active', 'inactive'].includes(status)) {
@@ -52,11 +55,17 @@ async function listUsers(req, res, next) {
         .status(400)
         .json({ message: 'Ungültiger Status im Filter. Erlaubt: active, inactive.' });
     }
+    const teamId = req.query.teamId ? parseId(req.query.teamId) : undefined;
+    if (req.query.teamId && !teamId) {
+      return res.status(400).json({ message: 'Ungültige Mannschaft im Filter.' });
+    }
 
     const result = await userRepository.listPageWithProfiles({
       search: typeof search === 'string' ? search.trim().slice(0, MAX_SEARCH_LENGTH) : undefined,
       role: role || undefined,
       status: status || undefined,
+      teamId,
+      teamless: req.query.teamless === '1',
       page: readNumber(req.query.page, 1),
       pageSize: readNumber(req.query.pageSize, DEFAULT_PAGE_SIZE, {
         min: 1,
@@ -64,11 +73,17 @@ async function listUsers(req, res, next) {
       }),
     });
 
-    // Trainer:innen sehen hier den ganzen Verein, um Spieler:innen ihrer
-    // Mannschaft zuordnen zu können. E-Mail und Telefon aller Mitglieder
-    // brauchen sie dafür nicht; den Kontakt ihres eigenen Kaders bekommen sie
-    // auf der Mannschaftsseite (siehe teamRepository.mapMember).
-    if (!ADMIN_ROLES.includes(req.userRole)) {
+    // Zusatzrollen (Migration 019) für genau diese Seite nachladen.
+    try {
+      const extra = await accessRepository.getExtraRolesFor(result.users.map((u) => u.id));
+      result.users = result.users.map((u) => ({ ...u, extraRoles: extra.get(u.id) ?? [] }));
+    } catch (err) {
+      if (err.code !== 'ER_NO_SUCH_TABLE') throw err;
+    }
+
+    // Kontaktdaten aller Mitglieder nur mit eigenem Recht. Trainer:innen
+    // bekommen den Kontakt ihres Kaders auf der Mannschaftsseite.
+    if (!can(req, 'members.contact')) {
       result.users = result.users.map(withoutContact);
     }
 
@@ -110,6 +125,12 @@ async function getUserStats(req, res, next) {
 }
 
 // PATCH /api/admin/users/:id   Body: role?, isApproved?, teamIds?, services?
+//
+//   role        Grundrolle            -> members.roles (+ Regeln aus access/rules)
+//   isApproved  Sperre                -> members.lock
+//   services    Helferdienste         -> members.edit
+//   teamIds     Spieler-Mannschaften  -> members.edit, oder als Trainer:in nur
+//                                        in selbst trainierten Mannschaften
 async function updateUser(req, res, next) {
   try {
     const userId = parseId(req.params.id);
@@ -117,45 +138,30 @@ async function updateUser(req, res, next) {
       return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
     }
 
-    const actorRole = req.userRole;
-    const canManageAccounts = ADMIN_ROLES.includes(actorRole);
-    const isSubAdmin = actorRole === 'sub_admin';
-
-    const { role, isApproved } = req.body || {};
-
-    // Trainer:innen dürfen ausschliesslich Spieler-Mannschaften ändern.
-    if (
-      !canManageAccounts &&
-      (role !== undefined || isApproved !== undefined || req.body?.services !== undefined)
-    ) {
-      return res
-        .status(403)
-        .json({ message: 'Nur Admins dürfen Rolle, Freigabe oder Dienste ändern.' });
+    const body = req.body || {};
+    if (body.role !== undefined && !can(req, 'members.roles')) {
+      return res.status(403).json({ message: 'Dir fehlt das Recht „Rollen zuweisen“.' });
+    }
+    if (body.isApproved !== undefined && !can(req, 'members.lock')) {
+      return res.status(403).json({ message: 'Dir fehlt das Recht „Konten sperren“.' });
+    }
+    if (body.services !== undefined && !can(req, 'members.edit')) {
+      return res.status(403).json({ message: 'Dir fehlt das Recht „Mitglieder bearbeiten“.' });
     }
 
-    const patch = await validateUserPatch(req.body);
+    const patch = await validateUserPatch(body);
     if (!patch.ok) {
       return res.status(patch.status).json({ message: patch.message });
     }
 
-    // sub_admin darf die Rolle "admin" nicht vergeben.
-    if (isSubAdmin && patch.raw.role === 'admin') {
-      return res.status(403).json({
-        message:
-          'Sub-Admins dürfen die Rolle „Admin“ nicht vergeben. Bitte einen Admin beauftragen.',
-      });
-    }
-
-    const target = await userRepository.findById(userId);
+    const target = await accessService.getAccess(userId);
     if (!target) {
       return res.status(404).json({ message: 'Benutzer nicht gefunden.' });
     }
 
-    // sub_admin darf admin-Konten überhaupt nicht anfassen.
-    if (isSubAdmin && target.role === 'admin') {
-      return res
-        .status(403)
-        .json({ message: 'Sub-Admins dürfen Admin-Konten nicht bearbeiten.' });
+    const touchesAccount = patch.raw.role !== undefined || patch.raw.isApproved !== undefined;
+    if (touchesAccount && !rules.canTouchTarget(req.access, target)) {
+      return res.status(403).json({ message: 'Admin-Konten bearbeitet nur ein Admin.' });
     }
 
     // Selbst-Aussperrung verhindern.
@@ -172,23 +178,38 @@ async function updateUser(req, res, next) {
         .json({ message: 'Die eigene Freigabe kann nicht entzogen werden.' });
     }
 
-    // Es muss immer mindestens ein aktiver Admin übrig bleiben.
-    const losesAdmin =
-      (patch.raw.role !== undefined && patch.raw.role !== 'admin') ||
-      patch.raw.isApproved === false;
-    if (losesAdmin && target.role === 'admin') {
-      const activeAdmins = await userRepository.countActiveAdmins();
-      if (activeAdmins <= 1) {
-        return res.status(409).json({
-          message:
-            'Der letzte aktive Admin kann nicht herabgestuft oder gesperrt werden.',
+    // Neue und alte Grundrolle müssen beide in den eigenen Rechten liegen.
+    if (patch.raw.role !== undefined && patch.raw.role !== target.role) {
+      const roles = await accessRepository
+        .findRolesByKeys([patch.raw.role, target.role])
+        .catch(() => []);
+      if (roles.some((role) => !rules.canAssignRole(req.access, role))) {
+        return res.status(403).json({
+          message: 'Du kannst nur Rollen vergeben, deren Rechte du selbst hast.',
         });
       }
     }
 
-    // Trainer:innen ordnen nur in Mannschaften zu, die sie selbst bestätigt
-    // trainieren – sonst könnte jede:r Trainer:in fremde Kader umbauen.
-    if (!canManageAccounts && patch.playerTeamIds !== undefined) {
+    // Es muss immer mindestens ein aktiver Admin übrig bleiben.
+    if (target.isSuperuser && (patch.raw.isApproved === false || patch.raw.role !== undefined)) {
+      let staysSuper = patch.raw.isApproved !== false;
+      if (staysSuper && patch.raw.role !== undefined) {
+        const grants = await accessRepository.getUserGrants(userId).catch(() => ({ extraRoles: [] }));
+        const roles = await accessRepository
+          .findRolesByKeys([patch.raw.role, ...grants.extraRoles])
+          .catch(() => []);
+        staysSuper = roles.some((role) => role.isSuperuser) || patch.raw.role === 'admin';
+      }
+      if (!staysSuper && (await rules.wouldLoseLastSuperuser(target).catch(() => false))) {
+        return res.status(409).json({
+          message: 'Der letzte aktive Admin kann nicht herabgestuft oder gesperrt werden.',
+        });
+      }
+    }
+
+    // Ohne members.edit nur in selbst trainierten Mannschaften – sonst könnte
+    // jede:r Trainer:in fremde Kader umbauen.
+    if (!can(req, 'members.edit') && patch.playerTeamIds !== undefined) {
       const [actorTeams, targetTeams] = await Promise.all([
         teamRepository.getTeamsForUser(req.userId),
         teamRepository.getTeamsForUser(userId),
@@ -293,4 +314,38 @@ async function createTeam(req, res, next) {
   }
 }
 
-module.exports = { listUsers, getUserStats, updateUser, listTeams, createTeam };
+// POST /api/admin/users/:id/password   Body: { newPassword }
+//
+// Passwort-Notfall: Jemand hat sein Passwort vergessen. Darf AUSSCHLIESSLICH
+// ein Admin (Superuser-Rolle) – kein Einzelrecht, keine Zusatzrolle. Wer das
+// kann, kann jedes Konto übernehmen; das gehört in die Hand weniger.
+// Alle bisherigen Sitzungen der Person enden (sessions_valid_from).
+async function resetUserPassword(req, res, next) {
+  try {
+    if (!req.access?.isSuperuser) {
+      return res.status(403).json({ message: 'Passwörter anderer Mitglieder setzt nur ein Admin.' });
+    }
+    const userId = parseId(req.params.id);
+    if (!userId) return res.status(400).json({ message: 'Ungültige Benutzer-ID.' });
+    if (userId === req.userId) {
+      return res.status(400).json({ message: 'Dein eigenes Passwort änderst du unter „Mein Konto“.' });
+    }
+    const target = await accessService.getAccess(userId);
+    if (!target) return res.status(404).json({ message: 'Benutzer nicht gefunden.' });
+
+    const check = checkPassword(req.body?.newPassword, 'Das neue Passwort');
+    if (!check.ok) return res.status(check.status).json({ message: check.message });
+
+    const passwordHash = await bcrypt.hash(req.body.newPassword, SALT_ROUNDS);
+    await userRepository.updatePassword(userId, passwordHash);
+    console.log(`Admin ${req.userId} hat das Passwort von Konto ${userId} neu gesetzt.`);
+
+    return res.json({
+      message: 'Neues Passwort gesetzt. Die Person ist auf allen Geräten abgemeldet und meldet sich mit dem neuen Passwort an.',
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { listUsers, getUserStats, updateUser, resetUserPassword, listTeams, createTeam };

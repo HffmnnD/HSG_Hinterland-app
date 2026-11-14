@@ -1,163 +1,179 @@
 /* ==========================================================================
-   DESIGN-EINSTELLUNGEN DER HSG HINTERLAND APP
+   DESIGN DER HSG HINTERLAND APP – die EINE Datei für das Aussehen
    --------------------------------------------------------------------------
-   Diese Datei ist die einzige Stelle für Farben, Schriften, Schriftgrößen,
-   Abstände, Rundungen und Schatten. Wer hier einen Wert ändert, ändert ihn in
-   der ganzen App – Buttons, Karten, Tabellen, Diagramme, Hell- und
-   Dunkelmodus.
+   Hier steht alles, was das Aussehen bestimmt: Farben (hell + dunkel),
+   Schriften, Größen, Rundungen, Schatten und Bilder. Wer hier einen Wert
+   ändert, ändert ihn in der ganzen App.
 
    Aufbau:
-     1. Schriften          (Schriftart + Google-Fonts-Adresse)
-     2. Größen & Formen    (Schriftgrößen, Abstand, Rundungen)
-     3. Farben Hellmodus   (:root)
-     4. Farben Dunkelmodus (.dark)
+     1. Marke         Vereinsfarbe, Logo, Bilder
+     2. Schriften     Schriftarten und Google-Fonts-Adresse
+     3. Größen        Schriftgrößen, Grundabstand, Rundungen
+     4. Hell          Flächen, Text, Linien, Status, Kalender, Diagramme
+     5. Dunkel        dieselben Werte für den Dunkelmodus
 
-   Hinweis zur Schriftart: Wird eine andere Google-Schrift gewünscht, die
-   Adresse bei --font-url UND den Namen bei --font-body bzw. --font-heading
-   anpassen.
+   Die Namen der Variablen (--c-green, --c-paper …) bleiben stabil – die
+   Bauteile in index.css und Tailwind (tailwind.config.js) lesen sie.
    ========================================================================== */
 
 @layer base {
   :root {
-    /* ------------------------------------------------------ 1. Schriften */
-    /* Schriftdatei (Google Fonts). Wird beim Start der App geladen. */
-    --font-url: 'https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Oswald:wght@400;600;700&display=swap';
-    --font-body: 'Lato', 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
-    --font-heading: 'Oswald', 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    /* ------------------------------------------------------- 1. Marke */
+    /* Vereinsgrün. `green` = Flächen und Knöpfe, `dark`/`darker` = grüne
+       Schrift (auf hellem Grund lesbar), `soft`/`line` = getönte Flächen. */
+    --c-green: #6aa72b;
+    --c-green-dark: #4f8a1c;
+    --c-green-darker: #3c6c14;
+    --c-green-soft: #eef6e6;
+    --c-green-line: #cde3b4;
 
-    /* ----------------------------------------------- 2. Größen & Formen */
-    /* Schriftgrößen (rem = 16 px) */
+    /* Zweite Markenfarbe: tiefes Anthrazit-Blau für Kopfbereiche, Login,
+       Spielbalken. Ersetzt das frühere reine Schwarz. */
+    --c-dark: #17212b;
+    --c-dark-hover: #0f171f;
+    --c-dark-soft: #243240;
+
+    /* Logo: Bildadresse (z. B. url('/logo.svg')) oder `none` für das
+       Buchstaben-Zeichen. Der Buchstabe steht in components/Brand.jsx. */
+    --brand-logo: none;
+
+    /* Hintergrundbild der Anmeldeseite. `none` = Farbverlauf in Markenfarbe. */
+    --image-login: none;
+
+    /* Grüner Streifen ganz oben (0 = aus). Im neuen Design aus. */
+    --ribbon-height: 0px;
+
+    /* ---------------------------------------------------- 2. Schriften */
+    --font-url: 'https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap';
+    /* Fließtext, Formulare, Tabellen */
+    --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    /* Überschriften, Zahlen, Navigation */
+    --font-heading: 'Archivo', 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+
+    /* ------------------------------------------------------ 3. Größen */
     --text-xs: 0.75rem;
     --text-sm: 0.875rem;
     --text-base: 0.9375rem;
     --text-base--line-height: var(--line-height-body);
-    --text-lg: 1.125rem;
+    --text-lg: 1.0625rem;
     --text-xl: 1.25rem;
     --text-2xl: 1.5rem;
     --text-3xl: 1.875rem;
-    /* Zeilenhöhe des Fließtexts */
-    --line-height-body: 1.6;
+    --line-height-body: 1.55;
 
-    /* Grundabstand. Alle Abstände (p-4, gap-3, mt-6 …) sind Vielfache davon:
-       0.25rem = 4 px. Größer = luftiger, kleiner = kompakter. */
+    /* Grundabstand: alle Abstände (p-4, gap-3 …) sind Vielfache davon. */
     --spacing: 0.25rem;
 
-    /* Rundungen der Ecken */
-    --radius-small: 3px; /* Felder, Chips, Bilder */
-    --radius-default: 4px; /* Buttons, Hinweise */
-    --radius-medium: 6px; /* Karten, Tabellen */
-    --radius-large: 8px; /* Dialoge */
+    /* Rundungen. Weich, aber nicht verspielt. */
+    --radius-small: 8px; /* Felder, Chips, Bilder */
+    --radius-default: 10px; /* Knöpfe, Hinweise */
+    --radius-medium: 14px; /* Karten, Tabellen */
+    --radius-large: 20px; /* Dialoge */
 
-    /* Höhe des grünen Streifens ganz oben (0 = aus) */
-    --ribbon-height: 4px;
-
-    /* ------------------------------------------------ 3. Farben (hell) */
+    /* -------------------------------------------------------- 4. Hell */
     color-scheme: light;
 
-    /* Vereinsgrün: `green` für Flächen und Buttons, die dunkleren Stufen
-       für grüne Schrift. */
-    --c-green: #79b636;
-    --c-green-dark: #5f9e28;
-    --c-green-darker: #4c7f1f;
-    --c-green-soft: #eef6e4;
-    --c-green-line: #cfe4b4;
-
-    /* Anthrazit: Anmeldeseite, sekundäre Buttons, Admin-Badge */
-    --c-dark: #2e2e2e;
-    --c-dark-hover: #1f1f1f;
-    --c-dark-soft: #3d3d3d;
-
-    /* Schrift */
-    --c-ink: #2e2e2e; /* Überschriften */
-    --c-ink-soft: #4b4b4b; /* Fließtext */
-    --c-ink-muted: #727579; /* Nebentext */
+    /* Text */
+    --c-ink: #121a21; /* Überschriften */
+    --c-ink-soft: #3a4651; /* Fließtext */
+    --c-ink-muted: #6b7783; /* Nebentext */
 
     /* Flächen & Linien */
     --c-paper: #ffffff; /* Karten */
-    --c-surface: #f8f9fa; /* Seitenhintergrund */
-    --c-surface-strong: #eef1f3; /* Hover */
-    --c-line: #e9ecef;
-    --c-line-strong: #dbe0e4;
+    --c-surface: #f3f5f7; /* Seitenhintergrund */
+    --c-surface-strong: #e8ecf0; /* Hover, Spur */
+    --c-line: #e3e8ed;
+    --c-line-strong: #cfd6dd;
 
     /* Status */
-    --c-warn: #8a6116;
-    --c-warn-soft: #fdf6e7;
-    --c-warn-line: #f0d9a8;
-    --c-danger: #c0392b; /* rote Schrift */
-    --c-danger-fill: #c0392b; /* rote Fläche mit weißer Schrift */
-    --c-danger-soft: #fdecea;
-    --c-danger-line: #f2c4bf;
+    --c-warn: #9a6408;
+    --c-warn-soft: #fff6e5;
+    --c-warn-line: #f3d8a4;
+    --c-danger: #c2362b; /* rote Schrift */
+    --c-danger-fill: #d23a2e; /* rote Fläche mit weißer Schrift */
+    --c-danger-soft: #fdeeec;
+    --c-danger-line: #f5c9c4;
 
-    /* Kopfbereich der Mannschaftsseite ohne Foto */
-    --c-hero: #2e2e2e;
-    /* Abdunklung über dem Mannschaftsfoto */
-    --c-hero-scrim: rgb(30 30 30 / 0.75);
+    /* Kopfbereich der Mannschaftsseite ohne Foto + Abdunklung über Fotos */
+    --c-hero: #17212b;
+    --c-hero-scrim: rgb(10 16 22 / 0.78);
 
     /* Abdunklung hinter Dialogen und im Vollbild */
-    --c-scrim: rgb(46 46 46 / 0.45);
-    --c-scrim-strong: rgb(24 24 24 / 0.95);
+    --c-scrim: rgb(13 20 27 / 0.5);
+    --c-scrim-strong: rgb(8 12 16 / 0.95);
 
     /* Diagramme im System-Status */
-    --c-chart-main: #5f9e28;
-    --c-chart-error: #c0392b;
-    --c-chart-neutral: #727579;
-    --c-chart-warn: #8a6116;
+    --c-chart-main: #4f8a1c;
+    --c-chart-error: #c2362b;
+    --c-chart-neutral: #6b7783;
+    --c-chart-warn: #9a6408;
+
+    /* Kalender: eine Farbe je Art */
+    --c-cal-training: #6aa72b;
+    --c-cal-match: #17212b;
+    --c-cal-other: #d08b16;
+    --c-cal-duty: #2f6fb0;
 
     /* Browser-Leiste auf dem Handy (<meta name="theme-color">) */
-    --c-browser-bar: #2e2e2e;
+    --c-browser-bar: #ffffff;
 
-    /* Schatten. `none` = flach. */
-    --shadow-card: none;
-    --shadow-pop: 0 8px 24px rgb(20 24 28 / 0.12);
+    /* Schatten: zart, damit Karten sich vom grauen Grund lösen. */
+    --shadow-card: 0 1px 2px rgb(16 24 32 / 0.05), 0 1px 3px rgb(16 24 32 / 0.04);
+    --shadow-pop: 0 12px 32px rgb(16 24 32 / 0.16);
   }
 
-  /* ------------------------------------------------ 4. Farben (dunkel) */
+  /* ------------------------------------------------------- 5. Dunkel */
   .dark {
     color-scheme: dark;
 
-    --c-green: #79b636;
-    --c-green-dark: #8ec94c;
-    --c-green-darker: #a5d873;
-    --c-green-soft: #1c2a13;
-    --c-green-line: #3a5a22;
+    --c-green: #7cbd3a;
+    --c-green-dark: #94cf55;
+    --c-green-darker: #b2df82;
+    --c-green-soft: #1a2a12;
+    --c-green-line: #33501f;
 
-    --c-dark: #0f1214;
-    --c-dark-hover: #191d20;
-    --c-dark-soft: #2a3035;
+    --c-dark: #0b1117;
+    --c-dark-hover: #070b0f;
+    --c-dark-soft: #1d2833;
 
-    --c-ink: #f2f4f5;
-    --c-ink-soft: #cfd4d8;
-    --c-ink-muted: #98a0a6;
+    --c-ink: #eef2f5;
+    --c-ink-soft: #c5ced6;
+    --c-ink-muted: #8d99a5;
 
     /* Karten liegen im Dunkeln HELLER als der Seitenhintergrund. */
-    --c-paper: #1a1d20;
-    --c-surface: #111416;
-    --c-surface-strong: #24292d;
-    --c-line: #2a2f33;
-    --c-line-strong: #3b4147;
+    --c-paper: #151c23;
+    --c-surface: #0d1217;
+    --c-surface-strong: #1f2831;
+    --c-line: #222c36;
+    --c-line-strong: #33404c;
 
-    --c-warn: #e3b457;
-    --c-warn-soft: #2c2310;
-    --c-warn-line: #5a4622;
-    --c-danger: #f08579;
-    --c-danger-fill: #b43326;
-    --c-danger-soft: #2e1815;
-    --c-danger-line: #5e2a24;
+    --c-warn: #eab45a;
+    --c-warn-soft: #2a2010;
+    --c-warn-line: #594522;
+    --c-danger: #f2877b;
+    --c-danger-fill: #c6382c;
+    --c-danger-soft: #2e1714;
+    --c-danger-line: #5f2a24;
 
-    --c-hero: #15181a;
-    --c-hero-scrim: rgb(0 0 0 / 0.7);
+    --c-hero: #121a22;
+    --c-hero-scrim: rgb(0 0 0 / 0.72);
 
     --c-scrim: rgb(0 0 0 / 0.65);
     --c-scrim-strong: rgb(0 0 0 / 0.95);
 
-    --c-chart-main: #8ec94c;
-    --c-chart-error: #f08579;
-    --c-chart-neutral: #98a0a6;
-    --c-chart-warn: #e3b457;
+    --c-chart-main: #94cf55;
+    --c-chart-error: #f2877b;
+    --c-chart-neutral: #8d99a5;
+    --c-chart-warn: #eab45a;
 
-    --c-browser-bar: #111416;
+    --c-cal-training: #94cf55;
+    --c-cal-match: #c5ced6;
+    --c-cal-other: #eab45a;
+    --c-cal-duty: #6fa8e6;
 
-    --shadow-card: none;
-    --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.6);
+    --c-browser-bar: #0d1217;
+
+    --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.02);
+    --shadow-pop: 0 14px 36px rgb(0 0 0 / 0.6);
   }
 }

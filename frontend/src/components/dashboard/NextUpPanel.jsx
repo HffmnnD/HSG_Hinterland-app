@@ -39,8 +39,8 @@ export default function NextUpPanel({
           <CalendarDays size={16} aria-hidden="true" className="text-ink-muted" />
           Als Nächstes
         </h2>
-        <Link to="/kalender" className="link text-sm">
-          Kalender
+        <Link to="/training" className="link text-sm">
+          Teamplaner
         </Link>
       </div>
 
@@ -81,7 +81,7 @@ function EventRow({ event }) {
 
   return (
     <Link
-      to="/kalender"
+      to="/training"
       className="flex items-center gap-3 rounded-md border border-line bg-paper p-2.5 transition-colors hover:border-hsg-green"
     >
       <span className="event-date">

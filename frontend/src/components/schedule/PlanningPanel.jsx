@@ -5,6 +5,7 @@ import { useEventSeries } from '../../hooks/useSchedule';
 import { formatIsoRange, weekdayList } from '../../lib/schedule';
 import EventForm from './EventForm';
 import TeamAbsences from './TeamAbsences';
+import CsvImport from './CsvImport';
 
 /**
  * Planungsbereich der Trainer:innen.
@@ -207,7 +208,7 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
                     team.nuligaSyncEnabled ? 'bg-hsg-green' : 'bg-ink-muted'
                   }`}
                 />
-                <span className="font-display text-sm font-bold uppercase tracking-[0.04em] text-ink">
+                <span className="font-display text-sm font-bold tracking-[-0.01em] text-ink">
                   {team.nuligaSyncEnabled ? 'Übernahme läuft' : 'Übernahme aus'}
                 </span>
               </p>
@@ -250,6 +251,9 @@ export default function PlanningPanel({ teams, busy = false, onRun, onChanged })
           </div>
         )}
       </section>
+
+      {/* --------------------------------------------- Spielplan aus CSV */}
+      <CsvImport key={teamId} teamId={teamId} onImported={onChanged} />
 
       {/* ------------------------------------------ 4. Ausfälle im Kader */}
       <section>

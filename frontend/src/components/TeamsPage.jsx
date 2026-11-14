@@ -1,251 +1,184 @@
-import { useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronRight, Star } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
 import { useTeams } from '../hooks/useTeams';
-import { myRelationLabel } from '../lib/participation';
+import { apiFetch } from '../lib/api';
+import { relationLabel } from '../lib/participation';
 import { groupTeams, teamMeta } from '../lib/teams';
 import AppLayout from './AppLayout';
-
-// Reihenfolge der eigenen Zuordnungen: Trainer:in, Spieler:in, verfolgt.
-const RELATION_ORDER = ['coach', 'player', 'fan'];
-
-const TABS = [
-  { key: 'meine', label: 'Meine Mannschaften' },
-  { key: 'alle', label: 'Alle Mannschaften' },
-];
+import SearchField from './admin/ui/SearchField';
 
 /**
- * Mannschaften (`/teams`) – zwei Reiter, eine Kartensprache.
+ * Reiter „Teams": alle Mannschaften auf einer Seite.
  *
- * ── Warum Reiter ───────────────────────────────────────────────────────────
- * Vorher standen beide Listen untereinander auf einer Seite. Wer in vier
- * Mannschaften ist, scrollte an seinen eigenen vorbei, um den Verein zu
- * sehen – und wer in keiner ist, an einem leeren Kasten. Als Reiter ist beides
- * einen Klick weit weg, und der aktive Reiter steht in der Adresse
- * (`?ansicht=alle`), lässt sich also verlinken.
+ *   1. Favoriten   – mit dem Stern markiert, persönliche Auswahl
+ *   2. Meine Teams – wo ich spiele, trainiere oder Fan bin (ohne Favoriten)
+ *   3. Weitere     – alle übrigen, nach Senioren und Jugend gruppiert
  *
- * ── Warum dieselbe Karte ───────────────────────────────────────────────────
- * „Meine Mannschaften" war eine schmale Chip-Liste, „Alle Mannschaften" ein
- * Kartenraster – zwei Darstellungen derselben Sache auf derselben Seite. Jetzt
- * ist es dieselbe <TeamCard>; bei den eigenen trägt sie zusätzlich die eigene
- * Rolle und den Hinweis auf eine ausstehende Bestätigung.
+ * Jede Mannschaft erscheint genau einmal.
+ *
+ * Der Stern ist eine reine Ansichts-Einstellung (kein Beitritt): Er hebt eine
+ * Mannschaft hervor, z. B. die des Kindes oder die erste Herren.
  */
 export default function TeamsPage() {
-  const { teams: myTeams } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const { teams: allTeams, loading, error } = useTeams();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState('');
+  const [pending, setPending] = useState(() => new Set());
+  const [favoriteIds, setFavoriteIds] = useState(null);
 
-  const requested = searchParams.get('ansicht');
-  const activeTab = TABS.some((tab) => tab.key === requested) ? requested : 'meine';
+  const favorites = useMemo(() => new Set(favoriteIds ?? user?.favoriteTeamIds ?? []), [favoriteIds, user]);
+  const relations = useMemo(() => {
+    const map = new Map();
+    for (const team of user?.teams ?? []) {
+      if (!map.has(team.id)) map.set(team.id, []);
+      map.get(team.id).push(team);
+    }
+    return map;
+  }, [user]);
 
-  const selectTab = (key) => {
-    // `replace`, damit das Hin und Her zwischen zwei Reitern nicht die
-    // Browser-Historie füllt.
-    setSearchParams(key === 'meine' ? {} : { ansicht: key }, { replace: true });
+  const toggleFavorite = async (team) => {
+    const on = !favorites.has(team.id);
+    setPending((prev) => new Set(prev).add(team.id));
+    setFavoriteIds([...favorites].filter((id) => id !== team.id).concat(on ? [team.id] : []));
+    try {
+      const result = await apiFetch(`/api/me/favorites/${team.id}`, { method: on ? 'PUT' : 'DELETE' });
+      setFavoriteIds(result.favoriteTeamIds);
+      refreshProfile();
+    } catch {
+      setFavoriteIds(null);
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(team.id);
+        return next;
+      });
+    }
   };
 
-  // Mannschaften, in denen das Mitglied selbst eingetragen ist – für die
-  // Markierung in der Gesamtliste.
-  const myTeamIds = useMemo(
-    () => new Set(myTeams.map((team) => team.id)),
-    [myTeams]
-  );
+  const term = search.trim().toLowerCase();
+  const matches = (team) =>
+    !term || `${team.name} ${team.code} ${team.ageGroup ?? ''}`.toLowerCase().includes(term);
 
-  // Das Profil kennt zu einer eigenen Mannschaft nur id, code, name und die
-  // Beziehung. Altersklasse, Geschlecht und Ligaanbindung stehen in der
-  // öffentlichen Mannschaftsliste – zusammengeführt sieht die eigene Karte
-  // genauso vollständig aus wie die in „Alle Mannschaften".
-  const myTeamsDetailed = useMemo(
-    () =>
-      myTeams.map((team) => ({
-        ...(allTeams.find((entry) => entry.id === team.id) ?? {}),
-        ...team,
-      })),
-    [myTeams, allTeams]
+  const favoriteTeams = allTeams.filter((t) => favorites.has(t.id) && matches(t));
+  // Jede Mannschaft steht nur EINMAL: Favoriten zuerst, dann eigene
+  // Mannschaften, im Rest nur, was oben noch nicht vorkam.
+  const myTeams = allTeams.filter((t) => relations.has(t.id) && !favorites.has(t.id) && matches(t));
+  const filtered = allTeams.filter(matches);
+  const others = filtered.filter((t) => !favorites.has(t.id) && !relations.has(t.id));
+
+  const card = (team) => (
+    <TeamCard
+      key={team.id}
+      team={team}
+      relations={relations.get(team.id) ?? []}
+      favorite={favorites.has(team.id)}
+      busy={pending.has(team.id)}
+      onToggleFavorite={() => toggleFavorite(team)}
+    />
   );
 
   return (
     <AppLayout width="max-w-4xl">
-      <header>
-        <h1 className="page-title">Mannschaften</h1>
-      </header>
+      <h1 className="page-title">Teams</h1>
 
-      <div className="tabs mt-6" role="tablist" aria-label="Ansicht der Mannschaften">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            id={`tab-${tab.key}`}
-            aria-selected={activeTab === tab.key}
-            aria-controls={`panel-${tab.key}`}
-            onClick={() => selectTab(tab.key)}
-            className={`tab ${activeTab === tab.key ? 'tab--active' : ''}`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="mt-4">
+        <SearchField id="team-search" label="Mannschaft suchen" value={search} onChange={setSearch} placeholder="Mannschaft suchen …" />
       </div>
 
-      <div
-        role="tabpanel"
-        id={`panel-${activeTab}`}
-        aria-labelledby={`tab-${activeTab}`}
-        className="mt-6"
-      >
-        {activeTab === 'meine' ? (
-          <MyTeamsView
-            teams={myTeamsDetailed}
-            onShowAll={() => selectTab('alle')}
-          />
-        ) : (
-          <AllTeamsView
-            teams={allTeams}
-            myTeamIds={myTeamIds}
-            loading={loading}
-            error={error}
-          />
-        )}
-      </div>
+      {error && (
+        <div role="alert" className="alert alert-error mt-4">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="mt-6 grid gap-3 sm:grid-cols-2" aria-hidden="true">
+          {[0, 1, 2, 3].map((row) => (
+            <span key={row} className="skeleton h-20 w-full" />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-6 space-y-6">
+          <Section title="Favoriten" icon={<Star size={15} className="text-warn" aria-hidden="true" />}>
+            {favoriteTeams.length > 0 ? (
+              <ul className="grid gap-3 sm:grid-cols-2">{favoriteTeams.map(card)}</ul>
+            ) : (
+              <p className="text-sm text-ink-muted">
+                Tippe bei einer Mannschaft auf den Stern, um sie hier oben zu sammeln.
+              </p>
+            )}
+          </Section>
+
+          {myTeams.length > 0 && (
+            <Section title="Meine Mannschaften">
+              <ul className="grid gap-3 sm:grid-cols-2">{myTeams.map(card)}</ul>
+            </Section>
+          )}
+
+          {groupTeams(others).map((group) => (
+            <Section key={group.key} title={group.label}>
+              <ul className="grid gap-3 sm:grid-cols-2">{group.teams.map(card)}</ul>
+            </Section>
+          ))}
+
+          {filtered.length === 0 && <p className="card-note">Keine Mannschaft gefunden.</p>}
+        </div>
+      )}
     </AppLayout>
   );
 }
 
-/** Reiter „Meine Mannschaften": nach eigener Rolle gruppierte Karten. */
-function MyTeamsView({ teams, onShowAll }) {
-  if (teams.length === 0) {
-    return (
-      <div className="panel">
-        <div className="panel__body">
-          <p className="card-note">Du bist noch keiner Mannschaft zugeordnet.</p>
-          <button
-            type="button"
-            onClick={onShowAll}
-            className="btn btn-outline btn-sm mt-4"
-          >
-            Alle Mannschaften ansehen
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const groups = RELATION_ORDER.map((relation) => ({
-    relation,
-    entries: teams.filter((team) => team.relationType === relation),
-  })).filter((group) => group.entries.length > 0);
-
+function Section({ title, icon, children }) {
   return (
-    <div className="space-y-6">
-      {groups.map(({ relation, entries }) => (
-        <section key={relation} className="panel">
-          <div className="panel__header">
-            <h2 className="section-title text-base">{myRelationLabel(relation)}</h2>
-          </div>
-          <div className="panel__body">
-            <ul className="grid gap-3 sm:grid-cols-2">
-              {entries.map((team) => (
-                <li key={`${relation}-${team.id}`}>
-                  <TeamCard team={team} pending={!team.isConfirmed} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      ))}
-    </div>
+    <section>
+      <h2 className="eyebrow flex items-center gap-1.5">
+        {icon}
+        {title}
+      </h2>
+      <div className="mt-2">{children}</div>
+    </section>
   );
 }
 
-/** Reiter „Alle Mannschaften": nach Senioren und Jugend gruppierte Karten. */
-function AllTeamsView({ teams, myTeamIds, loading, error }) {
-  if (error) {
-    return (
-      <div role="alert" className="alert alert-error">
-        {error}
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="grid gap-3 sm:grid-cols-2" aria-hidden="true">
-        {[0, 1, 2, 3].map((row) => (
-          <span key={row} className="skeleton h-20 w-full" />
-        ))}
-      </div>
-    );
-  }
-
-  if (teams.length === 0) {
-    return <p className="card-note">Keine Mannschaften hinterlegt.</p>;
-  }
-
-  return (
-    <div className="space-y-6">
-      {groupTeams(teams).map((group) => (
-        <section key={group.key} className="panel">
-          <div className="panel__header">
-            <h2 className="section-title text-base">{group.label}</h2>
-          </div>
-          <div className="panel__body">
-            <ul className="grid gap-3 sm:grid-cols-2">
-              {group.teams.map((team) => (
-                <li key={team.id}>
-                  <TeamCard team={team} isMine={myTeamIds.has(team.id)} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Eine Mannschaftskarte: Name, Altersklasse und Geschlecht.
- *
- * Dieselbe Karte in beiden Reitern. `isMine` markiert in der Gesamtliste die
- * eigenen Mannschaften, `pending` in der eigenen Liste eine Zuordnung, die das
- * Trainerteam noch bestätigen muss.
- *
- * Das Foto der Mannschaft bleibt bewusst weg. Im Raster wäre es entweder
- * briefmarkengroß (und damit nutzlos) oder es würde die Karte dominieren –
- * und Mannschaften ohne Foto sähen in derselben Liste kaputt aus.
- */
-function TeamCard({ team, isMine = false, pending = false }) {
+function TeamCard({ team, relations, favorite, busy, onToggleFavorite }) {
   const meta = teamMeta(team);
+  const pending = relations.some((r) => !r.isConfirmed);
 
   return (
-    <Link
-      to={`/teams/${team.code}`}
-      className={`flex min-h-16 items-center gap-3 rounded-md border bg-paper p-3.5 shadow-card transition-colors hover:border-hsg-green ${
+    <li
+      className={`flex min-h-16 items-center rounded-md border bg-paper shadow-card transition-colors hover:border-hsg-green ${
         pending ? 'border-warn-line' : 'border-line'
       }`}
     >
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="truncate font-display text-base font-bold uppercase tracking-[0.02em] text-ink">
-            {team.name}
+      <Link to={`/teams/${team.code}`} className="flex min-w-0 flex-1 items-center gap-3 p-3.5">
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="truncate font-display text-base font-bold tracking-[-0.01em] text-ink">
+              {team.name}
+            </span>
+            {relations.map((r) => (
+              <span key={r.relationType} className={`badge ${r.isConfirmed ? 'badge-confirmed' : 'badge-pending'}`}>
+                {r.isConfirmed ? relationLabel(r.relationType) : 'ausstehend'}
+              </span>
+            ))}
           </span>
-          {pending && <span className="badge badge-pending">ausstehend</span>}
-          {isMine && <span className="badge badge-confirmed">dabei</span>}
+          {meta && <span className="mt-0.5 block truncate text-xs text-ink-muted">{meta}</span>}
         </span>
-        {meta && (
-          <span className="mt-0.5 block truncate text-xs text-ink-muted">
-            {meta}
-          </span>
-        )}
-      </span>
-
-      <ChevronRight
-        size={16}
-        aria-hidden="true"
-        className="shrink-0 text-ink-muted"
-      />
-    </Link>
+        <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-ink-muted" />
+      </Link>
+      <button
+        type="button"
+        onClick={onToggleFavorite}
+        disabled={busy}
+        aria-pressed={favorite}
+        aria-label={favorite ? `${team.name} aus den Favoriten entfernen` : `${team.name} als Favorit merken`}
+        className="flex h-full min-h-16 w-12 shrink-0 items-center justify-center border-l border-line text-ink-muted hover:text-warn"
+      >
+        <Star size={18} className={favorite ? 'fill-current text-warn' : ''} />
+      </button>
+    </li>
   );
 }

@@ -47,7 +47,7 @@ export default function MyTeams({ teams, emptyHint }) {
                     team.isConfirmed ? 'border-line' : 'border-warn-line'
                   }`}
                 >
-                  <span className="min-w-0 flex-1 truncate font-display text-sm font-bold uppercase tracking-[0.02em] text-ink">
+                  <span className="min-w-0 flex-1 truncate font-display text-sm font-bold tracking-[-0.01em] text-ink">
                     {team.name}
                   </span>
                   {!team.isConfirmed && (

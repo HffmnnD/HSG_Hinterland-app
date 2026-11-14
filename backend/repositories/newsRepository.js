@@ -20,6 +20,7 @@ function mapNews(row, imagePaths = []) {
   return {
     id: row.id,
     title: row.title,
+    subtitle: row.subtitle ?? null,
     content: row.content,
     // `imageUrls` ist die maßgebliche Form. `imageUrl` bleibt als erstes Bild
     // erhalten, damit Ansichten mit nur einem Vorschaubild unverändert laufen.
@@ -41,7 +42,7 @@ function mapNews(row, imagePaths = []) {
 }
 
 const SELECT_NEWS = `
-  SELECT n.id, n.title, n.content, n.is_archived,
+  SELECT n.id, n.title, n.subtitle, n.content, n.is_archived,
          n.created_at, n.updated_at,
          n.author_id, u.first_name AS author_first_name, u.last_name AS author_last_name
     FROM news n
@@ -160,14 +161,14 @@ async function findImagePaths(id, runner = pool) {
  *   `imagePaths` in Anzeigereihenfolge (beliebig viele).
  * @returns {Promise<number>} ID des neuen Beitrags
  */
-async function create({ title, content, imagePaths = [], authorId }) {
+async function create({ title, subtitle = null, content, imagePaths = [], authorId }) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
     const [result] = await conn.query(
-      'INSERT INTO news (title, content, author_id) VALUES (?, ?, ?)',
-      [title, content, authorId]
+      'INSERT INTO news (title, subtitle, content, author_id) VALUES (?, ?, ?, ?)',
+      [title, subtitle, content, authorId]
     );
     const newsId = result.insertId;
 
@@ -217,7 +218,47 @@ async function remove(id, runner = pool) {
   return result.affectedRows;
 }
 
+/**
+ * Beitrag nachträglich bearbeiten: Texte ändern, Bilder entfernen und neue
+ * anhängen – in einer Transaktion.
+ * @param {number} id
+ * @param {{ title:string, subtitle:string|null, content:string,
+ *           removePaths:string[], addPaths:string[] }} data
+ */
+async function update(id, { title, subtitle, content, removePaths = [], addPaths = [] }) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query('UPDATE news SET title = ?, subtitle = ?, content = ? WHERE id = ?', [
+      title,
+      subtitle,
+      content,
+      id,
+    ]);
+    if (removePaths.length > 0) {
+      await conn.query('DELETE FROM news_images WHERE news_id = ? AND image_path IN (?)', [id, removePaths]);
+    }
+    if (addPaths.length > 0) {
+      const [[row]] = await conn.query(
+        'SELECT COALESCE(MAX(sort_order), -1) AS maxOrder FROM news_images WHERE news_id = ?',
+        [id]
+      );
+      const start = Number(row.maxOrder) + 1;
+      await conn.query('INSERT INTO news_images (news_id, image_path, sort_order) VALUES ?', [
+        addPaths.map((path, index) => [id, path, start + index]),
+      ]);
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 module.exports = {
+  update,
   listAll,
   countByStatus,
   findById,

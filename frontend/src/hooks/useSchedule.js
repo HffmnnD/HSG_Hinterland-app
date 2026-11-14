@@ -30,7 +30,7 @@ function query(params) {
  * @param {(data:any) => any} select Antwort -> Zustand
  * @param {any} fallback Startwert, solange nichts geladen ist
  */
-function useApiResource(path, select, fallback) {
+export function useApiResource(path, select, fallback) {
   const [state, setState] = useState({
     path: null,
     data: fallback,
@@ -99,8 +99,10 @@ export function useEvents({
   category = null,
   from = null,
   to = null,
+  mine = false,
 } = {}) {
-  const path = `/api/events${query({ teamId, category, from, to })}`;
+  // mine: nur Mannschaften, in denen man selbst spielt oder trainiert.
+  const path = `/api/events${query({ teamId, category, from, to, mine: mine ? 1 : null })}`;
   const { data, loading, error, reload } = useApiResource(
     path,
     selectEvents,

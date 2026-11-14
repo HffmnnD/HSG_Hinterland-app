@@ -1,17 +1,22 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from './context/AuthContext';
 import AuthScreen from './components/auth/AuthScreen';
-import Dashboard from './components/Dashboard';
+import HomePage from './pages/HomePage';
 import AdminPage from './components/AdminPage';
 import TeamPage from './components/TeamPage';
 import TeamsPage from './components/TeamsPage';
-import CalendarPage from './components/CalendarPage';
+import GamePage from './components/GamePage';
+import DutiesPage from './pages/DutiesPage';
+import TrainingPage from './pages/TrainingPage';
+import AccountPage from './pages/AccountPage';
+import ClubPage from './pages/ClubPage';
 import ProtectedRoute, { ONBOARDING_PATH } from './components/ProtectedRoute';
 import FullScreenLoader from './components/FullScreenLoader';
 import ScrollToTop from './components/ScrollToTop';
-import { MANAGEMENT_ROLES } from './lib/roles';
+import { ADMIN_PERMISSIONS } from './lib/roles';
+import { useBranding } from './hooks/useBranding';
 
 // Der Onboarding-Assistent läuft genau einmal je Konto – danach nie wieder.
 // Als eigenes Teilstück lädt ihn nur, wer ihn tatsächlich sieht; alle anderen
@@ -49,8 +54,21 @@ function OnboardingRoute() {
   );
 }
 
+/** /kalender?bereich=… aus früheren Versionen an die neuen Orte. */
+function LegacyCalendarRedirect() {
+  const [params] = useSearchParams();
+  const area = params.get('bereich');
+  const tab = params.get('tab');
+  const suffix = tab ? `?tab=${tab}` : '';
+  if (area === 'dienste') return <Navigate to={`/dienste${suffix}`} replace />;
+  if (area === 'training') return <Navigate to={`/training${suffix}`} replace />;
+  return <Navigate to="/" replace />;
+}
+
 export default function App() {
   const { loading } = useAuth();
+  // Logo/Favicon aus den App-Einstellungen früh laden (auch vor dem Login).
+  useBranding();
 
   // `loading` setzt ausschliesslich der initiale GET /api/auth/me. Alle
   // späteren Aufrufe (Anmelden, Onboarding, Konto-Einstellungen) tauschen nur
@@ -82,7 +100,7 @@ export default function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <HomePage />
             </ProtectedRoute>
           }
         />
@@ -90,7 +108,7 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute allowedRoles={MANAGEMENT_ROLES}>
+            <ProtectedRoute permissions={ADMIN_PERMISSIONS}>
               <AdminPage />
             </ProtectedRoute>
           }
@@ -117,15 +135,26 @@ export default function App() {
           }
         />
 
-        {/* Kalender: Trainingszeiten, Spiele, Sondertermine und Anwesenheiten */}
+        {/* Spielseite: Live-Ticker während des Spiels, Spielbericht danach.
+            Erreichbar aus „Aktuelles Spiel" und aus dem Spielplan. */}
         <Route
-          path="/kalender"
+          path="/teams/:code/spiele/:gameId"
           element={
             <ProtectedRoute>
-              <CalendarPage />
+              <GamePage />
             </ProtectedRoute>
           }
         />
+
+        {/* Dienste, Teamplaner, Konto (= Einstellungen) */}
+        <Route path="/dienste" element={<ProtectedRoute><DutiesPage /></ProtectedRoute>} />
+        <Route path="/training" element={<ProtectedRoute><TrainingPage /></ProtectedRoute>} />
+        <Route path="/konto" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
+        {/* Vereinstermine und Infos (Spielberichte, News, Dokumente) */}
+        <Route path="/verein" element={<ProtectedRoute><ClubPage /></ProtectedRoute>} />
+
+        {/* Alter Reiter „Kalender": Lesezeichen und alte Push-Links weiterleiten. */}
+        <Route path="/kalender" element={<LegacyCalendarRedirect />} />
 
         {/* Unbekannte Pfade -> Startseite */}
         <Route path="*" element={<Navigate to="/" replace />} />

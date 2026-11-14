@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft } from 'lucide-react';
 
 import { apiFetch } from '../lib/api';
 import { useHandballSchedule, useHandballTable } from '../hooks/useHandball';
-import { ADMIN_ROLES } from '../lib/roles';
 import { useAuth } from '../context/AuthContext';
 import AppLayout from './AppLayout';
 import TableWidget from './handball/TableWidget';
 import ScheduleWidget from './handball/ScheduleWidget';
-import LiveTickerWidget from './handball/LiveTickerWidget';
 import TeamHero from './team/TeamHero';
 import NextGameCard from './team/NextGameCard';
+import LiveGameCard from './team/LiveGameCard';
 import RosterSection from './team/RosterSection';
 import TeamManagePanel from './team/TeamManagePanel';
+import PlayerSheet from './team/PlayerSheet';
+import TrainingSection from './schedule/TrainingSection';
+import FinesSection from './fines/FinesSection';
 import { HeroSkeleton, ListSkeleton } from './team/Skeleton';
 
 // Reiter der Seite. `key` steht im Adressfeld (?tab=kader), damit ein Link auf
@@ -24,13 +26,17 @@ const TABS = [
   { key: 'spielplan', label: 'Spielplan & Tabelle' },
   { key: 'kader', label: 'Kader' },
 ];
+const TRAINING_TAB = { key: 'training', label: 'Teamplaner' };
 const MANAGE_TAB = { key: 'verwaltung', label: 'Verwaltung' };
+// Strafenkatalog – mannschaftsintern, von Trainer:innen ein- und ausschaltbar.
+// (Spielberichte stehen unter Verein → Infos und auf der Spielseite.)
+const FINES_TAB = { key: 'kasse', label: 'Kasse' };
 
-// Umschalter im Spielplan-Reiter.
+// Umschalter im Spielplan-Reiter. Die Tabelle ist vorausgewählt.
 const SCHEDULE_MODES = [
+  { key: 'table', label: 'Tabelle' },
   { key: 'upcoming', label: 'Nächste Spiele' },
   { key: 'past', label: 'Ergebnisse' },
-  { key: 'all', label: 'Gesamter Spielplan' },
 ];
 
 // `key={code}` sorgt dafür, dass beim Wechsel der Mannschaft der komplette
@@ -52,7 +58,8 @@ function LeagueFallback() {
 }
 
 function TeamView({ code }) {
-  const { user } = useAuth();
+  const { can } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Ein Zustandsobjekt statt vieler Einzel-States: `loading` ergibt sich
@@ -66,7 +73,8 @@ function TeamView({ code }) {
   // Nachladen der Kandidatenliste im Verwaltungsbereich.
   const [reloadToken, setReloadToken] = useState(0);
 
-  const [scheduleMode, setScheduleMode] = useState('upcoming');
+  const [scheduleMode, setScheduleMode] = useState('table');
+  const [openMember, setOpenMember] = useState(null);
 
   const load = useCallback(async () => {
     const result = await apiFetch(`/api/teams/${encodeURIComponent(code)}`);
@@ -92,7 +100,7 @@ function TeamView({ code }) {
   }, [code]);
 
   const canManage = data?.canManage ?? false;
-  const isAdmin = ADMIN_ROLES.includes(user?.role);
+  const isAdmin = can('teams.edit');
   const handballTeamId = data?.team?.handballTeamId ?? null;
 
   // Verbandsdaten. Ohne nuLiga-Nummer laden die Hooks bewusst nichts.
@@ -116,7 +124,18 @@ function TeamView({ code }) {
     };
   }, [games]);
 
-  const tabs = canManage ? [...TABS, MANAGE_TAB] : TABS;
+  const isMember = data?.isMember ?? false;
+  // Teamplaner und Kasse lassen sich je Mannschaft abschalten (Verwaltung).
+  const plannerOn = data?.team?.plannerEnabled !== false;
+  const finesOn = data?.team?.finesEnabled !== false;
+  // Teamplaner (Training, Zu-/Absagen, Beteiligung) direkt in der Mannschaft.
+  const tabs = [
+    TABS[0],
+    ...(isMember && plannerOn ? [TRAINING_TAB] : []),
+    ...TABS.slice(1),
+    ...((isMember || canManage) && finesOn ? [FINES_TAB] : []),
+    ...(canManage ? [MANAGE_TAB] : []),
+  ];
   const requestedTab = searchParams.get('tab');
   const activeTab = tabs.some((tab) => tab.key === requestedTab)
     ? requestedTab
@@ -126,6 +145,7 @@ function TeamView({ code }) {
     // `replace`, damit das Blättern durch die Reiter nicht die gesamte
     // Browser-Historie füllt.
     setSearchParams(key === 'uebersicht' ? {} : { tab: key }, { replace: true });
+    setOpenMember(null);
   };
 
   /**
@@ -191,6 +211,13 @@ function TeamView({ code }) {
   const { team, members } = data;
   const pendingMembers = data.pendingMembers ?? [];
 
+  // Spielseite (Live-Ticker / Spielbericht) eines Spiels dieser Mannschaft.
+  // Der Teamname reist im Link-Zustand mit – so zeigt die Spielseite ihn in
+  // der Kopfzeile, ohne die Mannschaft noch einmal zu laden.
+  const gamePath = (game) =>
+    `/teams/${encodeURIComponent(code)}/spiele/${encodeURIComponent(game.id)}`;
+  const gameLinkState = (fromTab) => ({ teamName: team.name, fromTab });
+
   return (
     <Shell name={team.name}>
       {error && (
@@ -200,30 +227,29 @@ function TeamView({ code }) {
       )}
       {notice && <div className="alert alert-success mb-4">{notice}</div>}
 
-      {/* ------------------------------------------------- Live-Ticker-Banner */}
-      {/* Ganz oben und über allen Reitern: Wer die App öffnet, während gespielt
-          wird, sucht genau das – und nichts anderes. */}
-      {liveGame &&
-        (liveGame.id ? (
-          <div className="mb-6">
-            <LiveTickerWidget gameId={liveGame.id} title="Jetzt live" />
-          </div>
-        ) : (
-          // nuLiga legt den Spielbericht erst mit der ersten Meldung an –
-          // bis dahin gibt es die Begegnung, aber noch keinen Ticker.
-          <div className="card-accent mb-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="section-title text-base">Jetzt live</h2>
-              <span className="badge badge-live">
-                <span className="live-dot" aria-hidden="true" />
-                Live
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-ink-soft">
+      {/* -------------------------------------------------- Live-Hinweis */}
+      {/* Schmal und nur außerhalb der Übersicht – dort steht die Karte
+          „Aktuelles Spiel" mit Live-Stand. Ein Tipp führt zum Ticker. */}
+      {liveGame && activeTab !== 'uebersicht' && (
+        <Link
+          to={liveGame.id ? gamePath(liveGame) : '?tab=uebersicht'}
+          state={liveGame.id ? gameLinkState('uebersicht') : undefined}
+          className="mb-4 flex items-center justify-between gap-3 rounded-md border border-hsg-green-line bg-hsg-green-soft px-3 py-2 text-sm transition-colors hover:border-hsg-green"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="badge badge-live shrink-0">
+              <span className="live-dot" aria-hidden="true" />
+              Live
+            </span>
+            <span className="truncate text-ink-soft">
               {liveGame.home?.name} – {liveGame.away?.name}
-            </p>
-          </div>
-        ))}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs font-semibold text-hsg-green-dark">
+            Zum Ticker
+          </span>
+        </Link>
+      )}
 
       {/* ------------------------------------------------------- Kopfbereich */}
       <TeamHero
@@ -274,6 +300,14 @@ function TeamView({ code }) {
               <>
                 {scheduleLoading ? (
                   <ListSkeleton rows={1} />
+                ) : liveGame ? (
+                  // Während des Spiels: „Aktuelles Spiel" mit Live-Stand,
+                  // Klick öffnet den Live-Ticker.
+                  <LiveGameCard
+                    game={liveGame}
+                    to={liveGame.id ? gamePath(liveGame) : null}
+                    linkState={gameLinkState('uebersicht')}
+                  />
                 ) : (
                   <NextGameCard game={nextGame} />
                 )}
@@ -316,22 +350,27 @@ function TeamView({ code }) {
                   </div>
 
                   <div className="mt-4">
-                    {scheduleLoading ? (
+                    {scheduleMode === 'table' ? (
+                      <TableWidget
+                        teamId={handballTeamId}
+                        highlightTeamId={handballTeamId}
+                      />
+                    ) : scheduleLoading ? (
                       <ListSkeleton rows={4} />
                     ) : (
                       <ScheduleWidget
                         teamId={handballTeamId}
                         title="Spielplan"
                         mode={scheduleMode}
+                        // Jedes Spiel mit ID öffnet die Spielseite: live den
+                        // Ticker, danach den ausführlichen Spielbericht.
+                        onSelectGame={(game) =>
+                          navigate(gamePath(game), { state: gameLinkState('spielplan') })
+                        }
                       />
                     )}
                   </div>
                 </section>
-
-                <TableWidget
-                  teamId={handballTeamId}
-                  highlightTeamId={handballTeamId}
-                />
 
                 {scheduleMeta?.available === false && (
                   <p className="field-hint">
@@ -351,8 +390,23 @@ function TeamView({ code }) {
             canManage={canManage}
             busy={busy}
             onSaveDetails={handleSaveDetails}
+            onOpenMember={isMember ? setOpenMember : undefined}
           />
         )}
+
+        {/* ------------------------------------------------ Teamplaner */}
+        {activeTab === 'training' && isMember && (
+          <TrainingSection
+            teamId={team.id}
+            tab={searchParams.get('bereich')}
+            onTabChange={(key) =>
+              setSearchParams(key === 'anstehend' ? { tab: 'training' } : { tab: 'training', bereich: key }, { replace: true })
+            }
+          />
+        )}
+
+        {/* ------------------------------------------------------- Kasse */}
+        {activeTab === 'kasse' && (isMember || canManage) && finesOn && <FinesSection teamId={team.id} />}
 
         {/* -------------------------------------------------- Verwaltung */}
         {activeTab === 'verwaltung' && canManage && (
@@ -367,6 +421,18 @@ function TeamView({ code }) {
             reloadToken={reloadToken}
           />
         )}
+
+      {openMember && (
+        <PlayerSheet
+          code={code}
+          member={openMember}
+          onClose={() => setOpenMember(null)}
+          onOpenTraining={() => {
+            setOpenMember(null);
+            setSearchParams({ tab: 'training', bereich: 'beteiligung' }, { replace: true });
+          }}
+        />
+      )}
       </div>
     </Shell>
   );

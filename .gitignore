@@ -31,3 +31,10 @@ backend/uploads/
 *.njsproj
 *.sln
 *.sw?
+
+# Bericht von npm run stresstest
+backend/stresstest-ergebnis.md
+backend/lasttest-ergebnis.md
+
+# Automatische Datensicherungen (backend/backup/)
+backend/backups/

@@ -8,7 +8,10 @@ import { PARTICIPATION_OPTIONS } from '../../lib/participation';
 import Brand from '../Brand';
 import ThemeChoice from '../ThemeChoice';
 import ProfileForm from '../account/ProfileForm';
+import { apiFetch } from '../../lib/api';
+import ChildrenStep from './ChildrenStep';
 import TeamChoice from './TeamChoice';
+import { queueTour } from '../../lib/tour';
 
 /**
  * Onboarding beim ersten Login: Was machst du im Verein, welche Mannschaften
@@ -34,6 +37,7 @@ import TeamChoice from './TeamChoice';
 const STEPS = [
   { key: 'rollen', label: 'Deine Rolle' },
   { key: 'mannschaften', label: 'Mannschaften' },
+  { key: 'kinder', label: 'Kinder' },
   { key: 'profil', label: 'Profil' },
   { key: 'design', label: 'Design' },
 ];
@@ -41,7 +45,7 @@ const STEPS = [
 const EMPTY_SELECTION = { player: [], coach: [], fan: [] };
 
 export default function OnboardingWizard() {
-  const { user, completeOnboarding } = useAuth();
+  const { user, completeOnboarding, reloadFamily } = useAuth();
   const { theme: activeTheme, setTheme } = useTheme();
   const { teams, loading: teamsLoading, error: teamsError } = useTeams();
 
@@ -50,6 +54,9 @@ export default function OnboardingWizard() {
   const [roles, setRoles] = useState(() => new Set());
   // Mannschaften je Beziehungstyp.
   const [selection, setSelection] = useState(EMPTY_SELECTION);
+  // Eltern: Kinder, die beim Abschluss angelegt bzw. per Code verknüpft werden.
+  const [isParent, setIsParent] = useState(false);
+  const [childEntries, setChildEntries] = useState([]);
   // Das Design wird sofort angewandt (man will es sehen), aber erst am Ende
   // zusammen mit allem anderen gespeichert.
   const [theme, setThemeChoice] = useState(activeTheme);
@@ -104,24 +111,57 @@ export default function OnboardingWizard() {
     [activeRoles, selection]
   );
 
-  const step = STEPS[stepIndex];
-  const isLastStep = stepIndex === STEPS.length - 1;
+  // Ohne Spieler-, Trainer- oder Fan-Wahl gibt es keine Mannschaften zu wählen.
+  const steps = useMemo(
+    () =>
+      STEPS.filter(
+        (entry) =>
+          (entry.key !== 'mannschaften' || activeRoles.length > 0) && (entry.key !== 'kinder' || isParent)
+      ),
+    [activeRoles, isParent]
+  );
+  const step = steps[stepIndex];
+  const isLastStep = stepIndex === steps.length - 1;
 
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
 
   const goNext = () => {
-    if (step.key === 'rollen' && roles.size === 0) {
+    if (step.key === 'rollen' && roles.size === 0 && !isParent) {
       setError('Bitte wähle mindestens eine Möglichkeit.');
       return;
     }
+    if (step.key === 'rollen' && isParent && childEntries.length === 0) {
+      setChildEntries([{ kind: 'new', key: 'kind-1', firstName: '', lastName: user?.lastName ?? '', teamIds: [] }]);
+    }
+    if (step.key === 'kinder') {
+      const problem = childProblem(childEntries);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+    }
     setError(null);
-    setStepIndex((index) => Math.min(STEPS.length - 1, index + 1));
+    setStepIndex((index) => Math.min(steps.length - 1, index + 1));
   };
 
   const finish = async () => {
     if (saving) return;
     setSaving(true);
     setError(null);
+
+    // Zuerst die Kinder – schlägt eines fehl, bleibt der Assistent offen, und
+    // bereits gespeicherte Kinder werden beim nächsten Versuch übersprungen.
+    if (isParent) {
+      const saved = await saveChildren(childEntries, setChildEntries);
+      if (!saved.ok) {
+        setError(saved.message);
+        setSaving(false);
+        return;
+      }
+    }
+
+    // Direkt danach die kurze Einführung zeigen (einmalig).
+    queueTour();
     const result = await completeOnboarding({
       theme,
       phone: phone.trim(),
@@ -132,6 +172,7 @@ export default function OnboardingWizard() {
       setSaving(false);
       return;
     }
+    if (isParent) reloadFamily();
     // Erfolg: `user.onboardingCompleted` ist jetzt gesetzt, die App zeigt von
     // selbst die Startseite. Kein setState danach – die Komponente verschwindet.
   };
@@ -154,7 +195,7 @@ export default function OnboardingWizard() {
         {/* Fortschritt: drei Schritte, keine Prozentzahl – bei drei Schritten
             sagt „Schritt 2 von 3" mehr als ein Balken. */}
         <ol className="mt-6 flex items-center gap-2" aria-label="Fortschritt">
-          {STEPS.map((entry, index) => {
+          {steps.map((entry, index) => {
             const done = index < stepIndex;
             const current = index === stepIndex;
             return (
@@ -170,7 +211,7 @@ export default function OnboardingWizard() {
                   {done ? <Check size={13} strokeWidth={3} /> : index + 1}
                 </span>
                 <span
-                  className={`truncate font-display text-xs font-semibold uppercase tracking-[0.06em] ${
+                  className={`truncate text-xs font-semibold ${
                     current ? 'text-ink' : 'text-ink-muted'
                   }`}
                   aria-current={current ? 'step' : undefined}
@@ -231,12 +272,46 @@ export default function OnboardingWizard() {
                       >
                         {active && <Check size={13} strokeWidth={3} />}
                       </span>
-                      <span className="font-display text-sm font-bold uppercase tracking-[0.03em] text-ink">
+                      <span className="font-display text-sm font-bold tracking-[-0.01em] text-ink">
                         {option.question}
                       </span>
                     </label>
                   );
                 })}
+
+
+                <label
+                  htmlFor="role-parent"
+                  className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-md border p-3.5 transition-colors ${
+                    isParent
+                      ? 'border-hsg-green bg-hsg-green-soft'
+                      : 'border-line bg-paper hover:border-hsg-green'
+                  }`}
+                >
+                  <input
+                    id="role-parent"
+                    type="checkbox"
+                    className="sr-only"
+                    checked={isParent}
+                    onChange={() => {
+                      setIsParent((value) => !value);
+                      setError(null);
+                    }}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border ${
+                      isParent
+                        ? 'border-hsg-green bg-hsg-green text-white'
+                        : 'border-line-strong bg-paper'
+                    }`}
+                  >
+                    {isParent && <Check size={13} strokeWidth={3} />}
+                  </span>
+                  <span className="font-display text-sm font-bold tracking-[-0.01em] text-ink">
+                    Hast du ein Kind im Verein?
+                  </span>
+                </label>
               </div>
             </>
           )}
@@ -268,6 +343,19 @@ export default function OnboardingWizard() {
 
                 </div>
               )}
+            </>
+          )}
+
+          {/* ------------------------------------------------- Kinder */}
+          {step.key === 'kinder' && (
+            <>
+              <h2 className="section-title text-base">Deine Kinder</h2>
+              <ChildrenStep
+                entries={childEntries}
+                onChange={setChildEntries}
+                teams={teams}
+                defaultLastName={user?.lastName ?? ''}
+              />
             </>
           )}
 
@@ -328,4 +416,44 @@ export default function OnboardingWizard() {
       </main>
     </div>
   );
+}
+
+/** Prüft die Kinder-Angaben, bevor es weitergeht. null = alles in Ordnung. */
+function childProblem(entries) {
+  if (entries.length === 0) return 'Bitte füge mindestens ein Kind hinzu – oder geh zurück und wähle die Frage ab.';
+  for (const [index, entry] of entries.entries()) {
+    if (entry.done) continue;
+    if (entry.kind === 'new' && (!entry.firstName.trim() || !entry.lastName.trim())) {
+      return `Bitte Vor- und Nachnamen für Kind ${index + 1} angeben.`;
+    }
+    if (entry.kind === 'code' && entry.code.replace(/[^a-z0-9]/gi, '').length !== 8) {
+      return `Bitte den 8-stelligen Code für Kind ${index + 1} eingeben.`;
+    }
+  }
+  return null;
+}
+
+/** Legt die Kinder an bzw. verknüpft sie per Code; markiert Erledigte. */
+async function saveChildren(entries, setEntries) {
+  for (const [index, entry] of entries.entries()) {
+    if (entry.done) continue;
+    try {
+      if (entry.kind === 'new') {
+        await apiFetch('/api/family/children', {
+          method: 'POST',
+          body: JSON.stringify({
+            firstName: entry.firstName.trim(),
+            lastName: entry.lastName.trim(),
+            teamIds: entry.teamIds,
+          }),
+        });
+      } else {
+        await apiFetch('/api/family/link', { method: 'POST', body: JSON.stringify({ code: entry.code }) });
+      }
+      setEntries((prev) => prev.map((item) => (item.key === entry.key ? { ...item, done: true } : item)));
+    } catch (err) {
+      return { ok: false, message: `Kind ${index + 1}: ${err.message}` };
+    }
+  }
+  return { ok: true };
 }

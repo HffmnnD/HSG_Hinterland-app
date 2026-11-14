@@ -14,7 +14,8 @@
 // `fan` reicht BEWUSST nicht: Trainingszeiten und Abmeldungen sind interne
 // Mannschaftsorganisation, keine Fan-Information.
 const teamRepository = require('../repositories/teamRepository');
-const { ADMIN_ROLES } = require('../utils/roles');
+// "Alle Mannschaften verwalten" ist ein Recht (access/permissions.js), keine Rolle.
+const canManageAll = (viewer) => Boolean(viewer.permissions && viewer.permissions.has('teams.manage_all'));
 
 const SCHEDULE_RELATIONS = ['player', 'coach'];
 
@@ -42,7 +43,7 @@ async function loadTeamAccess(viewer, teamId) {
     .filter((entry) => entry.id === teamId && entry.isConfirmed)
     .map((entry) => entry.relationType);
 
-  const isAdmin = ADMIN_ROLES.includes(viewer.userRole);
+  const isAdmin = canManageAll(viewer);
   const canManage = isAdmin || relations.includes('coach');
   const isPlayer = relations.includes('player');
 
@@ -92,7 +93,7 @@ async function requireManager(viewer, teamId, message = MANAGE_DENIED) {
  *                    nuligaSyncedAt:string|null}[]>}
  */
 async function listAccessibleTeams(viewer) {
-  const isAdmin = ADMIN_ROLES.includes(viewer.userRole);
+  const isAdmin = canManageAll(viewer);
   const [allTeams, relations] = await Promise.all([
     teamRepository.listAll(),
     teamRepository.getTeamsForUser(viewer.userId),
@@ -118,6 +119,9 @@ async function listAccessibleTeams(viewer) {
       name: team.name,
       canManage: isAdmin || (roles.get(team.id)?.canManage ?? false),
       isPlayer: roles.get(team.id)?.isPlayer ?? false,
+      // Eigene, bestätigte Zugehörigkeit (Spieler:in oder Trainer:in). Admins
+      // sehen alle Mannschaften, ihr eigener Kalender aber nur diese.
+      isMember: roles.has(team.id),
       // Für den Planungsbereich: gibt es eine Ligaanbindung, und werden die
       // Spiele daraus in den Kalender übernommen?
       handballTeamId: team.handballTeamId,

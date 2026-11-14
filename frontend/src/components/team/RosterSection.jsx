@@ -17,12 +17,17 @@ import Avatar from '../ui/Avatar';
  *
  * @param {{ member: object }} props
  */
-function PlayerCard({ member }) {
+function PlayerCard({ member, onOpen }) {
   const number = member.jerseyNumber;
   const position = positionLabel(member.position);
 
+  const Tag = onOpen ? 'button' : 'div';
   return (
-    <li className="player-card">
+    <li>
+      <Tag
+        {...(onOpen ? { type: 'button', onClick: () => onOpen(member) } : {})}
+        className={`player-card w-full text-left ${onOpen ? 'transition-colors hover:border-hsg-green' : ''}`}
+      >
       {member.photoUrl ? (
         <span className="relative shrink-0">
           <Avatar person={member} size="md" />
@@ -54,6 +59,7 @@ function PlayerCard({ member }) {
           {position}
         </span>
       </span>
+      </Tag>
     </li>
   );
 }
@@ -228,6 +234,7 @@ export default function RosterSection({
   canManage = false,
   busy = false,
   onSaveDetails,
+  onOpenMember,
 }) {
   const [filter, setFilter] = useState('alle');
   const [editing, setEditing] = useState(false);
@@ -282,9 +289,15 @@ export default function RosterSection({
                   >
                     <Avatar person={member} size="md" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-bold text-ink">
-                        {member.firstName} {member.lastName}
-                      </span>
+                      {onOpenMember ? (
+                        <button type="button" onClick={() => onOpenMember(member)} className="block truncate text-left text-sm font-bold text-ink hover:text-hsg-green-dark">
+                          {member.firstName} {member.lastName}
+                        </button>
+                      ) : (
+                        <span className="block truncate text-sm font-bold text-ink">
+                          {member.firstName} {member.lastName}
+                        </span>
+                      )}
                       <span className="block truncate text-xs text-ink-muted">
                         {member.staffTitle ?? 'Trainer:in'}
                       </span>
@@ -363,7 +376,7 @@ export default function RosterSection({
         ) : (
           <ul className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visiblePlayers.map((member) => (
-              <PlayerCard key={`player-${member.id}`} member={member} />
+              <PlayerCard key={`player-${member.id}`} member={member} onOpen={onOpenMember} />
             ))}
           </ul>
         )}

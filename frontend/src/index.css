@@ -3,14 +3,22 @@
 @config '../tailwind.config.js';
 
 /* ==========================================================================
-   Bauteile der App (Buttons, Karten, Tabellen …).
-   Alle Design-Werte (Farben, Schriften, Größen, Rundungen) kommen aus
-   src/design.css – dort ändern, nicht hier.
+   Bauteile der App (Knöpfe, Karten, Reiter, Tabellen …)
+   --------------------------------------------------------------------------
+   Alle WERTE (Farben, Schriften, Größen, Rundungen, Schatten, Bilder) stehen
+   in src/design.css. Hier steht nur, WIE die Bauteile sie verwenden.
+
+   Gestaltungsregeln:
+     – Ruhige, helle Flächen; Karten heben sich mit zartem Schatten ab.
+     – Überschriften in normaler Schreibweise, keine Großbuchstaben-Wände.
+       Großbuchstaben nur für winzige Kategorie-Etiketten (.eyebrow).
+     – Vereinsgrün sparsam: Hauptaktion, aktiver Zustand, Zusage.
+     – Mindestens 44 px Tippfläche für alles, was man antippt.
+
+   Die Klassennamen sind stabil – Komponenten verlassen sich darauf.
    ========================================================================== */
 
 @layer base {
-  /* Farben, Schriften, Größen und Rundungen stehen in src/design.css. Hier
-     nur, was nicht zur Gestaltung gehört. */
   :root {
     /* Safe-Area (PWA im Standalone-Modus, viewport-fit=cover) */
     --safe-t: env(safe-area-inset-top, 0px);
@@ -29,9 +37,10 @@
   }
 
   body {
-    @apply bg-paper font-sans text-ink-soft antialiased;
+    @apply bg-surface font-sans text-ink-soft antialiased;
     font-size: var(--text-base);
     line-height: var(--line-height-body);
+    font-feature-settings: 'cv11', 'ss01';
     text-rendering: optimizeLegibility;
   }
 
@@ -40,8 +49,9 @@
   h3,
   h4,
   h5 {
-    @apply font-display font-semibold text-ink;
-    line-height: 1.15;
+    @apply font-display font-bold text-ink;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
   }
 
   a {
@@ -49,7 +59,6 @@
     text-decoration: none;
   }
 
-  /* Sichtbarer, markenkonformer Fokus */
   :focus-visible {
     outline: 2px solid var(--c-green);
     outline-offset: 2px;
@@ -61,7 +70,6 @@
     color: white;
   }
 
-  /* native Formularfelder erben die Schrift */
   input,
   select,
   textarea,
@@ -70,60 +78,92 @@
     color: inherit;
   }
 
-  /* Autofill nicht blau einfärben */
   input:-webkit-autofill,
   input:-webkit-autofill:focus {
     -webkit-text-fill-color: var(--c-ink);
     -webkit-box-shadow: 0 0 0 1000px var(--c-paper) inset;
     caret-color: var(--c-ink);
   }
+
+  /* Zahlen in Tabellen, Ständen und Uhrzeiten stehen sauber untereinander. */
+  .tabular-nums,
+  .stat-value,
+  .event-date__day {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 @layer components {
-  /* ---------------------------------------------------------------- Layout */
+  /* ================================================================ Layout */
   .app-shell {
     @apply min-h-[100dvh] bg-surface text-ink-soft;
     padding-left: var(--safe-l);
     padding-right: var(--safe-r);
   }
 
-  /* Grüner Marken-Streifen ganz oben (das durchgehende Akzent-Element) */
   .brand-ribbon {
     @apply w-full bg-hsg-green;
     height: var(--ribbon-height);
   }
 
+  /* Kopfzeile: hell und leicht durchscheinend, damit der Inhalt beim Scrollen
+     darunter „durchläuft" – wirkt leichter als ein harter Balken. */
   .app-header {
-    @apply sticky top-0 z-30 border-b border-line bg-paper;
+    @apply sticky top-0 z-30 border-b border-line;
     padding-top: var(--safe-t);
+    background: color-mix(in srgb, var(--c-paper) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
   }
 
   .app-header__inner {
-    @apply mx-auto flex h-14 items-center justify-between gap-3 px-4;
+    @apply mx-auto flex h-14 items-center justify-between gap-3 px-4 md:h-16;
   }
 
   .app-main {
-    @apply mx-auto w-full px-4 py-6 sm:py-8;
+    @apply mx-auto w-full px-4 py-5 sm:py-8;
   }
 
-  /* ----------------------------------------------------------- Navigation */
-  /* Mobile Bottom-Navigation (PWA-Look). Ab `md` übernimmt .main-nav in der
-     Kopfzeile – deshalb hier md:hidden. */
+  /* Startseite: eine Spalte am Handy, zwei ab Tablet-Querformat / Fold
+     aufgeklappt. Breite Kacheln (Kalender, News) gehen über beide Spalten. */
+  .home-grid {
+    @apply grid gap-4 sm:gap-5;
+  }
+
+  @media (min-width: 840px) {
+    .home-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+    }
+    .home-grid__wide {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /* ============================================================ Navigation */
+  /* Handy: Leiste unten. Der aktive Reiter bekommt eine getönte Kapsel hinter
+     dem Symbol – klar erkennbar, ohne zu schreien. */
   .bottom-nav {
-    @apply fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper md:hidden;
+    @apply fixed inset-x-0 bottom-0 z-40 border-t border-line md:hidden;
     padding-bottom: var(--safe-b);
     padding-left: var(--safe-l);
     padding-right: var(--safe-r);
+    background: color-mix(in srgb, var(--c-paper) 94%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
   }
 
   .bottom-nav__list {
-    @apply mx-auto grid max-w-lg;
+    @apply mx-auto grid max-w-lg px-1;
   }
 
   .bottom-nav__item {
-    @apply relative flex min-h-14 flex-col items-center justify-center gap-1
-      px-1 py-1.5 font-display text-[0.625rem] font-semibold uppercase
-      leading-none tracking-[0.06em] text-ink-muted transition-colors;
+    @apply relative flex min-h-16 flex-col items-center justify-center gap-1 px-1 py-2
+      text-[0.6875rem] font-medium leading-none text-ink-muted transition-colors;
+  }
+
+  .bottom-nav__item > span:first-child {
+    @apply flex h-8 w-14 items-center justify-center rounded-full transition-colors;
   }
 
   .bottom-nav__item:hover {
@@ -131,54 +171,97 @@
   }
 
   .bottom-nav__item--active {
-    @apply text-hsg-green-dark;
+    @apply font-semibold text-ink;
   }
 
-  /* Grüner Indikator über dem aktiven Reiter – greift den Marken-Streifen
-     der Kopfzeile auf. */
-  .bottom-nav__item--active::before {
-    content: '';
-    @apply absolute inset-x-4 top-0 h-[3px] bg-hsg-green;
+  .bottom-nav__item--active > span:first-child {
+    @apply bg-hsg-green-soft text-hsg-green-darker;
   }
 
-  /* Kopfzeilen-Navigation am Desktop: aktiver Reiter grün gefüllt – wie die
-     Hauptnavigation auf hsg-hinterland.de. */
+  .bottom-nav__label {
+    @apply truncate;
+  }
+
+  /* Querformat am Handy (auch Fold mit wenig Höhe): Symbol und Text
+     nebeneinander, die Leiste nimmt kaum Höhe weg. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .bottom-nav__item {
+      @apply min-h-12 flex-row gap-1.5 py-1;
+    }
+    .bottom-nav__item > span:first-child {
+      @apply h-7 w-9;
+    }
+  }
+
+  /* Eltern im Kinderkonto: unübersehbar, aber ruhig. */
+  .acting-banner {
+    @apply sticky top-0 z-50 flex items-center justify-center gap-3 px-4 py-2 text-sm
+      font-semibold text-white;
+    background: var(--c-dark);
+    padding-left: max(1rem, var(--safe-l));
+    padding-right: max(1rem, var(--safe-r));
+    box-shadow: inset 0 -3px 0 var(--c-warn);
+  }
+
+  /* Desktop: Navigation in der Kopfzeile als ruhige Kapseln. */
   .main-nav {
-    @apply hidden items-center gap-1 md:flex;
+    @apply hidden items-center gap-0.5 md:flex;
   }
 
   .main-nav__item {
-    @apply inline-flex min-h-9 items-center rounded-sm px-3 font-display text-xs
-      font-semibold uppercase tracking-[0.06em] text-ink-soft transition-colors
-      hover:bg-surface hover:text-ink;
+    @apply inline-flex min-h-10 items-center rounded-full px-3.5 text-sm font-medium
+      text-ink-soft transition-colors hover:bg-surface hover:text-ink lg:px-4;
   }
 
   .main-nav__item--active {
-    @apply bg-hsg-green text-white hover:bg-hsg-green-dark hover:text-white;
+    @apply bg-hsg-green-soft font-semibold text-hsg-green-darker hover:bg-hsg-green-soft
+      hover:text-hsg-green-darker;
   }
 
-  /* --------------------------------------------------------------- Marke */
+  /* ================================================================= Marke */
   .brand {
     @apply flex min-w-0 items-center gap-2.5;
   }
 
   .brand__mark {
-    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded bg-hsg-green font-display text-lg font-bold leading-none text-white;
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] font-display
+      text-lg font-extrabold leading-none text-hsg-green;
+    background-color: var(--c-dark);
+    background-image: var(--brand-logo);
+    background-size: cover;
+    background-position: center;
+  }
+
+  /* Eigenes Logo aus den App-Einstellungen (Verwaltung) */
+  .brand__logo {
+    @apply h-9 w-9 shrink-0 rounded-[10px] object-contain;
+  }
+
+  /* Vereinsfläche der Anmeldeseite: Bild aus --image-login, sonst ein
+     ruhiger Verlauf in Markenfarben. */
+  .auth-visual {
+    background-color: var(--c-dark);
+    background-image:
+      linear-gradient(180deg, rgb(10 16 22 / 0.35), rgb(10 16 22 / 0.85)), var(--image-login),
+      radial-gradient(90% 80% at 0% 0%, color-mix(in srgb, var(--c-green) 45%, transparent), transparent 60%),
+      radial-gradient(70% 60% at 100% 100%, color-mix(in srgb, var(--c-green) 22%, transparent), transparent 60%);
+    background-size: cover;
+    background-position: center;
   }
 
   .brand__name {
-    @apply truncate font-display text-base font-bold uppercase tracking-[0.04em] text-ink sm:text-lg;
+    @apply truncate font-display text-base font-bold tracking-[-0.01em] text-ink sm:text-[1.0625rem];
   }
 
-  /* --------------------------------------------------------------- Buttons */
+  /* =============================================================== Knöpfe */
   .btn {
     @apply inline-flex min-h-11 select-none items-center justify-center gap-2 rounded px-4
-      font-display text-sm font-semibold uppercase tracking-[0.05em] transition-colors
-      disabled:cursor-not-allowed disabled:opacity-55;
+      text-sm font-semibold transition-[background-color,border-color,color,box-shadow]
+      disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-sm {
-    @apply min-h-11 gap-1.5 px-3 text-xs;
+    @apply min-h-10 gap-1.5 px-3.5 text-[0.8125rem];
   }
 
   .btn-block {
@@ -186,7 +269,8 @@
   }
 
   .btn-primary {
-    @apply bg-hsg-green text-white hover:bg-hsg-green-dark active:bg-hsg-green-darker;
+    @apply bg-hsg-green text-white shadow-[0_1px_2px_rgb(16_24_32/0.12)]
+      hover:bg-hsg-green-dark active:bg-hsg-green-darker;
   }
 
   .btn-secondary {
@@ -194,21 +278,20 @@
   }
 
   .btn-outline {
-    @apply border border-line-strong bg-paper text-ink
-      hover:border-hsg-green hover:text-hsg-green-dark;
+    @apply border border-line-strong bg-paper text-ink hover:border-ink-muted hover:bg-surface;
   }
 
   .btn-ghost {
-    @apply text-ink-soft hover:bg-surface hover:text-ink;
+    @apply text-ink-soft hover:bg-surface-strong hover:text-ink;
   }
 
-  /* zurückhaltende, aber eindeutige „Entfernen/Ablehnen"-Aktion */
+  /* Entfernen/Ablehnen: zurückhaltend, beim Darüberfahren eindeutig rot. */
   .btn-danger {
-    @apply border border-line-strong bg-paper text-ink-muted
-      hover:border-danger hover:text-danger;
+    @apply border border-line-strong bg-paper text-danger
+      hover:border-danger-line hover:bg-danger-soft;
   }
 
-  /* ---------------------------------------------------------------- Karten */
+  /* =============================================================== Karten */
   .card {
     @apply rounded-md border border-line bg-paper p-5 shadow-card;
   }
@@ -217,73 +300,466 @@
     @apply rounded-md border border-line bg-paper p-5;
   }
 
-  /* Karte mit grünem Akzentstrich links – für Hervorhebungen/Verwaltung */
+  /* Hervorhebung: getönte Fläche statt dicker Seitenstriche. */
   .card-accent {
-    @apply rounded-md border border-line border-l-[3px] border-l-hsg-green bg-paper p-5 shadow-card;
+    @apply rounded-md border border-hsg-green-line bg-paper p-5 shadow-card;
+    background-image: linear-gradient(135deg, var(--c-green-soft), transparent 60%);
   }
 
-  /* Karte mit bernsteinfarbenem Akzent – offene Anfragen / Warnhinweise */
   .card-warn {
-    @apply rounded-md border border-warn-line border-l-[3px] border-l-warn bg-paper p-5 shadow-card;
+    @apply rounded-md border border-warn-line bg-warn-soft p-5;
+  }
+
+  .card-note {
+    @apply rounded-md border border-dashed border-line-strong bg-paper/60 p-5 text-sm text-ink-muted;
   }
 
   .stat-value {
-    @apply mt-1 font-display text-2xl font-bold leading-none text-hsg-green-dark;
+    @apply mt-1 font-display text-2xl font-extrabold leading-none tracking-[-0.02em] text-ink;
   }
 
-  /* ----------------------------------------------------------- News-Feed */
-  /* Beitragsbild: feste 16:9-Fläche, damit der Feed beim Laden nicht springt. */
+  /* Abschnittskarte mit Kopfzeile – Grundmuster von Startseite und Verwaltung. */
+  .panel {
+    @apply rounded-md border border-line bg-paper shadow-card;
+  }
+
+  .panel__header {
+    @apply flex flex-wrap items-center justify-between gap-3 px-4 pb-1 pt-4 sm:px-5;
+  }
+
+  .panel__body {
+    @apply px-4 pb-4 pt-3 sm:px-5 sm:pb-5;
+  }
+
+  /* Werkzeugleiste über einer Liste (Suche, Filter, Umschalter). */
+  .panel__toolbar {
+    @apply mt-3 flex flex-col gap-2 border-y border-line bg-surface/60 px-4 py-3 sm:flex-row
+      sm:items-center sm:px-5;
+  }
+
+  .list-panel {
+    @apply divide-y divide-line overflow-hidden rounded-md border border-line bg-paper shadow-card;
+  }
+
+  /* ========================================================= Überschriften */
+  /* Kleines Kategorie-Etikett über einer Gruppe – die einzige Stelle mit
+     Großbuchstaben. */
+  .eyebrow {
+    @apply text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-ink-muted;
+  }
+
+  .section-title {
+    @apply font-display text-base font-bold tracking-[-0.01em] text-ink;
+  }
+
+  .page-title {
+    @apply font-display text-2xl font-extrabold tracking-[-0.02em] text-ink sm:text-[1.75rem];
+  }
+
+  .header-title {
+    @apply truncate font-display text-base font-bold tracking-[-0.01em] text-ink sm:text-lg;
+  }
+
+  /* ============================================================ Formulare */
+  .field-label {
+    @apply mb-1.5 block text-sm font-semibold text-ink;
+  }
+
+  .field-control {
+    @apply block min-h-11 w-full rounded-sm border border-line-strong bg-paper px-3.5 py-2.5
+      text-[0.9375rem] text-ink shadow-[0_1px_1px_rgb(16_24_32/0.03)] placeholder:text-ink-muted
+      transition-colors focus:border-hsg-green focus:outline-none focus:ring-4
+      focus:ring-hsg-green/15 disabled:bg-surface disabled:opacity-60;
+  }
+
+  .field-control-sm {
+    @apply min-h-10 rounded-sm border border-line-strong bg-paper px-3 text-sm text-ink
+      transition-colors focus:border-hsg-green focus:outline-none focus:ring-4
+      focus:ring-hsg-green/15 disabled:bg-surface disabled:opacity-50;
+  }
+
+  .field-hint {
+    @apply mt-1.5 text-xs text-ink-muted;
+  }
+
+  .fieldset {
+    @apply rounded-md border border-line bg-surface/60 p-4;
+  }
+
+  .fieldset > legend {
+    @apply px-1 text-sm font-semibold text-ink;
+  }
+
+  .search-input {
+    @apply block min-h-11 w-full rounded-full border border-line-strong bg-paper py-2.5 pl-10 pr-10
+      text-[0.9375rem] text-ink placeholder:text-ink-muted transition-colors
+      focus:border-hsg-green focus:outline-none focus:ring-4 focus:ring-hsg-green/15;
+  }
+
+  /* ================================================================ Chips */
+  .chip {
+    @apply inline-flex min-h-10 select-none items-center justify-center gap-1.5 rounded-full border
+      border-line-strong bg-paper px-3.5 text-sm font-medium text-ink-soft transition-colors
+      hover:border-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .chip-active {
+    @apply border-hsg-green bg-hsg-green-soft font-semibold text-hsg-green-darker
+      hover:border-hsg-green hover:text-hsg-green-darker;
+  }
+
+  .chip-sm {
+    @apply min-h-9 px-3 text-[0.8125rem];
+  }
+
+  .chip-pending {
+    @apply border-warn-line bg-warn-soft text-warn hover:border-warn hover:text-warn;
+  }
+
+  /* Statisches Etikett (Helferdienste, Rollen in Listen) */
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-full bg-surface-strong px-2.5 py-0.5 text-xs
+      font-medium text-ink-soft;
+  }
+
+  .avatar {
+    @apply flex shrink-0 items-center justify-center rounded-full bg-hsg-green-soft font-display
+      font-bold uppercase leading-none text-hsg-green-darker;
+  }
+
+  /* ======================================================== Badges, Status */
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[0.6875rem]
+      font-semibold leading-none;
+  }
+
+  .badge-admin {
+    @apply bg-hsg-dark text-white;
+  }
+
+  .badge-trainer {
+    @apply bg-hsg-green text-white;
+  }
+
+  .badge-neutral {
+    @apply bg-surface-strong text-ink-soft;
+  }
+
+  .badge-pending {
+    @apply bg-warn-soft text-warn ring-1 ring-inset ring-warn-line;
+  }
+
+  .badge-confirmed {
+    @apply bg-hsg-green-soft text-hsg-green-darker ring-1 ring-inset ring-hsg-green-line;
+  }
+
+  .badge-declined {
+    @apply bg-danger-soft text-danger ring-1 ring-inset ring-danger-line;
+  }
+
+  /* Dabei ohne ausdrückliche Rückmeldung: wie Zusage, nur ohne Füllung. */
+  .badge-default {
+    @apply bg-paper text-hsg-green-darker ring-1 ring-inset ring-hsg-green-line;
+  }
+
+  /* Laufendes Spiel – die einzige Stelle, die „jetzt gerade" bedeutet. */
+  .badge-live {
+    @apply bg-danger-fill text-white;
+  }
+
+  .live-dot {
+    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current;
+    animation: live-pulse 1.6s ease-in-out infinite;
+  }
+
+  .status {
+    @apply inline-flex items-center gap-2 text-sm font-medium;
+  }
+
+  .status-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+  }
+
+  /* ============================================================== Tabellen */
+  .table-wrap {
+    @apply w-full overflow-x-auto rounded-md border border-line bg-paper;
+  }
+
+  .data-table {
+    @apply w-full border-collapse text-left text-sm;
+  }
+
+  .data-table thead th {
+    @apply whitespace-nowrap border-b border-line bg-surface/70 px-4 py-2.5 text-xs font-semibold
+      text-ink-muted;
+  }
+
+  .data-table tbody td,
+  .data-table tbody th {
+    @apply border-b border-line px-4 py-3 align-top;
+  }
+
+  .data-table tbody tr:last-child td,
+  .data-table tbody tr:last-child th {
+    @apply border-b-0;
+  }
+
+  .data-table tbody tr {
+    @apply transition-colors;
+  }
+
+  .data-table tbody tr:hover {
+    @apply bg-surface;
+  }
+
+  /* Eigene Mannschaft in der Ligatabelle */
+  .data-table tbody tr.row-own,
+  .data-table tbody tr.row-own:hover {
+    @apply bg-hsg-green-soft;
+  }
+
+  .data-table tbody tr.row-own td,
+  .data-table tbody tr.row-own th {
+    @apply font-semibold text-ink;
+  }
+
+  .data-table tbody tr.row-own td:first-child {
+    box-shadow: inset 3px 0 0 var(--c-green);
+  }
+
+  .data-table-compact thead th,
+  .data-table-compact tbody td,
+  .data-table-compact tbody th {
+    @apply px-2 py-2 sm:px-3;
+  }
+
+  /* ================================================================ Divers */
+  .link {
+    @apply font-semibold text-hsg-green-dark underline-offset-4 hover:text-hsg-green-darker hover:underline;
+  }
+
+  .alert {
+    @apply flex gap-2.5 rounded px-4 py-3 text-sm;
+  }
+
+  .alert-error {
+    @apply bg-danger-soft text-danger ring-1 ring-inset ring-danger-line;
+  }
+
+  .alert-success {
+    @apply bg-hsg-green-soft text-hsg-green-darker ring-1 ring-inset ring-hsg-green-line;
+  }
+
+  .alert-info {
+    @apply bg-warn-soft text-warn ring-1 ring-inset ring-warn-line;
+  }
+
+  .spinner {
+    @apply inline-block animate-spin rounded-full border-2 border-line-strong border-t-hsg-green;
+  }
+
+  .skeleton {
+    @apply block rounded-sm bg-surface-strong;
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* ================================================================ Reiter */
+  /* Seiten-Reiter: waagerecht scrollbar am Handy, aktiver Reiter mit grünem
+     Unterstrich. Normalschrift – Reiter sind Navigation, keine Schlagzeilen. */
+  .tabs {
+    @apply -mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    @apply relative min-h-11 shrink-0 whitespace-nowrap px-3 text-sm font-medium text-ink-muted
+      transition-colors hover:text-ink sm:px-3.5;
+  }
+
+  .tab--active {
+    @apply font-semibold text-ink;
+  }
+
+  .tab--active::after {
+    content: '';
+    @apply absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-hsg-green;
+  }
+
+  /* Umschalter mit 2–3 festen Stellungen */
+  .switcher {
+    @apply inline-flex rounded-full bg-surface-strong p-1;
+  }
+
+  .switcher__btn {
+    @apply inline-flex min-h-9 items-center gap-1.5 rounded-full px-3.5 text-[0.8125rem] font-medium
+      text-ink-muted transition-colors hover:text-ink;
+  }
+
+  .switcher__btn--active {
+    @apply bg-paper font-semibold text-ink shadow-[0_1px_3px_rgb(16_24_32/0.12)];
+  }
+
+  /* Umschalter Anmelden / Registrieren und Bereichswahl */
+  .segment {
+    @apply grid grid-cols-2 gap-1 rounded-full bg-surface-strong p-1;
+  }
+
+  .segment__btn {
+    @apply min-h-10 rounded-full text-sm font-medium text-ink-muted transition-colors hover:text-ink;
+  }
+
+  .segment__btn--active {
+    @apply bg-paper font-semibold text-ink shadow-[0_1px_3px_rgb(16_24_32/0.12)] hover:text-ink;
+  }
+
+  /* ====================================================== Mannschafts-Kopf */
+  .team-hero {
+    @apply relative overflow-hidden rounded-md text-white shadow-card;
+    background-color: var(--c-hero);
+    background-image: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--c-green) 35%, transparent), transparent 55%);
+  }
+
+  .team-hero__image {
+    @apply absolute inset-0 h-full w-full object-cover;
+  }
+
+  .team-hero__scrim {
+    @apply absolute inset-0;
+    background: linear-gradient(to top, var(--c-hero-scrim), transparent 75%);
+  }
+
+  .team-hero__body {
+    @apply relative px-5 pb-5 pt-10 sm:px-7 sm:pb-7 sm:pt-28;
+  }
+
+  /* ================================================================ Kader */
+  .player-card {
+    @apply flex items-center gap-3 rounded-md border border-line bg-paper p-3 shadow-card transition-colors;
+  }
+
+  .player-card:hover {
+    @apply border-line-strong;
+  }
+
+  /* Rückennummer als Trikot-Kreis. Ohne Nummer stehen dort die Initialen. */
+  .jersey {
+    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full font-display text-base
+      font-extrabold leading-none text-white;
+    background: var(--c-dark);
+  }
+
+  .jersey--empty {
+    @apply bg-surface-strong text-sm font-bold text-ink-muted;
+  }
+
+  /* =============================================================== Termine */
+  /* Datumsblock links auf jeder Terminkarte, feste Breite. */
+  .event-date {
+    @apply flex w-12 shrink-0 flex-col items-center justify-center rounded-sm bg-surface py-2 sm:w-14;
+  }
+
+  .event-date__weekday {
+    @apply text-[0.625rem] font-semibold uppercase leading-none tracking-[0.06em] text-ink-muted;
+  }
+
+  .event-date__day {
+    @apply mt-1 font-display text-xl font-extrabold leading-none text-ink;
+  }
+
+  .event-date__month {
+    @apply mt-1 text-[0.625rem] font-semibold uppercase leading-none tracking-[0.06em] text-ink-muted;
+  }
+
+  /* Anwesenheit auf der Terminkarte: die eine Frage, die vor jedem Training
+     zählt – deshalb als breite Fläche. */
+  .attend-bar {
+    @apply mt-3 flex flex-wrap items-center justify-between gap-3 rounded px-4 py-3;
+  }
+
+  .attend-bar__label {
+    @apply text-sm font-bold;
+  }
+
+  .attend-bar--yes {
+    @apply bg-hsg-green-soft ring-1 ring-inset ring-hsg-green-line;
+  }
+
+  .attend-bar--yes .attend-bar__label {
+    @apply text-hsg-green-darker;
+  }
+
+  .attend-bar--no {
+    @apply bg-danger-soft ring-1 ring-inset ring-danger-line;
+  }
+
+  .attend-bar--no .attend-bar__label {
+    @apply text-danger;
+  }
+
+  .attend-bar--absent {
+    @apply bg-warn-soft ring-1 ring-inset ring-warn-line;
+  }
+
+  .attend-bar--absent .attend-bar__label {
+    @apply text-warn;
+  }
+
+  /* Abgesagter Termin – beim Überfliegen ohne Lesen erkennbar. */
+  .event-cancelled {
+    @apply -mx-5 -mt-5 mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-t-md
+      bg-danger-fill px-5 py-2.5 text-white;
+  }
+
+  .event-cancelled__label {
+    @apply text-sm font-bold uppercase tracking-[0.06em];
+  }
+
+  /* ============================================================ News-Feed */
   .news-image {
-    @apply w-full rounded-sm border border-line bg-surface object-cover;
+    @apply w-full rounded-sm bg-surface object-cover;
     aspect-ratio: 16 / 9;
   }
 
-  /* Fließtext eines Beitrags – Zeilenumbrüche aus dem Formular bleiben
-     erhalten (der Text wird als Text gerendert, niemals als HTML). */
   .news-body {
-    @apply whitespace-pre-line text-sm leading-relaxed text-ink-soft;
+    @apply whitespace-pre-line text-[0.9375rem] leading-relaxed text-ink-soft;
+    /* Lange Wörter oder Links brechen um, statt die Seite aufzuziehen. */
+    overflow-wrap: anywhere;
   }
 
-  /* Abgeschnittener Fließtext. `-webkit-line-clamp` ist trotz des Präfixes in
-     allen aktuellen Browsern der Standardweg; die Zeilenzahl steht als
-     Variable, damit sie an einer Stelle liegt. `white-space: pre-line` bleibt
-     erhalten – Zeilenumbrüche aus dem Formular zählen also mit. */
-  /* Aufmacher der Startseite: mehr Zeilen, bevor abgeschnitten wird. Eine
-     eigene Klasse statt eines Inline-Stils, damit die Zeilenzahl dort steht,
-     wo auch der Standardwert steht. */
-  .news-body--spotlight {
-    --news-clamp: 10;
+  /* Titelbild einer zugeklappten News oder eines Spielberichts */
+  .news-cover {
+    @apply relative block w-full overflow-hidden rounded-md bg-surface transition-opacity hover:opacity-95;
   }
 
-  .news-body--collapsed {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: var(--news-clamp, 6);
-    line-clamp: var(--news-clamp, 6);
-    overflow: hidden;
+  .news-cover > img {
+    @apply block h-full w-full object-cover;
+    aspect-ratio: 16 / 9;
+    max-height: 22rem;
   }
 
-  /* ------------------------------------------------------ Bilderstrecke */
+  .news-cover__count {
+    @apply absolute bottom-2 right-2 rounded-full px-2.5 py-1 text-xs font-semibold text-white;
+    background: rgb(0 0 0 / 0.55);
+  }
+
   .news-gallery {
     @apply grid list-none gap-2 p-0;
   }
 
-  /* Ein einzelnes Bild bekommt die volle Breite – so wie bisher. */
   .news-gallery--single {
     @apply grid-cols-1;
   }
 
-  /* Ab zwei Bildern Kacheln: auf dem Handy zwei nebeneinander, ab `sm` drei.
-     Mehr Spalten würden die Kacheln zu Briefmarken machen. */
   .news-gallery--grid {
     @apply grid-cols-2 sm:grid-cols-3;
   }
 
-  /* Der Knopf IST die Kachel: die ganze Fläche ist das Klickziel, nicht nur
-     das Bild darin. */
   .news-gallery__item {
-    @apply relative block w-full overflow-hidden rounded-sm border border-line
-      bg-surface transition-colors hover:border-hsg-green;
+    @apply relative block w-full overflow-hidden rounded-sm bg-surface transition-opacity hover:opacity-90;
   }
 
   .news-gallery__item > img {
@@ -298,13 +774,12 @@
     aspect-ratio: 4 / 3;
   }
 
-  /* „+N" über der letzten Kachel, wenn mehr Bilder vorhanden sind. */
   .news-gallery__more {
-    @apply absolute inset-0 flex items-center justify-center bg-hsg-dark/60
-      font-display text-lg font-bold text-white;
+    @apply absolute inset-0 flex items-center justify-center bg-hsg-dark/60 font-display text-lg
+      font-bold text-white;
   }
 
-  /* ------------------------------------------------------- Vollbild */
+  /* ============================================================= Vollbild */
   .lightbox {
     @apply fixed inset-0 z-50 flex items-center justify-center p-4;
     background-color: var(--c-scrim-strong);
@@ -322,14 +797,12 @@
   }
 
   .lightbox__counter {
-    @apply rounded-sm bg-black/40 px-2.5 py-1 font-display text-xs font-semibold
-      tracking-[0.06em] text-white;
+    @apply rounded-full bg-black/45 px-3 py-1 text-xs font-semibold text-white;
   }
 
-  /* Knöpfe auf dunklem Grund: eigener Fokusring, der dort sichtbar bleibt. */
   .lightbox__btn {
-    @apply inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full
-      bg-black/40 text-white transition-colors hover:bg-black/70;
+    @apply inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/45
+      text-white transition-colors hover:bg-black/70;
   }
 
   .lightbox__btn:focus-visible {
@@ -349,459 +822,32 @@
     @apply right-3;
   }
 
-  /* dezenter, aber sichtbarer Hinweiskasten */
-  .card-note {
-    @apply rounded border border-dashed border-line-strong bg-surface p-5 text-sm text-ink-muted;
-  }
-
-  /* --------------------------------------------------------- Überschriften */
-  .eyebrow {
-    @apply font-display text-[0.6875rem] font-semibold uppercase tracking-[0.14em] text-ink-muted;
-  }
-
-  .section-title {
-    @apply font-display text-lg font-bold uppercase tracking-[0.03em] text-ink;
-  }
-
-  .page-title {
-    @apply font-display text-xl font-bold uppercase tracking-[0.02em] text-ink sm:text-2xl;
-  }
-
-  /* Kopfzeilen-Titel der Unterseiten (Team-Name, „Mitgliederverwaltung") */
-  .header-title {
-    @apply truncate font-display text-base font-bold uppercase tracking-[0.03em] text-ink sm:text-lg;
-  }
-
-  /* ------------------------------------------------------------ Formulare */
-  .field-label {
-    @apply mb-1.5 block text-sm font-bold text-ink;
-  }
-
-  .field-control {
-    @apply block min-h-11 w-full rounded-sm border border-line-strong bg-paper px-3.5 py-2.5
-      text-sm text-ink placeholder:text-ink-muted transition-colors
-      focus:border-hsg-green focus:outline-none focus:ring-2 focus:ring-hsg-green/25
-      disabled:bg-surface disabled:opacity-60;
-  }
-
-  /* kompakte Variante für Auswahlfelder in dichten Zeilen (Höhe bleibt 44px) */
-  .field-control-sm {
-    @apply min-h-11 rounded-sm border border-line-strong bg-paper px-2.5 text-xs text-ink
-      transition-colors focus:border-hsg-green focus:outline-none focus:ring-2
-      focus:ring-hsg-green/25 disabled:bg-surface disabled:opacity-50;
-  }
-
-  .field-hint {
-    @apply mt-1.5 text-xs text-ink-muted;
-  }
-
-  .fieldset {
-    @apply rounded-md border border-line bg-surface/60 p-4;
-  }
-
-  .fieldset > legend {
-    @apply px-1 text-sm font-bold text-ink;
-  }
-
-  /* --------------------------------------------------------------- Chips */
-  .chip {
-    @apply inline-flex min-h-11 select-none items-center justify-center gap-1.5 rounded-sm border
-      border-line-strong bg-paper px-3 text-sm font-semibold text-ink-soft transition-colors
-      hover:border-hsg-green hover:text-hsg-green-dark
-      disabled:cursor-not-allowed disabled:opacity-50;
-  }
-
-  .chip-active {
-    @apply border-hsg-green bg-hsg-green text-white hover:bg-hsg-green-dark hover:text-white;
-  }
-
-  .chip-sm {
-    @apply min-h-9 px-2.5 text-xs;
-  }
-
-  /* wartet auf Bestätigung – Bernstein statt Grün */
-  .chip-pending {
-    @apply border-warn-line bg-warn-soft text-warn hover:border-warn hover:text-warn;
-  }
-
-  /* statisches Etikett (Helferdienste, Rollen-Label in Listen) */
-  .tag {
-    @apply inline-flex items-center gap-1.5 rounded-sm border border-line-strong
-      bg-paper px-2.5 py-1 text-xs font-semibold text-ink-soft;
-  }
-
-  /* Initialen-Kreis. Getönt statt grau: Auf dem Seitenhintergrund (`surface`)
-     war der frühere graue Kreis in beiden Themen praktisch unsichtbar – die
-     Initialen schwebten im Nichts. */
-  .avatar {
-    @apply flex shrink-0 items-center justify-center rounded-full border
-      border-hsg-green-line bg-hsg-green-soft font-display font-bold uppercase
-      leading-none text-hsg-green-darker;
-  }
-
-  /* ------------------------------------------------------- Badges / Status */
-  .badge {
-    @apply inline-flex items-center gap-1 rounded-sm px-2 py-1 font-display text-[0.625rem]
-      font-semibold uppercase leading-none tracking-[0.08em];
-  }
-
-  .badge-admin {
-    @apply bg-hsg-dark text-white;
-  }
-
-  .badge-trainer {
-    @apply bg-hsg-green text-white;
-  }
-
-  .badge-neutral {
-    @apply border border-line-strong bg-surface text-ink-muted;
-  }
-
-  .badge-pending {
-    @apply border border-warn-line bg-warn-soft text-warn;
-  }
-
-  .badge-confirmed {
-    @apply border border-hsg-green-line bg-hsg-green-soft text-hsg-green-darker;
-  }
-
-  /* Abgesagt (Termine). Rot – die Gegenfarbe zu .badge-confirmed. */
-  .badge-declined {
-    @apply border border-danger-line bg-danger-soft text-danger;
-  }
-
-  /* Dabei, aber ohne ausdrückliche Rückmeldung. Grün wie eine Zusage, denn
-     genau so wird die Person gezählt – nur ohne die volle Füllung, damit der
-     Unterschied zur bewussten Zusage sichtbar bleibt. */
-  .badge-default {
-    @apply border border-hsg-green-line bg-paper text-hsg-green-darker;
-  }
-
-  /* Laufendes Spiel (Handball-Ticker, Spielplan). Rot, weil es die einzige
-     Stelle in der App ist, die „jetzt gerade" bedeutet – bewusst kräftiger
-     als die übrigen Status-Chips. */
-  .badge-live {
-    @apply bg-danger-fill text-white;
-  }
-
-  /* Pulsierender Punkt im LIVE-Badge. Steht still, wenn das Betriebssystem
-     reduzierte Bewegung verlangt. */
-  .live-dot {
-    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current;
-    animation: live-pulse 1.6s ease-in-out infinite;
-  }
-
-  .status {
-    @apply inline-flex items-center gap-2 text-sm font-semibold;
-  }
-
-  .status-dot {
-    @apply inline-block h-2 w-2 shrink-0 rounded-full;
-  }
-
-  /* ------------------------------------------------------------- Tabellen */
-  .table-wrap {
-    @apply w-full overflow-x-auto rounded-md border border-line;
-  }
-
-  .data-table {
-    @apply w-full border-collapse text-left text-sm;
-  }
-
-  .data-table thead th {
-    @apply whitespace-nowrap border-b border-line-strong bg-surface px-4 py-3
-      font-display text-[0.6875rem] font-semibold uppercase tracking-[0.07em] text-ink-muted;
-  }
-
-  /* `th` im Tabellenkörper (Zeilenkopf, z. B. der Mannschaftsname) wird wie
-     eine normale Zelle gesetzt – die Semantik bleibt, die Optik auch. */
-  .data-table tbody td,
-  .data-table tbody th {
-    @apply border-b border-line px-4 py-3 align-top;
-  }
-
-  .data-table tbody tr:last-child td,
-  .data-table tbody tr:last-child th {
-    @apply border-b-0;
-  }
-
-  .data-table tbody tr {
-    @apply transition-colors;
-  }
-
-  .data-table tbody tr:nth-child(even) {
-    @apply bg-surface/60;
-  }
-
-  .data-table tbody tr:hover {
-    @apply bg-surface-strong;
-  }
-
-  /* Eigene Mannschaft in der Ligatabelle: grün getönt, fett, mit grünem
-     Balken links. Die :nth-child-Regel wird bewusst überschrieben, damit die
-     Hervorhebung auch in geraden Zeilen greift. */
-  .data-table tbody tr.row-own,
-  .data-table tbody tr.row-own:nth-child(even),
-  .data-table tbody tr.row-own:hover {
-    @apply bg-hsg-green-soft;
-  }
-
-  .data-table tbody tr.row-own td,
-  .data-table tbody tr.row-own th {
-    @apply font-bold text-ink;
-  }
-
-  .data-table tbody tr.row-own td:first-child {
-    box-shadow: inset 3px 0 0 var(--c-green);
-  }
-
-  /* Kompakte Tabelle für Widgets auf der Startseite (viele Spalten, wenig
-     Platz auf dem Handy). */
-  .data-table-compact thead th,
-  .data-table-compact tbody td,
-  .data-table-compact tbody th {
-    @apply px-2 py-2 sm:px-3;
-  }
-
-  /* --------------------------------------------------------------- Divers */
-  .link {
-    @apply font-semibold text-hsg-green-dark underline-offset-2 hover:text-hsg-green-darker hover:underline;
-  }
-
-  .list-panel {
-    @apply divide-y divide-line overflow-hidden rounded-md border border-line bg-paper;
-  }
-
-  .alert {
-    @apply flex gap-2 rounded border px-3.5 py-3 text-sm;
-  }
-
-  .alert-error {
-    @apply border-danger-line bg-danger-soft text-danger;
-  }
-
-  .alert-success {
-    @apply border-hsg-green-line bg-hsg-green-soft text-hsg-green-darker;
-  }
-
-  .alert-info {
-    @apply border-warn-line bg-warn-soft text-warn;
-  }
-
-  .spinner {
-    @apply inline-block animate-spin rounded-full border-2 border-line-strong border-t-hsg-green;
-  }
-
-  /* ------------------------------------------------------------- Reiter */
-  /* Seiten-Reiter (Mannschaftsseite). Anders als `.segment` (zwei feste
-     Spalten) beliebig viele Einträge, waagerecht scrollbar auf dem Handy.
-     Der aktive Reiter bekommt den grünen Balken der Hauptnavigation. */
-  .tabs {
-    @apply -mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0;
-    scrollbar-width: none;
-  }
-
-  .tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .tab {
-    @apply relative min-h-11 shrink-0 whitespace-nowrap px-3 font-display text-xs
-      font-semibold uppercase tracking-[0.05em] text-ink-muted transition-colors
-      hover:text-ink sm:px-4 sm:text-sm;
-  }
-
-  .tab--active {
-    @apply text-hsg-green-dark;
-  }
-
-  .tab--active::after {
-    content: '';
-    @apply absolute inset-x-2 bottom-0 h-[3px] bg-hsg-green;
-  }
-
-  /* -------------------------------------------------- Mannschafts-Kopf */
-  /* Ohne Foto: schlichte Fläche (--c-hero). Mit Foto liegt das Bild darüber
-     (siehe .team-hero__image). */
-  .team-hero {
-    @apply relative overflow-hidden rounded-md text-white shadow-card;
-    background-color: var(--c-hero);
-  }
-
-  /* Das Foto selbst wird über `object-position` und `scale` ausgerichtet –
-     beides setzt <TeamHero> als Stil, weil die Werte aus der Datenbank
-     kommen (photoFocusX/Y, photoZoom). */
-  .team-hero__image {
-    @apply absolute inset-0 h-full w-full object-cover;
-  }
-
-  .team-hero__scrim {
-    @apply absolute inset-0;
-    background: linear-gradient(to top, var(--c-hero-scrim), transparent);
-  }
-
-  .team-hero__body {
-    @apply relative px-5 pb-5 pt-6 sm:px-6 sm:pb-6 sm:pt-24;
-  }
-
-  /* ------------------------------------------------------------ Kader */
-  /* Spielerkarte: Rückennummer/Initialen, Name, Position. */
-  .player-card {
-    @apply flex items-center gap-3 rounded-md border border-line bg-paper p-3 transition-colors;
-  }
-
-  .player-card:hover {
-    @apply border-hsg-green;
-  }
-
-  /* Rückennummer als Trikot-Kreis. Ohne Nummer stehen dort die Initialen. */
-  .jersey {
-    @apply flex h-11 w-11 shrink-0 items-center justify-center rounded-full
-      bg-hsg-green-soft font-display text-base font-bold leading-none text-hsg-green-darker;
-  }
-
-  .jersey--empty {
-    @apply bg-surface text-sm text-ink-muted;
-  }
-
-  /* ----------------------------------------------------------- Termine */
-  /* Datumsblock links auf jeder Terminkarte. Feste Breite, damit die Titel
-     aller Karten untereinander auf einer Linie stehen – eine Terminliste
-     liest man senkrecht, nicht waagerecht. */
-  .event-date {
-    @apply flex w-12 shrink-0 flex-col items-center justify-center rounded-sm
-      border border-line bg-surface py-2 sm:w-14;
-  }
-
-  .event-date__weekday {
-    @apply font-display text-[0.625rem] font-semibold uppercase
-      leading-none tracking-[0.08em] text-ink-muted;
-  }
-
-  .event-date__day {
-    @apply mt-0.5 font-display text-xl font-bold leading-none text-hsg-green-dark;
-  }
-
-  .event-date__month {
-    @apply mt-0.5 font-display text-[0.625rem] font-semibold uppercase
-      leading-none tracking-[0.06em] text-ink-muted;
-  }
-
-  /* Anwesenheits-Balken auf der Terminkarte. Die eine Frage, die vor jedem
-     Training zählt – deshalb als breite Fläche und nicht als kleiner Chip
-     irgendwo zwischen den Angaben. */
-  .attend-bar {
-    @apply mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3;
-  }
-
-  .attend-bar__label {
-    @apply font-display text-base font-bold uppercase tracking-[0.04em];
-  }
-
-  .attend-bar--yes {
-    @apply border-hsg-green-line bg-hsg-green-soft;
-  }
-
-  .attend-bar--yes .attend-bar__label {
-    @apply text-hsg-green-darker;
-  }
-
-  .attend-bar--no {
-    @apply border-danger-line bg-danger-soft;
-  }
-
-  .attend-bar--no .attend-bar__label {
-    @apply text-danger;
-  }
-
-  /* Urlaub/Verletzung: abwesend, aber aus anderem Grund als einer Absage */
-  .attend-bar--absent {
-    @apply border-warn-line bg-warn-soft;
-  }
-
-  .attend-bar--absent .attend-bar__label {
-    @apply text-warn;
-  }
-
-  /* Abgesagter Termin – muss man beim Überfliegen der Liste sehen, ohne zu
-     lesen. Deshalb volle rote Fläche statt eines Badges am Rand. */
-  .event-cancelled {
-    @apply -mx-5 -mt-5 mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1
-      rounded-t-md bg-danger-fill px-5 py-2.5 text-white;
-  }
-
-  .event-cancelled__label {
-    @apply font-display text-base font-bold uppercase tracking-[0.08em];
-  }
-
-  /* ------------------------------------------------------------- Dialog */
-  /* Abdunklung hinter einem Dialog. Fixiert, damit die Rückfrage auch dann
-     mitten im Bild steht, wenn weit unten in einer langen Liste geklickt
-     wurde. Auf dem Handy sitzt der Dialog am unteren Rand (Daumenreichweite),
-     ab `sm` mittig.
-
-     Eine Definition für den einen Dialog (components/ui/Modal.jsx) – früher
-     standen hier zwei konkurrierende Regeln für zwei Dialog-Bauteile, von
-     denen die spätere die frühere still überschrieben hat. */
+  /* ================================================================ Dialog */
+  /* Handy: Blatt von unten (Daumenreichweite), ab `sm` mittig. */
   .modal-backdrop {
-    @apply fixed inset-0 z-50 flex items-end justify-center overflow-y-auto
-      p-0 backdrop-blur-[2px] sm:items-center sm:p-4;
+    @apply fixed inset-0 z-50 flex items-end justify-center overflow-y-auto p-0 backdrop-blur-[3px]
+      sm:items-center sm:p-4;
     background-color: var(--c-scrim);
   }
 
-  /* --------------------------------------------------------- Ladezustand */
-  /* Platzhalterfläche, die die Form des späteren Inhalts vorwegnimmt. */
-  .skeleton {
-    @apply block rounded-sm bg-surface-strong;
-    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  .modal-panel {
+    @apply max-h-[92dvh] w-full overflow-y-auto rounded-t-lg bg-paper shadow-pop sm:rounded-lg;
+    padding-bottom: var(--safe-b);
   }
 
-  /* ======================================================= Abschnittskarten */
-  /* Karte mit Kopfzeile und Inhalt – das Grundmuster des System-Status und
-     seit dem Umbau auch der Startseite. Hieß früher `.admin-card`; der Name
-     stimmte nicht mehr, sobald dieselbe Karte auf der Startseite steht, und
-     genau dieselbe Optik ist dort ausdrücklich gewollt.
-
-     Die Bereichsnavigation nutzt `.tabs` / `.tab` – dieselben Klassen wie die
-     Mannschaftsseite. Es gibt bewusst KEIN eigenes Navigationsmuster für die
-     Verwaltung: Reiter sollen in der ganzen App gleich aussehen. */
-  .panel {
-    @apply rounded-md border border-line bg-paper shadow-card;
+  .modal-header {
+    @apply sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-paper px-5 py-4;
   }
 
-  .panel__header {
-    @apply flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5;
-  }
-
-  .panel__body {
-    @apply px-4 py-4 sm:px-5;
-  }
-
-  /* Werkzeugleiste über einer Tabelle (Suche, Filter, Umschalter). */
-  .panel__toolbar {
-    @apply flex flex-col gap-2 border-b border-line bg-surface/70 px-4 py-3 sm:flex-row sm:items-center sm:px-5;
-  }
-
-  /* Suchfeld mit Platz für das Lupen-Icon links. */
-  .search-input {
-    @apply block min-h-11 w-full rounded-sm border border-line-strong bg-paper py-2.5 pl-9 pr-9
-      text-sm text-ink placeholder:text-ink-muted transition-colors
-      focus:border-hsg-green focus:outline-none focus:ring-2 focus:ring-hsg-green/25;
-  }
-
-  /* ------------------------------------------------- Kennzahlen & Messer */
+  /* ==================================================== Kennzahlen, Messer */
   .stat-card {
     @apply rounded-md border border-line bg-paper p-4 shadow-card;
   }
 
   .stat-card__label {
-    @apply flex items-center gap-2 font-display text-[0.6875rem] font-semibold
-      uppercase tracking-[0.1em] text-ink-muted;
+    @apply flex items-center gap-2 text-xs font-medium text-ink-muted;
   }
 
-  /* Balken, der einen Anteil an einem Maximum zeigt (RAM, CPU, Platte).
-     Die Spur ist eine hellere Stufe derselben Farbfamilie – so lässt sich der
-     Zustand über die ganze Breite ablesen, nicht nur am gefüllten Teil. */
   .meter {
     @apply mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-strong;
   }
@@ -810,10 +856,8 @@
     @apply block h-full rounded-full transition-[width] duration-500;
   }
 
-  /* --------------------------------------------------------- Diagramme */
   .chart-frame {
     @apply mt-1 w-full;
-    /* feste Höhe: sonst kollabiert der ResponsiveContainer beim ersten Rendern */
     height: 260px;
   }
 
@@ -821,66 +865,134 @@
     height: 180px;
   }
 
-  /* Karte im Recharts-Tooltip – bewusst dieselbe Sprache wie .card. */
   .chart-tooltip {
-    @apply rounded border border-line-strong bg-paper px-3 py-2 text-xs shadow-pop;
+    @apply rounded border border-line bg-paper px-3 py-2 text-xs shadow-pop;
   }
 
-  /* --------------------------------------------------------------- Modal */
-  /* Die Breite setzt <Modal> je nach `size` als Utility (sm:max-w-…) – hier
-     steht nur, was für jeden Dialog gilt. */
-  .modal-panel {
-    @apply max-h-[92dvh] w-full overflow-y-auto rounded-t-lg border border-line bg-paper
-      shadow-pop sm:rounded-lg;
-    padding-bottom: var(--safe-b);
-  }
-
-  .modal-header {
-    @apply sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-paper px-5 py-4;
-  }
-
-  /* ---------------------------------------------------------- Paginierung */
+  /* ========================================================== Paginierung */
   .pagination {
     @apply flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 sm:px-5;
   }
 
   .pagination__btn {
-    @apply inline-flex min-h-9 items-center gap-1 rounded-sm border border-line-strong bg-paper px-2.5
-      font-display text-xs font-semibold uppercase tracking-[0.05em] text-ink-soft
-      transition-colors hover:border-hsg-green hover:text-hsg-green-dark
+    @apply inline-flex min-h-9 items-center gap-1 rounded-full border border-line-strong bg-paper px-3
+      text-[0.8125rem] font-medium text-ink-soft transition-colors hover:border-ink-muted hover:text-ink
       disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-line-strong
       disabled:hover:text-ink-soft;
   }
 
-  /* Umschalter „Aktive News" / „Archiv" – zwei bis drei feste Stellungen. */
-  .switcher {
-    @apply inline-flex rounded-md border border-line bg-surface p-1;
+  /* ============================================================= Kalender */
+  .cal-tone-training {
+    --cal: var(--c-cal-training);
+  }
+  .cal-tone-match {
+    --cal: var(--c-cal-match);
+  }
+  .cal-tone-other {
+    --cal: var(--c-cal-other);
+  }
+  .cal-tone-duty {
+    --cal: var(--c-cal-duty);
   }
 
-  .switcher__btn {
-    @apply inline-flex min-h-9 items-center gap-1.5 rounded px-3 font-display text-xs
-      font-semibold uppercase tracking-[0.05em] text-ink-muted transition-colors hover:text-ink;
+  .cal {
+    @apply overflow-hidden rounded-md border border-line bg-paper transition-opacity;
   }
 
-  .switcher__btn--active {
-    @apply bg-paper text-ink shadow-card;
+  .cal-head {
+    @apply grid grid-cols-7 border-b border-line py-2 text-center text-[0.6875rem] font-semibold
+      text-ink-muted;
   }
 
-  /* Umschalter (Tabs) Login / Registrierung */
-  .segment {
-    @apply grid grid-cols-2 gap-1 rounded-md bg-surface p-1;
+  .cal-month,
+  .cal-week-strip {
+    @apply grid grid-cols-7;
   }
 
-  .segment__btn {
-    @apply min-h-11 rounded font-display text-sm font-semibold uppercase tracking-[0.05em]
-      text-ink-muted transition-colors hover:text-ink;
+  .cal-cell {
+    @apply flex min-h-14 min-w-0 flex-col items-center gap-1 border-b border-r border-line p-1
+      transition-colors hover:bg-surface md:min-h-24 md:items-stretch;
   }
 
-  /* Im Hellen die anthrazitfarbene Fläche der Marke. Im Dunkeln IST
-     Anthrazit der Seitenhintergrund – dort hebt sich der aktive Knopf
-     stattdessen nach oben ab. */
-  .segment__btn--active {
-    @apply bg-hsg-dark text-white hover:text-white dark:bg-hsg-dark-soft;
+  .cal-month > :nth-child(7n),
+  .cal-week-strip > :nth-child(7n) {
+    @apply border-r-0;
+  }
+
+  .cal-week-strip .cal-cell {
+    @apply min-h-20 items-center border-b-0;
+  }
+
+  .cal-cell--outside {
+    @apply bg-surface/60;
+  }
+
+  .cal-cell--outside .cal-daynum {
+    @apply text-ink-muted;
+  }
+
+  .cal-cell--selected {
+    @apply bg-hsg-green-soft hover:bg-hsg-green-soft;
+  }
+
+  .cal-daynum {
+    @apply mx-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm
+      font-semibold text-ink;
+  }
+
+  .cal-daynum--today {
+    @apply bg-hsg-green text-white;
+  }
+
+  .cal-dot {
+    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full;
+    background: var(--cal);
+  }
+
+  .chip .cal-dot {
+    @apply h-2.5 w-2.5;
+  }
+
+  .cal-line {
+    @apply block truncate rounded-[4px] px-1 text-left text-[0.6875rem] leading-4 text-ink;
+    border-left: 3px solid var(--cal);
+    background: color-mix(in srgb, var(--cal) 14%, transparent);
+  }
+
+  .cal-card {
+    @apply flex items-start gap-3 rounded-sm border border-line bg-paper p-3;
+    border-left: 3px solid var(--cal);
+  }
+
+  .cal-week-head,
+  .cal-week-body {
+    @apply grid grid-cols-[3.5rem_repeat(7,minmax(0,1fr))];
+  }
+
+  .cal-week-head {
+    @apply border-b border-line py-2;
+  }
+
+  .cal-week-body {
+    @apply relative;
+  }
+
+  .cal-week-col {
+    @apply relative border-l border-line;
+  }
+
+  .cal-hour {
+    @apply absolute right-2 translate-y-0.5 text-[0.625rem] text-ink-muted;
+  }
+
+  .cal-hour-line {
+    @apply absolute inset-x-0 border-t border-line;
+  }
+
+  .cal-block {
+    @apply absolute overflow-hidden rounded-[4px] px-1 py-0.5 text-[0.6875rem] leading-tight text-ink;
+    border-left: 3px solid var(--cal);
+    background: color-mix(in srgb, var(--cal) 18%, var(--c-paper));
   }
 }
 
@@ -889,20 +1001,18 @@
     padding-bottom: calc(1.5rem + var(--safe-b));
   }
 
-  /* Platz für die fixierte Bottom-Navigation, damit sie nichts verdeckt.
-     Ab `md` ist die Leiste ausgeblendet -> nur noch normaler Abstand. */
+  /* Platz für die fixierte Bottom-Navigation. Ab `md` ist sie ausgeblendet. */
   .pb-bottom-nav {
-    padding-bottom: calc(5rem + var(--safe-b));
+    padding-bottom: calc(5.5rem + var(--safe-b));
   }
 
   @media (min-width: 768px) {
     .pb-bottom-nav {
-      padding-bottom: calc(2rem + var(--safe-b));
+      padding-bottom: calc(2.5rem + var(--safe-b));
     }
   }
 }
 
-/* Pulsieren des LIVE-Punkts – siehe .live-dot */
 @keyframes live-pulse {
   0%,
   100% {
@@ -913,13 +1023,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .live-dot {
-    animation: none;
-  }
-}
-
-/* Pulsieren der Lade-Platzhalter – siehe .skeleton */
 @keyframes skeleton-pulse {
   0%,
   100% {
@@ -931,6 +1034,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .live-dot,
   .skeleton {
     animation: none;
   }

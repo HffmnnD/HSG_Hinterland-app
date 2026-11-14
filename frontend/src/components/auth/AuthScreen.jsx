@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../../context/AuthContext';
 import AuthLayout from './AuthLayout';
@@ -6,7 +7,11 @@ import LoginForm from './LoginForm';
 import RegisterForm from './RegisterForm';
 
 export default function AuthScreen() {
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  // Einladungslink der Eltern (…/login?familiencode=ABCD-EFGH) öffnet direkt
+  // die Registrierung mit eingetragenem Code.
+  const [params] = useSearchParams();
+  const familyCode = params.get('familiencode') ?? '';
+  const [mode, setMode] = useState(familyCode ? 'register' : 'login'); // 'login' | 'register'
   const { clearError } = useAuth();
 
   // Beim Wechsel den Fehler aus dem anderen Formular verwerfen.
@@ -40,7 +45,7 @@ export default function AuthScreen() {
       {mode === 'login' ? (
         <LoginForm />
       ) : (
-        <RegisterForm />
+        <RegisterForm initialFamilyCode={familyCode} />
       )}
     </AuthLayout>
   );

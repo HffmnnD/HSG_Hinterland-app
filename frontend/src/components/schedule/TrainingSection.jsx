@@ -1,37 +1,31 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 
-import { apiFetch } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
-import { useEvents } from '../hooks/useSchedule';
-import { shiftIsoDate, toDateInput } from '../lib/schedule';
-import AppLayout from './AppLayout';
-import FilterBar from './schedule/FilterBar';
-import UpcomingPanel from './schedule/UpcomingPanel';
-import AbsencePanel from './schedule/AbsencePanel';
-import ParticipationPanel from './schedule/ParticipationPanel';
-import PlanningPanel from './schedule/PlanningPanel';
-import {
-  CancelDialog,
-  DeleteDialog,
-  EditDialog,
-} from './schedule/EventDialogs';
+import { apiFetch } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
+import { useEvents } from '../../hooks/useSchedule';
+import { shiftIsoDate, toDateInput } from '../../lib/schedule';
+import FilterBar from './FilterBar';
+import UpcomingPanel from './UpcomingPanel';
+import AbsencePanel from './AbsencePanel';
+import ParticipationPanel from './ParticipationPanel';
+import PlanningPanel from './PlanningPanel';
+import { CancelDialog, DeleteDialog, EditDialog } from './EventDialogs';
 
 // Wie weit der Rückblick zurückreicht. Für „was war letzte Woche?" reicht ein
 // Monat – alles Ältere steht unter „Beteiligung".
 const LOOKBACK_DAYS = 30;
 
 /**
- * Reiter „Kalender" – Trainingszeiten, Spiele, Sondertermine, Anwesenheiten.
+ * Teamplaner: Trainingszeiten, Spiele, Sondertermine,
+ * Anwesenheiten.
  *
- * Eine Seite für beide Rollen: Spieler:innen melden sich ab, Trainer:innen
+ * Ein Bereich für beide Rollen: Spieler:innen melden sich ab, Trainer:innen
  * sehen zusätzlich den Kader und den Planungsbereich. Welche Reiter
  * erscheinen, ergibt sich aus den Mannschaftsrechten, die das Backend mit der
  * Terminliste zurückgibt – nicht aus der globalen Rolle.
  */
-export default function CalendarPage() {
+export default function TrainingSection({ tab: requestedTab, onTabChange, teamId: lockedTeamId = null }) {
   const { user } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
 
   const [teamFilter, setTeamFilter] = useState(null);
   const [category, setCategory] = useState(null);
@@ -70,11 +64,17 @@ export default function CalendarPage() {
 
   const {
     events,
-    teams,
+    teams: allTeams,
     loading,
     error: loadError,
     reload,
-  } = useEvents({ teamId: teamFilter, category, ...query });
+  } = useEvents({ teamId: lockedTeamId ?? teamFilter, category, ...query });
+
+  // Auf der Mannschaftsseite gilt alles nur für diese eine Mannschaft.
+  const teams = useMemo(
+    () => (lockedTeamId ? allTeams.filter((team) => team.id === lockedTeamId) : allTeams),
+    [allTeams, lockedTeamId]
+  );
 
   const playerTeams = useMemo(
     () => teams.filter((team) => team.isPlayer),
@@ -94,7 +94,6 @@ export default function CalendarPage() {
     ...(managedTeams.length > 0 ? [{ key: 'planung', label: 'Planung' }] : []),
   ];
 
-  const requestedTab = searchParams.get('tab');
   const activeTab = tabs.some((tab) => tab.key === requestedTab)
     ? requestedTab
     : 'anstehend';
@@ -107,7 +106,7 @@ export default function CalendarPage() {
 
   const selectTab = (key) => {
     closeDialogs();
-    setSearchParams(key === 'anstehend' ? {} : { tab: key }, { replace: true });
+    onTabChange(key);
   };
 
   // Die Panels leiten ihren Anfangszustand aus `teams` ab. Beim ersten Rendern
@@ -183,25 +182,19 @@ export default function CalendarPage() {
   const hasTeams = teams.length > 0;
 
   return (
-    <AppLayout width="max-w-4xl">
-      <h1 className="page-title">Kalender</h1>
-
+    <>
       {(error || loadError) && (
-        <div role="alert" className="alert alert-error mt-4">
+        <div role="alert" className="alert alert-error mb-4">
           {error ?? loadError}
         </div>
       )}
-      {notice && <div className="alert alert-success mt-4">{notice}</div>}
+      {notice && <div className="alert alert-success mb-4">{notice}</div>}
 
       {!loading && !hasTeams ? (
-        <p className="card-note mt-6">Du bist noch keiner Mannschaft zugeordnet.</p>
+        <p className="card-note">Du bist noch keiner Mannschaft zugeordnet.</p>
       ) : (
         <>
-          <div
-            className="tabs mt-6"
-            role="tablist"
-            aria-label="Bereiche des Kalenders"
-          >
+          <div className="tabs" role="tablist" aria-label="Training">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -229,7 +222,7 @@ export default function CalendarPage() {
               <div className="space-y-5">
                 <FilterBar
                   teams={teams}
-                  teamId={teamFilter}
+                  teamId={lockedTeamId ?? teamFilter}
                   onTeamChange={setTeamFilter}
                   category={category}
                   onCategoryChange={setCategory}
@@ -267,7 +260,7 @@ export default function CalendarPage() {
               <ParticipationPanel
                 key={teamKey}
                 teams={teams}
-                defaultTeamId={teamFilter ?? teams[0]?.id ?? null}
+                defaultTeamId={lockedTeamId ?? teamFilter ?? teams[0]?.id ?? null}
               />
             )}
 
@@ -313,6 +306,6 @@ export default function CalendarPage() {
           onClose={() => setDeleting(null)}
         />
       )}
-    </AppLayout>
+    </>
   );
 }

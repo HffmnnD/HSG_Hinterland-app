@@ -12,7 +12,7 @@ export const GENDER_LABELS = {
   mixed: 'Gemischt',
 };
 
-export function genderLabel(gender) {
+function genderLabel(gender) {
   return GENDER_LABELS[gender] ?? null;
 }
 
@@ -28,7 +28,7 @@ const YOUTH_PATTERN = /jugend|jgd|minis?|\bu\s?\d{1,2}\b|^[a-e]\s*-\s*jug/i;
 const SENIOR_PATTERN = /erwachsen|senior|herren|damen|aktive/i;
 
 /** @returns {'youth'|'senior'|'other'} */
-export function teamGroupKey(team) {
+function teamGroupKey(team) {
   const age = (team.ageGroup ?? '').trim();
   const name = (team.name ?? '').trim();
 
@@ -42,7 +42,7 @@ export function teamGroupKey(team) {
  * (danach suchen die meisten), dann die Jugend, dann alles, was sich nicht
  * einordnen lässt.
  */
-export const TEAM_GROUPS = [
+const TEAM_GROUPS = [
   { key: 'senior', label: 'Senioren' },
   { key: 'youth', label: 'Jugend' },
   { key: 'other', label: 'Weitere Mannschaften' },

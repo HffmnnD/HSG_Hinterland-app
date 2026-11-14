@@ -1,20 +1,7 @@
 // Browser-Seite des Push-Moduls: Unterstützung erkennen, Berechtigung
 // anfragen, Abo beim Server ein- und austragen.
 import { apiFetch } from '../lib/api';
-
-/** Läuft die App als installierte Web-App (Home-Bildschirm)? */
-function isStandalone() {
-  return (
-    window.matchMedia?.('(display-mode: standalone)').matches ||
-    window.navigator.standalone === true
-  );
-}
-
-function isIos() {
-  const ua = navigator.userAgent;
-  // iPadOS meldet sich als Mac – erkennbar am Touchscreen.
-  return /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
-}
+import { isIos, isStandalone } from '../lib/install';
 
 /**
  * Was dieses Gerät kann:

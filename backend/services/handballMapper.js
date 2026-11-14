@@ -726,6 +726,11 @@ function mapTicker($, gameId) {
           ),
           teamName: null,
           player: idx.person >= 0 ? parsePlayer(row.cells[idx.person]) : null,
+          // "33 Reinhardt, Fynn" -> 33 (für Torschützenliste und Kader).
+          playerNumber:
+            idx.person >= 0
+              ? (/^\s*(\d{1,3})\s+/.exec(toText(row.cells[idx.person]) ?? '')?.[1] ?? null)
+              : null,
           scoreHome: score ? score.home : null,
           scoreAway: score ? score.away : null,
           // Unbekannte Ereignisse behalten ihren Originaltext, damit sie im

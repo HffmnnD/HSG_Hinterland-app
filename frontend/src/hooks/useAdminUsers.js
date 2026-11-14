@@ -23,7 +23,15 @@ import { apiFetch } from '../lib/api';
  */
 const SEARCH_DELAY_MS = 300;
 
-export function useAdminUsers({ search = '', role = '', status = '', page = 1, pageSize = 20 }) {
+export function useAdminUsers({
+  search = '',
+  role = '',
+  status = '',
+  teamId = '',
+  teamless = false,
+  page = 1,
+  pageSize = 20,
+}) {
   const [data, setData] = useState({
     users: [],
     total: 0,
@@ -43,10 +51,12 @@ export function useAdminUsers({ search = '', role = '', status = '', page = 1, p
     if (search.trim()) params.set('search', search.trim());
     if (role) params.set('role', role);
     if (status) params.set('status', status);
+    if (teamId) params.set('teamId', String(teamId));
+    if (teamless) params.set('teamless', '1');
     params.set('page', String(page));
     params.set('pageSize', String(pageSize));
     return `/api/admin/users?${params.toString()}`;
-  }, [search, role, status, page, pageSize]);
+  }, [search, role, status, teamId, teamless, page, pageSize]);
 
   const load = useCallback(
     async ({ quiet = false } = {}) => {

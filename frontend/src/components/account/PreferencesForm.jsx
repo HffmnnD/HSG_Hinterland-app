@@ -50,7 +50,7 @@ export default function PreferencesForm() {
 
   // Hat sich gegenüber dem Profil etwas geändert? Ohne diesen Vergleich stünde
   // der Speichern-Knopf immer aktiv da und man wüsste nie, ob noch etwas offen ist.
-  const dirty = useMemo(() => {
+  const teamsDirty = useMemo(() => {
     const before = new Set(
       myTeams.map((team) => `${team.id}:${team.relationType}`)
     );
@@ -60,6 +60,7 @@ export default function PreferencesForm() {
     if (before.size !== after.size) return true;
     return [...after].some((key) => !before.has(key));
   }, [myTeams, relations]);
+  const dirty = teamsDirty;
 
   const toggleTeam = (relationType, teamId) => {
     setSelection((prev) => {
@@ -80,7 +81,9 @@ export default function PreferencesForm() {
     setError(null);
     setNotice(null);
 
-    const result = await updatePreferences({ teams: relations });
+    const result = await updatePreferences({
+      ...(teamsDirty ? { teams: relations } : {}),
+    });
     if (result.success) setNotice(result.message ?? 'Einstellungen gespeichert.');
     else setError(result.message);
 

@@ -2,11 +2,9 @@
 
 const ROLES = ['admin', 'sub_admin', 'trainer', 'spieler', 'zuschauer'];
 
-// Rollen mit Zugriff auf die Verwaltungs-Endpunkte (/api/admin/*).
-const MANAGEMENT_ROLES = ['admin', 'sub_admin', 'trainer'];
 
-// Rollen, die Rolle & Freigabe anderer Konten ändern dürfen.
-const ADMIN_ROLES = ['admin', 'sub_admin'];
+// Wer was darf, steht NICHT mehr hier, sondern in access/permissions.js
+// (Rechte) und in der Tabelle roles (Migration 019).
 
 // Art der Beziehung zwischen Nutzer und Mannschaft.
 const RELATION_TYPES = ['player', 'coach', 'fan'];
@@ -24,8 +22,6 @@ const THEMES = ['system', 'light', 'dark'];
 
 module.exports = {
   ROLES,
-  MANAGEMENT_ROLES,
-  ADMIN_ROLES,
   RELATION_TYPES,
   SELF_RELATION_TYPES,
   SERVICE_TYPES,

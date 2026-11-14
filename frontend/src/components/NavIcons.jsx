@@ -1,7 +1,7 @@
 /**
  * Icon-Satz der Hauptnavigation.
  *
- * Bewusst als Inline-SVG statt als Icon-Bibliothek: vier schlichte
+ * Bewusst als Inline-SVG statt als Icon-Bibliothek: wenige schlichte
  * Strich-Icons rechtfertigen keine zusätzliche Abhängigkeit im PWA-Bundle.
  * Alle Icons nutzen `currentColor`, übernehmen also automatisch den
  * Zustand (aktiv = Vereinsgrün) des umgebenden Links.
@@ -28,6 +28,26 @@ const PATHS = {
       <rect x="3.25" y="5.25" width="17.5" height="15.5" rx="2" />
       <path d="M8 3.25v4M16 3.25v4M3.25 10.25h17.5" />
       <path d="M7.75 13.75h3.5v3.5h-3.5z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  duty: (
+    <>
+      <rect x="5.25" y="4.25" width="13.5" height="16.5" rx="2" />
+      <path d="M9 4.25V3.5h6v.75" />
+      <path d="m8.75 11.5 1.75 1.75 3.75-3.75M8.75 17h6.5" />
+    </>
+  ),
+  board: (
+    <>
+      <rect x="3.25" y="4.25" width="17.5" height="15.5" rx="2" />
+      <path d="M7.5 9h4.5M7.5 12.5h9M7.5 16h6" />
+      <circle cx="16.25" cy="8.75" r="1.1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M10.3 3.5h3.4l.5 2.3a6.8 6.8 0 0 1 1.7 1l2.2-.8 1.7 2.9-1.8 1.6a6.9 6.9 0 0 1 0 2l1.8 1.6-1.7 2.9-2.2-.8a6.8 6.8 0 0 1-1.7 1l-.5 2.3h-3.4l-.5-2.3a6.8 6.8 0 0 1-1.7-1l-2.2.8-1.7-2.9 1.8-1.6a6.9 6.9 0 0 1 0-2L4.2 8.9l1.7-2.9 2.2.8a6.8 6.8 0 0 1 1.7-1l.5-2.3Z" />
+      <circle cx="12" cy="12" r="2.75" />
     </>
   ),
   shield: (

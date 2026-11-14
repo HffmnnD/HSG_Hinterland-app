@@ -21,6 +21,7 @@ const WRITABLE_EVENT_COLUMNS = new Set([
   'reasons_visible_to_all',
   'cancelled_at',
   'cancel_reason',
+  'response_deadline',
 ]);
 
 const EVENT_COLUMNS = `
@@ -28,6 +29,7 @@ const EVENT_COLUMNS = `
   DATE_FORMAT(e.start_time, '%Y-%m-%dT%H:%i:%s') AS start_time,
   DATE_FORMAT(e.end_time,   '%Y-%m-%dT%H:%i:%s') AS end_time,
   e.reasons_visible_to_all, e.created_by,
+  DATE_FORMAT(e.response_deadline, '%Y-%m-%dT%H:%i:%s') AS response_deadline,
   DATE_FORMAT(e.cancelled_at, '%Y-%m-%dT%H:%i:%s') AS cancelled_at,
   e.cancel_reason`;
 
@@ -38,7 +40,7 @@ const SERIES_COLUMNS = `
   s.start_time, s.end_time,
   DATE_FORMAT(s.starts_on, '%Y-%m-%d') AS starts_on,
   DATE_FORMAT(s.ends_on,   '%Y-%m-%d') AS ends_on,
-  s.reasons_visible_to_all`;
+  s.reasons_visible_to_all, s.deadline_hours`;
 
 function assertWritableColumns(keys) {
   const unknown = keys.filter((key) => !WRITABLE_EVENT_COLUMNS.has(key));
@@ -65,6 +67,8 @@ function mapEvent(row) {
     startTime: row.start_time,
     endTime: row.end_time,
     reasonsVisibleToAll: Boolean(row.reasons_visible_to_all),
+    // Anmeldefrist: danach ändert nur noch das Trainerteam die Rückmeldung.
+    responseDeadline: row.response_deadline ?? null,
     // Gesetzt = der Termin fällt aus. Er bleibt sichtbar, zählt aber in keiner
     // Beteiligungsquote mehr mit.
     cancelledAt: row.cancelled_at ?? null,
@@ -87,6 +91,7 @@ function mapSeries(row) {
     startsOn: row.starts_on,
     endsOn: row.ends_on,
     reasonsVisibleToAll: Boolean(row.reasons_visible_to_all),
+    deadlineHours: row.deadline_hours ?? null,
     eventCount: row.event_count ?? null,
     upcomingCount: row.upcoming_count ?? null,
   };
@@ -172,14 +177,14 @@ async function findSeriesById(id, runner = pool) {
  * @returns {Promise<number>} id des neuen Termins
  */
 async function createEvent(
-  { teamId, seriesId = null, fields, startTime, endTime, createdBy },
+  { teamId, seriesId = null, fields, startTime, endTime, responseDeadline = null, createdBy },
   runner = pool
 ) {
   const [result] = await runner.query(
     `INSERT INTO events
        (team_id, series_id, title, type, location, start_time, end_time,
-        reasons_visible_to_all, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        reasons_visible_to_all, response_deadline, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       teamId,
       seriesId,
@@ -189,6 +194,7 @@ async function createEvent(
       startTime,
       endTime,
       fields.reasons_visible_to_all,
+      responseDeadline,
       createdBy,
     ]
   );
@@ -216,8 +222,8 @@ async function createSeriesWithEvents({
     const [seriesResult] = await conn.query(
       `INSERT INTO event_series
          (team_id, title, type, location, weekdays, start_time, end_time,
-          starts_on, ends_on, reasons_visible_to_all, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          starts_on, ends_on, reasons_visible_to_all, deadline_hours, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         teamId,
         fields.title,
@@ -229,6 +235,7 @@ async function createSeriesWithEvents({
         rule.starts_on,
         rule.ends_on,
         fields.reasons_visible_to_all,
+        rule.deadlineHours ?? null,
         createdBy,
       ]
     );
@@ -237,7 +244,7 @@ async function createSeriesWithEvents({
     const [eventResult] = await conn.query(
       `INSERT INTO events
          (team_id, series_id, title, type, location, start_time, end_time,
-          reasons_visible_to_all, created_by)
+          reasons_visible_to_all, response_deadline, created_by)
        VALUES ?`,
       [
         occurrences.map((occurrence) => [
@@ -249,6 +256,7 @@ async function createSeriesWithEvents({
           occurrence.startTime,
           occurrence.endTime,
           fields.reasons_visible_to_all,
+          occurrence.responseDeadline ?? null,
           createdBy,
         ]),
       ]
@@ -392,6 +400,53 @@ async function updateSeriesAndFutureEvents(seriesId, fields, nowSql) {
   }
 }
 
+/**
+ * Anmeldefrist einer Serie setzen: Regel und alle noch nicht begonnenen
+ * Termine (Frist = Beginn minus `hours`, null = keine Frist).
+ */
+async function setSeriesDeadline(seriesId, hours, nowSql, runner = pool) {
+  await runner.query('UPDATE event_series SET deadline_hours = ? WHERE id = ?', [hours, seriesId]);
+  await runner.query(
+    `UPDATE events
+        SET response_deadline = IF(? IS NULL, NULL, start_time - INTERVAL ? HOUR)
+      WHERE series_id = ? AND start_time >= ?`,
+    [hours, hours ?? 0, seriesId, nowSql]
+  );
+}
+
+/**
+ * Spiele aus einer CSV-Datei anlegen. Schon vorhandene (gleiche Mannschaft,
+ * gleicher Beginn, Art Spiel) werden übersprungen – ein zweiter Import
+ * derselben Datei legt nichts doppelt an.
+ * @returns {Promise<{created:number, skipped:number}>}
+ */
+async function importMatches(teamId, rows, createdBy) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [existing] = await conn.query(
+      `SELECT DATE_FORMAT(start_time, '%Y-%m-%d %H:%i:%s') AS start_time
+         FROM events WHERE team_id = ? AND type = 'MATCH'`,
+      [teamId]
+    );
+    const known = new Set(existing.map((row) => row.start_time));
+    const fresh = rows.filter((row) => !known.has(row.startTime));
+    if (fresh.length > 0) {
+      await conn.query(
+        `INSERT INTO events (team_id, title, type, location, start_time, end_time, created_by) VALUES ?`,
+        [fresh.map((row) => [teamId, row.title, 'MATCH', row.location, row.startTime, row.endTime, createdBy])]
+      );
+    }
+    await conn.commit();
+    return { created: fresh.length, skipped: rows.length - fresh.length };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 /** Einen Termin löschen (Rückmeldungen gehen per ON DELETE CASCADE mit). */
 async function deleteEvent(id, runner = pool) {
   const [result] = await runner.query('DELETE FROM events WHERE id = ?', [id]);
@@ -438,6 +493,8 @@ module.exports = {
   deleteFutureNuligaEvents,
   updateEvent,
   updateSeriesAndFutureEvents,
+  setSeriesDeadline,
+  importMatches,
   deleteEvent,
   deleteSeries,
 };

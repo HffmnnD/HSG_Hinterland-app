@@ -14,9 +14,14 @@ import { apiFetch } from '../lib/api';
  *   meta.stale   -> Daten sind da, aber nicht taufrisch.
  */
 
-// Wie oft ein LAUFENDES Spiel neu geholt wird. Passt zur Cache-Zeit im
-// Backend (10 s) – häufiger abzufragen brächte nur denselben Cache-Eintrag.
-const LIVE_INTERVAL_MS = 10_000;
+// Wie oft ein LAUFENDES Spiel neu geholt wird, solange der Server nichts
+// anderes vorgibt. Normalerweise kommt der Takt aus der Antwort selbst
+// (`poll.afterMs`): der Server streckt ihn, wenn er oder nuScoreLive unter
+// Last steht.
+const LIVE_INTERVAL_MS = 2_000;
+
+// Startwert des Backoffs nach „zu viele Anfragen" (HTTP 429).
+const RATE_LIMITED_MS = 15_000;
 
 // Takt für Spiele, die noch nicht angeworfen sind.
 const IDLE_INTERVAL_MS = 60_000;
@@ -26,7 +31,7 @@ const IDLE_INTERVAL_MS = 60_000;
 const PRE_GAME_WINDOW_MS = 10 * 60_000;
 
 // Obergrenze für den Wartezeit-Aufschlag nach Fehlern.
-const MAX_BACKOFF_MS = 120_000;
+const MAX_BACKOFF_MS = 60_000;
 
 /**
  * Einmaliges Laden einer Ressource (Tabelle, Spielplan).
@@ -116,6 +121,28 @@ export function useHandballSchedule(teamId) {
     teamId ? `/api/handball/schedule/${encodeURIComponent(teamId)}` : null
   );
 
+  // Am Spieltag den Spielplan selbst nachladen: Ob ein Spiel läuft und ob es
+  // schon einen Spielbericht (= Ticker-ID) gibt, steht nur dort. Ohne das sähe
+  // jemand, der die Seite vor Anwurf geöffnet hat, den Live-Ticker nie.
+  const games = data?.games;
+
+  useEffect(() => {
+    // Geprüft wird bei jedem Takt neu – so beginnt das Nachladen auch dann,
+    // wenn die Seite schon Stunden vor dem Spiel offen war.
+    const isMatchTime = () =>
+      (games ?? []).some((game) => {
+        if (game.state === 'live') return true;
+        if (game.state !== 'upcoming' || !game.startsAt) return false;
+        const diff = new Date(game.startsAt).getTime() - Date.now();
+        return diff < 30 * 60_000 && diff > -3 * 3600_000;
+      });
+    if (!(games ?? []).some((g) => g.state !== 'finished')) return undefined;
+    const timer = window.setInterval(() => {
+      if (!document.hidden && isMatchTime()) reload();
+    }, IDLE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [games, reload]);
+
   return {
     games: data?.games ?? [],
     meta: data?.meta ?? null,
@@ -128,9 +155,10 @@ export function useHandballSchedule(teamId) {
 /**
  * Live-Ticker eines Spiels mit automatischem Nachladen.
  *
- * Das Polling ist bewusst sparsam:
- *   * Nur ein LAUFENDES Spiel wird alle 10 s abgefragt.
- *   * Vor dem Anwurf genügt ein Blick pro Minute (ab 10 Min davor: Live-Takt).
+ * Das Polling folgt dem Server:
+ *   * Ein LAUFENDES Spiel wird alle 2 s abgefragt – oder so oft, wie es der
+ *     Server in `poll.afterMs` vorgibt (er streckt den Takt unter Last).
+ *   * Vor dem Anwurf genügt ein Blick pro Minute (ab 10 Min davor öfter).
  *   * Nach dem Schlusspfiff hört es ganz auf – ein beendetes Spiel ändert
  *     sich nicht mehr.
  *   * Liegt die App im Hintergrund (Tab gewechselt, Bildschirm aus), pausiert
@@ -162,6 +190,9 @@ export function useLiveTicker(gameId, options = {}) {
   const failuresRef = useRef(0);
   const stateRef = useRef(null);
   const startsAtRef = useRef(null);
+  // Vom Server vorgegebener Takt (undefined = keine Vorgabe, null = Schluss).
+  const pollRef = useRef(undefined);
+  const rateLimitedRef = useRef(false);
   // Von außen angestoßenes Sofort-Nachladen (refresh()).
   const manualRef = useRef(null);
 
@@ -184,12 +215,18 @@ export function useLiveTicker(gameId, options = {}) {
     /** Wartezeit bis zur nächsten Abfrage – oder null, wenn Schluss ist. */
     const nextDelay = () => {
       if (failuresRef.current > 0) {
-        // 20 s -> 40 s -> 80 s … gedeckelt bei zwei Minuten.
-        return Math.min(intervalMs * 2 ** failuresRef.current, MAX_BACKOFF_MS);
+        // Exponentiell: 4 s -> 8 s -> 16 s … (nach 429 ab 15 s), höchstens
+        // eine Minute. Die erste erfolgreiche Antwort setzt zurück auf 2 s.
+        const base = rateLimitedRef.current ? RATE_LIMITED_MS : intervalMs;
+        return Math.min(base * 2 ** failuresRef.current, MAX_BACKOFF_MS);
       }
 
       const state = stateRef.current;
       if (state === 'finished' || state === 'cancelled') return null;
+      // Vorgabe des Servers hat Vorrang (null = nicht mehr fragen).
+      if (pollRef.current !== undefined) {
+        return pollRef.current === null ? null : Math.max(pollRef.current, 1000);
+      }
       if (state === 'live') return intervalMs;
 
       // Noch nicht angeworfen: kurz vor Anwurf schon im Live-Takt schauen.
@@ -237,14 +274,17 @@ export function useLiveTicker(gameId, options = {}) {
 
         setEntry({ gameId, data, error: null });
         failuresRef.current = 0;
+        rateLimitedRef.current = false;
         stateRef.current = data?.state ?? null;
         startsAtRef.current = data?.game?.startsAt ?? null;
+        pollRef.current = data?.poll ? (data.poll.afterMs ?? null) : undefined;
       } catch (err) {
         if (!running) return;
         // Vorhandene Daten stehen lassen – ein einzelner Fehlversuch soll den
         // Spielstand auf dem Bildschirm nicht löschen.
         setEntry((prev) => ({ ...prev, gameId, error: err.message }));
         failuresRef.current += 1;
+        rateLimitedRef.current = err.status === 429;
       } finally {
         schedule();
       }

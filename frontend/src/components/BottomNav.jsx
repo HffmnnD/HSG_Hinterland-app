@@ -7,16 +7,13 @@ import NavIcon from './NavIcons';
 /**
  * Mobile Hauptnavigation, fest am unteren Bildschirmrand (PWA-Look).
  *
- * Ab `md` ausgeblendet – dort navigiert <MainNav> in der Kopfzeile.
- * Die Reiter kommen aus lib/navigation.js und sind rollenabhängig
- * (Verwaltung nur für admin, sub_admin und trainer).
- *
- * Seiten, die diese Leiste zeigen, brauchen unten `pb-bottom-nav`
- * (übernimmt <AppLayout>), damit nichts verdeckt wird.
+ * Ab `md` ausgeblendet – dort navigiert <MainNav> in der Kopfzeile. Die
+ * Reiter kommen aus lib/navigation.js (Verwaltung nur mit passendem Recht).
+ * Im Querformat am Handy wird die Leiste niedriger, damit mehr Inhalt bleibt.
  */
 export default function BottomNav() {
-  const { role } = useAuth();
-  const items = buildNavItems(role);
+  const { can } = useAuth();
+  const items = buildNavItems(can);
 
   return (
     <nav className="bottom-nav" aria-label="Hauptnavigation">
@@ -26,8 +23,6 @@ export default function BottomNav() {
       >
         {items.map((item) => (
           <li key={item.to}>
-            {/* NavLink setzt bei der aktiven Route automatisch
-                aria-current="page" – zusätzlich markieren wir sie farblich. */}
             <NavLink
               to={item.to}
               end={item.end}
@@ -35,8 +30,10 @@ export default function BottomNav() {
                 `bottom-nav__item ${isActive ? 'bottom-nav__item--active' : ''}`
               }
             >
-              <NavIcon name={item.icon} className="h-6 w-6" />
-              <span>{item.label}</span>
+              <span className="relative">
+                <NavIcon name={item.icon} className="h-6 w-6" />
+              </span>
+              <span className="bottom-nav__label">{item.label}</span>
             </NavLink>
           </li>
         ))}

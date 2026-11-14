@@ -125,6 +125,20 @@ app.use('/api/events', eventsRouter);
 app.use('/api/attendances', attendancesRouter);
 app.use('/api/absences', absencesRouter);
 
+// Spielberichte (siehe matchReports/). MUSS vor /api/uploads stehen: sperrt
+// dort den Ordner match-reports, der nur mit Rechteprüfung ausgeliefert wird.
+require('./matchReports').mount(app);
+
+// Infothek: Dokumente unter Verein → Infos (siehe
+// library/). Ebenfalls VOR /api/uploads – die Dateien sind nicht für alle.
+require('./library').mount(app);
+// Dokumente und Videos an News: nur über /api/news/:id/files/… mit Prüfung.
+require('./services/newsExtras').files.blockStatic(app);
+
+// App-Einstellungen: Logo, App-Symbol, Login-Bild und -Sprüche (siehe branding/).
+// Öffentlich lesbar (Login-Seite), deshalb vor /api/uploads.
+require('./branding').mount(app);
+
 // Hochgeladene Bilder: Beiträge, Mannschaftsfotos und Profilbilder.
 //
 // Bewusst unter /api/, damit der Vite-Dev-Proxy sie ohne Zusatzkonfiguration
@@ -152,9 +166,34 @@ app.use(
   })
 );
 
+// Rollen und Einzelrechte (eigenes Modul, siehe access/).
+require('./access').mount(app);
+
+// Eltern-Kind-Verknüpfung (siehe family/).
+require('./family').mount(app);
+
+// Persönliche Ansicht (Favoriten, Startseite, siehe personal/).
+require('./personal').mount(app);
+
 // Push-Benachrichtigungen (eigenes Modul, siehe push/README.md). Zum
 // Entfernen diese Zeile und den Ordner push/ löschen.
 require('./push').mount(app);
+
+// Dienstplan (eigenes Modul, siehe duties/README.md).
+require('./duties').mount(app);
+
+// Kalender als iCal-Datei und Abo (siehe calendar/routes.js).
+require('./calendar').mount(app);
+
+// Vereinstermine mit Teilnahme-Abfrage (siehe clubEvents/).
+require('./clubEvents').mount(app);
+
+// Strafenkatalog und Mannschaftskasse (siehe fines/).
+require('./fines').mount(app);
+
+// Automatische Datensicherung (siehe backup/). Liegt unter /api/admin/… und
+// MUSS vor den allgemeinen Admin-Routen stehen.
+require('./backup').mount(app);
 
 // Admin-Routen (RBAC: Rolle `admin`, Team-Zuordnung auch `trainer`,
 // News nur `admin`/`sub_admin`)

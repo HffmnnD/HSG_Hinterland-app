@@ -63,7 +63,7 @@ function LatencyTooltip({ active, payload, label }) {
 
   return (
     <div className="chart-tooltip">
-      <p className="font-display font-semibold uppercase tracking-[0.05em] text-ink">
+      <p className="font-display font-semibold tracking-[-0.01em] text-ink">
         {formatTime(label)} Uhr
       </p>
       <p className="mt-1 text-ink-muted">

@@ -9,6 +9,7 @@ const attendanceRepository = require('../repositories/attendanceRepository');
 const teamRepository = require('../repositories/teamRepository');
 const userRepository = require('../repositories/userRepository');
 const teamAccess = require('../services/teamAccess');
+const { viewerOf } = require('../access/service');
 const scheduleService = require('../services/scheduleService');
 const { applyReasonVisibility } = require('../services/attendanceService');
 const appEvents = require('../services/appEvents');
@@ -32,6 +33,8 @@ const NOT_A_PLAYER =
   'Nur Spieler:innen dieser Mannschaft können sich zu- oder abmelden.';
 const EVENT_CANCELLED =
   'Dieser Termin wurde abgesagt – eine Zu- oder Absage ist nicht mehr nötig.';
+const DEADLINE_PASSED =
+  'Die Anmeldefrist ist abgelaufen. Änderungen trägt jetzt nur noch dein Trainerteam ein.';
 const EVENT_OVER =
   'Der Termin ist vorbei. Eine nachträgliche Änderung kann nur der/die Trainer:in eintragen.';
 
@@ -56,7 +59,7 @@ async function respond(req, res, next) {
       return res.status(404).json({ message: 'Termin nicht gefunden.' });
     }
 
-    const viewer = { userId: req.userId, userRole: req.userRole };
+    const viewer = viewerOf(req);
     const access = await teamAccess.requireMember(viewer, event.teamId);
     if (!access.ok) {
       return res.status(access.status).json({ message: access.message });
@@ -95,12 +98,17 @@ async function respond(req, res, next) {
       return res.status(409).json({ message: EVENT_OVER });
     }
 
+    // Anmeldefrist: Danach trägt nur noch das Trainerteam Änderungen ein.
+    if (!access.canManage && event.responseDeadline && event.responseDeadline < nowLocalIso()) {
+      return res.status(409).json({ message: DEADLINE_PASSED });
+    }
+
     await attendanceRepository.upsert({
       eventId: event.id,
       userId: targetId,
       status: input.status,
       reason: input.reason,
-      setByUserId: req.userId,
+      setByUserId: req.actorId ?? req.userId,
     });
     appEvents.publish('attendance.changed', {
       event,
@@ -155,7 +163,7 @@ async function history(req, res, next) {
       });
     }
 
-    const viewer = { userId: req.userId, userRole: req.userRole };
+    const viewer = viewerOf(req);
     const access = await teamAccess.requireMember(viewer, teamId);
     if (!access.ok) {
       return res.status(access.status).json({ message: access.message });

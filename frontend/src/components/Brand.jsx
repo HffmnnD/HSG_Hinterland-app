@@ -1,15 +1,23 @@
 import { Link } from 'react-router-dom';
 
+import { useBranding } from '../hooks/useBranding';
+
 /**
- * Wort-/Bildmarke der HSG Hinterland: grünes „H"-Signet + Schriftzug in Oswald.
- * Als Link (`to`) oder statisch verwendbar.
+ * Wort-/Bildmarke der HSG Hinterland: eigenes Logo aus den App-Einstellungen
+ * (Verwaltung → App-Einstellungen), sonst das grüne „H"-Signet, dazu der
+ * Schriftzug. Als Link (`to`) oder statisch verwendbar.
  */
 export default function Brand({ to, className = '' }) {
+  const { logoUrl } = useBranding();
   const inner = (
     <>
-      <span className="brand__mark" aria-hidden="true">
-        H
-      </span>
+      {logoUrl ? (
+        <img src={logoUrl} alt="" className="brand__logo" />
+      ) : (
+        <span className="brand__mark" aria-hidden="true">
+          H
+        </span>
+      )}
       <span className="brand__name">HSG Hinterland</span>
     </>
   );

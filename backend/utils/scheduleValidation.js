@@ -25,6 +25,8 @@ const {
 const MAX_TITLE_LENGTH = 120;
 const MAX_LOCATION_LENGTH = 120;
 const MAX_REASON_LENGTH = 200;
+// Anmeldefrist höchstens 60 Tage vor Beginn.
+const MAX_DEADLINE_HOURS = 60 * 24;
 const MAX_NOTE_LENGTH = 200;
 
 // Ein Termin, der länger als zwei Wochen dauert, ist fast sicher ein Tippfehler
@@ -128,8 +130,19 @@ function validateEventBase(body, { defaultType = 'SINGLE_TRAINING' } = {}) {
     return fail('reasonsVisibleToAll muss true oder false sein.');
   }
 
+  // Anmeldefrist: frei wählbar in Stunden vor Beginn (null = keine Frist).
+  let deadlineHours = null;
+  const rawDeadline = body?.deadlineHours;
+  if (rawDeadline !== undefined && rawDeadline !== null && rawDeadline !== '') {
+    deadlineHours = Number(rawDeadline);
+    if (!Number.isInteger(deadlineHours) || deadlineHours < 1 || deadlineHours > MAX_DEADLINE_HOURS) {
+      return fail(`Die Anmeldefrist muss zwischen 1 und ${MAX_DEADLINE_HOURS} Stunden vor Beginn liegen.`);
+    }
+  }
+
   return {
     ok: true,
+    deadlineHours,
     fields: {
       title: title.value,
       location: location.value,
@@ -174,6 +187,7 @@ function validateEventCreate(body) {
       ok: true,
       teamId,
       fields: base.fields,
+      deadlineHours: base.deadlineHours,
       occurrences: series.occurrences,
       series: series.rule,
     };
@@ -186,6 +200,7 @@ function validateEventCreate(body) {
     ok: true,
     teamId,
     fields: base.fields,
+    deadlineHours: base.deadlineHours,
     occurrences: [single.times],
     series: null,
   };
@@ -304,13 +319,13 @@ function validateEventUpdate(body, { scope = 'single', currentType } = {}) {
   if (!base.ok) return base;
 
   if (scope === 'series') {
-    return { ok: true, fields: base.fields, times: null };
+    return { ok: true, fields: base.fields, deadlineHours: base.deadlineHours, times: null };
   }
 
   const single = validateSingleTimes(body);
   if (!single.ok) return single;
 
-  return { ok: true, fields: base.fields, times: single.times };
+  return { ok: true, fields: base.fields, deadlineHours: base.deadlineHours, times: single.times };
 }
 
 /**
@@ -384,13 +399,14 @@ function validateRespond(body) {
   }
 
   if (status === 'DECLINED') {
+    // Der Grund ist freiwillig (Lastenheft 2.3) – wer keinen nennt, sagt
+    // trotzdem gültig ab.
     const reason = cleanText(body?.reason, {
       label: 'Der Grund der Abmeldung',
       max: MAX_REASON_LENGTH,
+      required: false,
     });
-    if (!reason.ok) {
-      return fail('Bitte einen Grund für die Abmeldung angeben.');
-    }
+    if (!reason.ok) return reason;
     return { ok: true, eventId, userId, status, reason: reason.value };
   }
 

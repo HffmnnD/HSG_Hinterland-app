@@ -901,6 +901,29 @@ curl -b cookies.txt http://localhost:5000/api/handball/schedule/2086554
 curl -b cookies.txt http://localhost:5000/api/handball/ticker/7929683.421558.SEhWIDI1LzI2
 ```
 
+## Bereiche aus dem Lastenheft (Module seit Migration 030)
+
+Jedes Modul ist ein eigener Ordner und wird in `server.js` mit `require('./<ordner>').mount(app)` eingehängt.
+
+| Lastenheft | Modul | Adressen | Wer darf was |
+| ---------- | ----- | -------- | ------------ |
+| Verein → Infos: Dokumente | `library/` (scope `board`) | `/api/library/entries?scope=board` | lesen: alle außer Zuschauer:innen · pflegen: Recht `board.manage` |
+| Verein → Infos: Spielberichte | `matchReports/` | `/api/match-reports` (Liste, `/meta`, `/by-meeting/:id`) | lesen: alle Angemeldeten · schreiben: Trainerteam der Mannschaft, `news.manage`, `board.manage` |
+| 2.8 Strafenkatalog | `fines/` | `/api/fines?teamId=` | eintragen: Kader · Katalog, bezahlt, löschen: Trainerteam · je Mannschaft abschaltbar |
+| Mannschafts-Einstellungen | `controllers/teamsController.js` | `PATCH /api/teams/:code/settings` `{ finesEnabled, plannerEnabled, joinMode }` | Trainerteam, `teams.manage_all` |
+| App-Einstellungen (Logo, Login-Bild, Sprüche, PWA-Manifest) | `branding/` | `GET /api/branding` (öffentlich), `PATCH /api/branding`, `POST/DELETE /api/branding/files/:kind`, `/api/branding/manifest.webmanifest` | Recht `settings.manage` |
+| 2.3 Vereinstermine mit Abfrage | `clubEvents/` | `/api/club-events` | antworten: alle, die den Termin sehen · planen: Recht `events.manage` |
+| 2.3 Anmeldefrist | `controllers/eventsController.js` | Feld `deadlineHours` bei `POST/PUT /api/events` | Trainerteam setzt die Frist, danach ändert nur es die Rückmeldungen |
+| 1.4 Spielplan per CSV | `controllers/scheduleImportController.js` | `POST /api/events/import-csv` (`dryRun` = Vorschau) | Trainerteam |
+| 2.2 News: Mannschaften, Link, Dokumente, Videos, Untertitel, Bearbeiten | `services/newsExtras.js`, `controllers/newsController.js` | `POST /api/admin/news`, `PUT /api/admin/news/:id`, `POST /api/admin/news/:id/files`, `GET /api/news/:id/files/:fileId` | Recht `news.manage` |
+| 1.4 Backups | `backup/` | `/api/admin/backups` | Recht `backups.manage` (Standard: nur Admin) |
+
+Dateianhänge (Infothek, News) laufen über `files/attachments.js`: Whitelist der Dateitypen, Prüfung des Inhalts, Zufallsnamen, Auslieferung nur über Routen mit Rechteprüfung. Die Ordner `uploads/library/` und `uploads/news-files/` sind in `/api/uploads` gesperrt. `npm run uploads:sweep` kennt beide Ordner.
+
+Datensicherung: automatisch nach `backend/backups/` (siehe `.env.example`, Abschnitt Datensicherung). Einspielen: `gunzip -c hsg-backup-….sql.gz | mysql -u root hsg_hinterland`. Hochgeladene Dateien liegen in `backend/uploads/` und gehören zusätzlich in die Dateisicherung des Servers.
+
+Seit Migration 035 entfernt: Postfach/Nachrichten (`messages/`), Freigabe neuer Konten (`approvals/`, jedes Konto ist sofort freigeschaltet), Mannschafts- und Trainerbereich der Infothek, Selbst-Austragen aus Diensten und der Schalter „Ich helfe bei Diensten mit“ (`users.wants_duties`).
+
 ## Frontend-Anbindung
 
 `fetch` muss `credentials: 'include'` setzen, damit der Cookie mitgesendet
@@ -916,7 +939,13 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | JWT nur mit `HS256` verifiziert (kein Algorithm-Confusion) | `middleware/authMiddleware.js` |
 | Cookie: `httpOnly`, `sameSite=lax`, `secure` über `COOKIE_SECURE`/`NODE_ENV` | `config/auth.js` |
 | Cookie-Lebensdauer wird aus dem `exp` des Tokens abgeleitet | `controllers/authController.js` |
-| Rolle **und Sperrstatus** werden bei jeder RBAC-Prüfung frisch aus der DB gelesen | `middleware/authMiddleware.js` |
+| Rechte, Sperre und Sitzungsgrenze werden bei **jeder** Anfrage geprüft (10-s-Cache, bei jeder Änderung sofort verworfen) | `middleware/authMiddleware.js`, `access/service.js` |
+| Granulare Rechte statt fester Rollen; Rollen bündeln Rechte, Einzelrechte erlauben/entziehen | `access/` |
+| Keine Rechte-Ausweitung: vergeben kann man nur Rechte/Rollen, die man selbst hat; Admin-Konten bearbeitet nur ein Admin; eigene Rechte nie selbst | `access/rules.js` |
+| Fremde Passwörter setzt **nur** die Admin-Rolle (kein Einzelrecht), mit Rate-Limit; beendet alle Sitzungen der Person | `controllers/adminController.js` |
+| Eltern im Kinderkonto (`X-Act-As`): Verknüpfung wird bei jeder Anfrage geprüft; Passwort, Verwaltung und Familie sind gesperrt | `middleware/authMiddleware.js`, `family/` |
+| Verknüpfungs-Codes: 8 Zeichen, nur als SHA-256 gespeichert, einmalig, 48 h gültig, 10 Versuche je 15 min | `family/routes.js` |
+| Login zusätzlich je Konto begrenzt (20 Fehlversuche/h) gegen verteilte Angriffe | `routes/authRoutes.js` |
 | `/api/auth/me` beendet die Sitzung, wenn das Konto gelöscht oder gesperrt wurde | `controllers/authController.js` |
 | Rate-Limit: Login 10/15 min, Registrierung 5/h, Passwortwechsel und Profilbild je 10/15 min pro IP; `trust proxy` konfiguriert (`TRUST_PROXY`) | `routes/authRoutes.js`, `server.js` |
 | Passwortwechsel verlangt das aktuelle Passwort (ein offener Browser genügt nicht) | `controllers/authController.js` |
@@ -925,15 +954,14 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | Kontaktdaten im Kader in zwei Stufen: Trainer:innen nur für die eigene Mannschaft, Spieler:innen nur für das Trainerteam | `repositories/teamRepository.js`, `controllers/teamsController.js` |
 | Die Mannschaftsliste (`GET /api/teams`) verlangt eine Anmeldung – es gibt keinen öffentlichen Endpunkt mehr | `routes/teamsRoutes.js` |
 | Hochgeladene Bilder werden mit `Cache-Control: private` ausgeliefert (kein gemeinsamer Proxy-Cache) | `server.js` |
-| Endpunkte des eigenen Kontos lesen Rolle **und** Sperrstatus frisch aus der DB (`checkRole(ROLES)`) | `routes/authRoutes.js` |
 | CSRF-Schutz: Origin-Prüfung bei allen schreibenden Requests | `server.js` |
 | Sicherheits-Header via `helmet` | `server.js` |
 | Alle SQL-Queries mit `?`-Platzhaltern; dynamische Spaltennamen nur aus fester Allowlist | überall, `repositories/userRepository.js` |
 | Selbst-Aussperrung und "letzter Admin" werden serverseitig verhindert | `controllers/adminController.js` |
-| `sub_admin` kann Admin-Konten nicht bearbeiten und die Rolle `admin` nicht vergeben | `controllers/adminController.js` |
-| Team-Verwaltung nur für Admin/Sub-Admin oder **bestätigte:n** `coach` der jeweiligen Mannschaft | `controllers/teamsController.js` |
+| Die Rolle `sub_admin` hat kein `access.manage` und kann Admin-Konten nicht bearbeiten (Regeln aus `access/rules.js`) | `controllers/adminController.js` |
+| Team-Verwaltung nur mit `teams.manage_all` oder als **bestätigte:r** `coach` der jeweiligen Mannschaft | `controllers/teamsController.js`, `services/teamAccess.js` |
 | Zentraler Error-Handler – keine Stacktraces an den Client | `server.js` |
-| News anlegen/löschen nur `admin`+`sub_admin` (zweiter `checkRole` **vor** multer – ein Upload startet ohne Berechtigung gar nicht erst) | `routes/adminRoutes.js` |
+| News anlegen/löschen nur mit `news.manage` (Prüfung **vor** multer – ein Upload startet ohne Berechtigung gar nicht erst) | `routes/adminRoutes.js` |
 | Upload: MIME-Whitelist ohne SVG, Zufallsdateiname, Endung aus der Whitelist | `config/uploads.js` |
 | Upload: **Signaturprüfung** (Magic Bytes) – der Inhalt muss dem Format entsprechen | `config/uploads.js`, `controllers/newsController.js` |
 | Upload: Limits für Dateigröße **und** Anzahl/Größe der Textfelder (`express.json` greift bei multipart nicht) | `config/uploads.js` |
@@ -941,6 +969,10 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
 | multer-/busboy-Fehler werden als 4xx beantwortet, nicht als 500 mit interner Meldung | `config/uploads.js`, `server.js` |
 
 ### Bekannte Restrisiken
+
+- **Eltern im Kinderkonto** sehen und ändern alles, was das Kind darf (Zu-/Absagen, Abwesenheiten, Dienste). Das ist der gewünschte „volle Zugriff“. Wer ein Kind per Code verknüpft, braucht dafür den Code aus dem Kinderkonto – oder eine Person mit `family.manage`.
+- **Admin setzt Passwörter**: Wer die Admin-Rolle hat, kann jedes Konto übernehmen. Die Rolle deshalb nur wenigen geben; jede Änderung steht im Server-Log.
+- **Build-Abhängigkeiten im Frontend**: `npm audit` meldet Lücken in `vite-plugin-pwa`/`workbox` und `eslint` (nur Build-Zeit, nicht im ausgelieferten Code). Die Korrektur bräuchte ein Major-Update (`npm audit fix --force`) und ist bewusst nicht automatisch erfolgt.
 
 - **Logout ist clientseitig**: Das JWT bleibt bis zum Ablauf (`JWT_EXPIRES_IN`)
   technisch gültig; der Cookie ist zwar gelöscht, ein zuvor kopiertes Token
@@ -965,7 +997,7 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   Endpunkt nur an Mitglieder **dieser** Mannschaft, die der Spieler:innen nur
   an das Trainerteam. Offene Beitrittsanfragen sehen ausschliesslich
   Verwaltende.
-- **`GET /api/admin/users` für `trainer`**: Trainer:innen sehen die komplette
+- **`GET /api/admin/users` mit `members.view`** (Standard für `trainer`): sieht die komplette
   Mitgliederliste mit Namen und Mannschaften, um Spieler:innen zuzuordnen –
   aber ohne E-Mail und Telefon, und ändern können sie nur Zuordnungen in
   Mannschaften, die sie selbst trainieren.
@@ -976,8 +1008,8 @@ dann ist CORS gar nicht beteiligt. Für direkten Zugriff auf Port 5000 steuert
   die interne Fehlermeldung (`detail`), und der Cookie ist ohne
   `COOKIE_SECURE=true` nicht auf HTTPS beschränkt.
 - **News haben keine Eigentümerschaft**: Jede:r `admin`/`sub_admin` darf jeden
-  Beitrag archivieren und löschen – auch den einer anderen Person. Für ein
-  Schwarzes Brett ist das gewollt; soll nur der/die Verfasser:in (plus
+  Beitrag archivieren, bearbeiten und löschen – auch den einer anderen Person. Für
+  Vereins-News ist das gewollt; soll nur der/die Verfasser:in (plus
   `admin`) löschen dürfen, müssten `archiveNews`/`deleteNews` zusätzlich
   `author_id` gegen `req.userId` prüfen.
 - **Archivierte Beiträge behalten ihr Bild**: Das ist Absicht – der Beitrag

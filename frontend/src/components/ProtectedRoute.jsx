@@ -19,11 +19,11 @@ export const ONBOARDING_PATH = '/willkommen';
  * Hinweis: Das ist reiner UX-Schutz. Die verbindliche Autorisierung erfolgt
  * im Backend (`checkRole`), da der Client-State manipulierbar ist.
  *
- * @param {string[]} [allowedRoles] Erlaubte Rollen. Ohne Angabe genügt ein
- *   beliebiger eingeloggter Nutzer.
+ * @param {string[]} [permissions] Mindestens eines dieser Rechte. Ohne Angabe
+ *   genügt ein beliebiger eingeloggter Nutzer.
  */
-export default function ProtectedRoute({ allowedRoles, children }) {
-  const { user, role, loading, needsOnboarding } = useAuth();
+export default function ProtectedRoute({ permissions, children }) {
+  const { user, can, loading, needsOnboarding } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -44,7 +44,7 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     );
   }
 
-  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+  if (permissions && permissions.length > 0 && !can(...permissions)) {
     return <Navigate to="/" replace />;
   }
 

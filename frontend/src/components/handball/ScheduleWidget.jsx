@@ -1,3 +1,5 @@
+import { ChevronRight } from 'lucide-react';
+
 import { Badge } from '../Badge';
 import { useHandballSchedule } from '../../hooks/useHandball';
 import {
@@ -35,8 +37,9 @@ function GameRow({ game, ownTeamId, onSelectGame }) {
           ? 'loss'
           : 'draw';
 
-  // Ein laufendes Spiel ist anklickbar (führt zum Ticker) – aber nur, wenn
-  // die Seite dafür einen Handler mitgibt.
+  // Jedes Spiel mit ID ist anklickbar (live: Ticker, beendet: Spielbericht,
+  // bald: Vorschau mit Kader) – aber nur, wenn die Seite einen Handler
+  // mitgibt. Spiele ohne ID (noch nirgends erfasst) bleiben reine Zeilen.
   const clickable = Boolean(onSelectGame && game.id);
 
   const content = (
@@ -84,8 +87,20 @@ function GameRow({ game, ownTeamId, onSelectGame }) {
         </div>
       </div>
 
-      {game.competition && (
-        <p className="mt-2 truncate text-xs text-ink-muted">{game.competition}</p>
+      {(game.competition || clickable) && (
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-xs text-ink-muted">{game.competition}</p>
+          {clickable && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-hsg-green-dark">
+              {game.state === 'live'
+                ? 'Live-Ticker'
+                : game.state === 'finished'
+                  ? 'Spielbericht'
+                  : 'Vorschau'}
+              <ChevronRight size={14} aria-hidden="true" />
+            </span>
+          )}
+        </div>
       )}
     </>
   );

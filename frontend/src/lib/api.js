@@ -15,7 +15,37 @@ const AUTH_ENDPOINTS = [
   '/api/auth/logout',
 ];
 
+/** Vollständige Adresse eines API-Pfads (für Links und Kalender-Abos). */
+export function apiUrl(path) {
+  return `${API_BASE_URL || window.location.origin}${path}`;
+}
+
 let onSessionExpired = null;
+
+// Eltern handeln als Kind: Solange gesetzt, schickt jede Anfrage den Header
+// X-Act-As mit. Das Backend prüft die Verknüpfung bei JEDER Anfrage – der Wert
+// hier ist nur ein Wunsch, keine Berechtigung. sessionStorage: gilt für diesen
+// Tab und endet mit ihm, damit niemand versehentlich im Kinderkonto bleibt.
+const ACT_AS_KEY = 'hsg.actAs';
+let actAsId = null;
+try {
+  actAsId = Number(sessionStorage.getItem(ACT_AS_KEY)) || null;
+} catch {
+  actAsId = null;
+}
+
+/** Als Kind handeln (id) oder zurück ins eigene Konto (null). */
+export function setActAs(id) {
+  actAsId = id ? Number(id) : null;
+  try {
+    if (actAsId) sessionStorage.setItem(ACT_AS_KEY, String(actAsId));
+    else sessionStorage.removeItem(ACT_AS_KEY);
+  } catch {
+    // Privater Modus o. Ä.: gilt dann nur bis zum Neuladen.
+  }
+}
+
+export const getActAs = () => actAsId;
 
 /**
  * Registriert einen Callback, der bei einer abgelaufenen/ungültigen Sitzung
@@ -39,6 +69,7 @@ export async function apiFetch(path, options = {}) {
       ...options,
       headers: {
         ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(actAsId ? { 'X-Act-As': String(actAsId) } : {}),
         ...(options.headers || {}),
       },
     });

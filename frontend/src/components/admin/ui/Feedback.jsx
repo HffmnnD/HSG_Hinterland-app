@@ -46,7 +46,7 @@ export function EmptyState({ icon: Icon = Inbox, title, hint, children }) {
   return (
     <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
       <Icon size={24} aria-hidden="true" className="text-ink-muted" />
-      <p className="font-display text-sm font-semibold uppercase tracking-[0.05em] text-ink">
+      <p className="font-display text-sm font-semibold tracking-[-0.01em] text-ink">
         {title}
       </p>
       {hint && <p className="max-w-sm text-sm text-ink-muted">{hint}</p>}

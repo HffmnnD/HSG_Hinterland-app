@@ -6,7 +6,7 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 
 | Datei | Zweck |
 | ----- | ----- |
-| `schema.sql` | **Referenz.** Vollständiges, kommentiertes Schema, laufend gepflegt (= Stand aller Migrationen). Für eine frische DB in phpMyAdmin ausführen. |
+| `schema.sql` | **Referenz.** Vollständiges Schema (= Stand aller Migrationen), erzeugt mit `npm run schema:dump` aus der Datenbank – nicht von Hand ändern. Für eine frische DB in phpMyAdmin ausführen. |
 | `migrations/001_initial_schema.sql` | Eingefrorener Startzustand. |
 | `migrations/002_team_confirmation.sql` | `is_confirmed` ergänzt, globale Admin-Freigabe abgeschafft. |
 | `migrations/004_news_table.sql` | Tabelle `news` für Vereins-Ankündigungen. |
@@ -22,6 +22,12 @@ MySQL/MariaDB, Datenbankname `hsg_hinterland`, Zeichensatz `utf8mb4`.
 | `migrations/013_onboarding_theme.sql` | Schlanke Registrierung, Onboarding (`onboarding_completed_at`), Design (`theme`) und der Bildausschnitt des Mannschaftsfotos (`photo_focus_x/y`, `photo_zoom`). |
 | `migrations/014_instant_signup_and_profile.sql` | Registrierung ohne Freigabe: `is_approved` wieder Default `1`, `approved_at` entfällt. Dazu Profilbild (`users.photo_path`) und freiwillige Telefonnummer (`users.phone`). |
 | `migrations/015_session_invalidation.sql` | `users.sessions_valid_from`: Ein Passwortwechsel entwertet alle vorher ausgestellten Tokens und beendet damit die Sitzungen auf anderen Geräten. Korrigiert ausserdem den Spaltenkommentar an `users.phone`: Kontaktdaten sind nicht für jedes angemeldete Konto sichtbar. |
+| `migrations/030_infothek.sql` | Infothek: `library_entries`, `library_files` (seit 035 nur noch Dokumente unter Verein → Infos). |
+| `migrations/031_strafenkatalog.sql` | Strafenkatalog und Mannschaftskasse: `fine_catalog`, `fines` (Beträge in Cent). |
+| `migrations/032_vereinstermine_und_fristen.sql` | Vereinstermine mit Abfrage (`club_events`, `club_event_teams`, `club_event_responses`) und Anmeldefrist (`events.response_deadline`, `event_series.deadline_hours`). |
+| `migrations/033_news_zielgruppen_und_anhaenge.sql` | News für einzelne Mannschaften (`news.audience`, `news_teams`), Link/Livestream (`news.link_url`, `link_kind`), Dokumente und Videos (`news_files`). |
+| `migrations/035_rueckbau_und_einstellungen.sql` | Entfernt Postfach (`messages`, `message_recipients`), `users.approval_pending`, `users.wants_duties`, Mannschafts-/Trainerbereich. Neu: `match_reports.body`, `teams.fines_enabled`/`planner_enabled`/`join_mode`, `news.subtitle`, `news.content` als MEDIUMTEXT, längere `app_settings`-Werte (Logo/Login-Texte). |
+| `migrations/034_freigabe_und_rollen.sql` | Freigabe neuer Konten (`users.approval_pending`), Rolle „Hauptuser", Rechte der neuen Bereiche, Rolle „Eventplanung". |
 | `migrations/0NN_*.sql` | Weitere Änderungen, fortlaufend nummeriert. |
 | `migrate.js` | Runner (`npm run migrate`): führt jede Datei **genau einmal** aus und merkt sich das in `schema_migrations`. So dürfen Migrationen einmalige Daten-Backfills enthalten. |
 
